@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Library</OutputType>
+		<TargetFramework>netstandard2.0</TargetFramework>
+		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+		<ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+		<IsPackable>false</IsPackable>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Compile Include="ProvidedTypes\ProvidedTypes.fsi" />
+		<Compile Include="ProvidedTypes\ProvidedTypes.fs" />
+		<Compile Include="Common.fs" />
+		<Compile Include="SplitRowProvider\ColumnMapping.fs" />
+	  	<Compile Include="SplitRowProvider\RowSplitter.fs" />
+		<Compile Include="SplitRowProvider\Provider.fs" />
+		<Compile Include="Library.fs" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <None Include="FsToolkit.ErrorHandling.dll">
+	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  </None>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <PackageReference Include="FsToolkit.ErrorHandling" Version="4.18.0" />
+	</ItemGroup>
+
+</Project>
