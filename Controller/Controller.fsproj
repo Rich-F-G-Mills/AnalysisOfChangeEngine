@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Walk Analyser\Common.fs" />
+    <Compile Include="Walk Analyser\ElementInvoker.fs" />
+    <Compile Include="Walk Analyser\SourceInvoker.fs" />
+    <Compile Include="Walk Analyser\SourceParser.fs" />
+    <Compile Include="Walk Analyser\WalkParser.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Implementations\Implementations.fsproj" />
+  </ItemGroup>
+
+</Project>
