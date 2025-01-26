@@ -64,18 +64,14 @@ module rec Types =
     type DataChangeValidator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         'TPolicyRecord * 'TStepResults * 'TPolicyRecord * 'TStepResults -> StepValidationIssue list
 
-    [<RequireQualifiedAccess>]
-    module DataChangeValidator =
-        let Ignore : DataChangeValidator<_, _> =
-            fun _ -> List.empty
-
     type NonDataChangeValidator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         'TPolicyRecord * 'TStepResults * 'TStepResults -> StepValidationIssue list
 
-    [<RequireQualifiedAccess>]
-    module NonDataChangeValidator =
-        let Ignore : NonDataChangeValidator<_, _> =
-            fun _ -> List.empty
+    type OpeningStepValidator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
+        'TPolicyRecord * 'TStepResults -> StepValidationIssue list
+
+    type AddNewRecordsValidator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
+        'TPolicyRecord * 'TStepResults -> StepValidationIssue list
 
     type IStepHeader =
         interface
@@ -89,6 +85,7 @@ module rec Types =
             Title: string
             Description: string
             DataSource: IPolicyRecordSource<'TPolicyRecord>
+            Validator: OpeningStepValidator<'TPolicyRecord, 'TStepResults>
         }
 
         interface IStepHeader with
@@ -121,11 +118,10 @@ module rec Types =
             member this.Description = this.Description 
 
     [<NoEquality; NoComparison>]
-    type RemoveExitedStep<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
+    type RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         {
             Title: string
             Description: string
-            ToRemove: PolicyID Set
         }
 
         interface IStepHeader with
@@ -145,29 +141,32 @@ module rec Types =
             member this.Description = this.Description 
 
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
-    type InteriorStepType<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
-        | Regression of RegressionStep<'TPolicyRecord, 'TStepResults>
-        | DataChange of DataChangeStep<'TPolicyRecord, 'TStepResults>
-        | ParameterChange of ParameterChangeStep<'TPolicyRecord, 'TStepResults>
-
-    [<NoEquality; NoComparison>]
     type InteriorStep<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
-        {
-            Title: string
-            Description: string
-            Type: InteriorStepType<'TPolicyRecord, 'TStepResults>
-        }        
+        | Regression of Step: RegressionStep<'TPolicyRecord, 'TStepResults>
+        | DataChange of Step: DataChangeStep<'TPolicyRecord, 'TStepResults>
+        | ParameterChange of Step: ParameterChangeStep<'TPolicyRecord, 'TStepResults>     
 
         interface IStepHeader with
-            member this.Title = this.Title
-            member this.Description = this.Description 
+            member this.Title =
+                match this with
+                | Regression { Title = title }
+                | DataChange { Title = title }
+                | ParameterChange { Title = title } ->
+                    title
+
+            member this.Description =
+                match this with
+                | Regression { Description = description }
+                | DataChange { Description = description }
+                | ParameterChange { Description = description } ->
+                    description
 
     [<NoEquality; NoComparison>]
-    type AddNewBusinessStep<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
+    type AddNewRecordsStep<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         {
             Title: string
             Description: string
-            ToAdd: PolicyID Set
+            Validator: AddNewRecordsValidator<'TPolicyRecord, 'TStepResults>
         }
 
         interface IStepHeader with
@@ -176,27 +175,33 @@ module rec Types =
 
 
     [<AbstractClass>]
-    type AbstractWalk<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord>
-        (logger: ILogger, productName: string) =
-            let _interiorSteps =
-                new List<InteriorStep<'TPolicyRecord, 'TStepResults>> ()
+    type AbstractWalk<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> (
+        logger: ILogger,
+        productName: string,
+        openingDataSource: IPolicyRecordSource<'TPolicyRecord>,
+        closingDataSource: IPolicyRecordSource<'TPolicyRecord>
+    ) =
+        let _interiorSteps =
+            new List<InteriorStep<'TPolicyRecord, 'TStepResults>> ()
 
-            abstract member opening: OpeningStep<'TPolicyRecord, 'TStepResults> with get
+        abstract member opening: OpeningStep<'TPolicyRecord, 'TStepResults> with get
 
-            abstract member openingRegression: RegressionStep<'TPolicyRecord, 'TStepResults> with get
+        abstract member openingRegression: RegressionStep<'TPolicyRecord, 'TStepResults> with get
 
-            abstract member removeExited: RemoveExitedStep<'TPolicyRecord, 'TStepResults> with get
+        abstract member removeExitedRecords: RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> with get
 
-            // --- INTERIOR STEPS SUPPLIED BY USER ---
-            member val interiorSteps =
-                // This will reflect any live updates to the interior steps list above.
-                _interiorSteps.AsReadOnly () 
+        // --- INTERIOR STEPS SUPPLIED BY USER ---
+        member val interiorSteps =
+            // This will reflect any live updates to the interior steps list above.
+            _interiorSteps.AsReadOnly () 
 
-            abstract member addNewBusiness: AddNewBusinessStep<'TPolicyRecord, 'TStepResults> with get
+        abstract member addNewRecords: AddNewRecordsStep<'TPolicyRecord, 'TStepResults> with get
 
-            member _.registerInteriorStep (step: InteriorStep<'TPolicyRecord, 'TStepResults>) =
-                do logger.LogDebug (sprintf "Walk for '%s': Registering step '%s'." productName step.Title)
-                do _interiorSteps.Add step
-                // Pass through the supplied step.
-                step
+        member _.registerInteriorStep (step: InteriorStep<'TPolicyRecord, 'TStepResults>) =
+            let stepHeader =
+                step :> IStepHeader
 
+            do logger.LogDebug (sprintf "Walk for '%s': Registering step '%s'." productName stepHeader.Title)
+            do _interiorSteps.Add step
+            // Pass through the supplied step.
+            step

@@ -22,47 +22,65 @@ type StepResults =
 [<NoEquality; NoComparison>]
 type WalkConfiguration =
     {
-        ExitedPolicies: Set<PolicyID>
-        ReinstatedPolicies: Set<PolicyID>
         OpeningDataSource: IPolicyRecordSource<PolicyRecord>        
-        RestatedDataChanges: Map<PolicyID, PolicyRecord>        
+        RestatedOpeningDataChanges: Map<PolicyID, PolicyRecord>   
+        RollForwardDataChanges: Map<PolicyID, PolicyRecord>
+        RecentPUPs: Map<PolicyID, PolicyRecord>
         ClosingDataSource: IPolicyRecordSource<PolicyRecord>
     }
 
 
 type Walk private (logger: ILogger, config: WalkConfiguration) as this =
-    inherit AbstractWalk<PolicyRecord, StepResults> (logger, "OB Whole-Life")
+    inherit AbstractWalk<PolicyRecord, StepResults> (
+        logger,
+        "OB Whole-Life",
+        config.OpeningDataSource,
+        config.ClosingDataSource
+    )
 
     // --- VALIDATE THE SUPPLIED CONFIGURATION ---
 
     static member create logger (config: WalkConfiguration) =
         result {
-            let intersection =
-                Set.intersect config.ExitedPolicies config.ReinstatedPolicies
-
-            do! intersection 
-                |> Result.requireEmpty "Cannot have policies that both exit and reinstate!"
-
             return new Walk (logger, config)
         }
-        
-    // --- DEFINE THE INDIVIDUAL STEPS ---
 
-    member val opening =
+
+    // ...REQUIRED...
+    override val opening =
         StepTemplates.opening config.OpeningDataSource
 
-    member val openingRegression =
-        StepTemplates.openingRegression (fun (_, before, after) ->
+    // ...REQUIRED...
+    override val openingRegression =
+        StepTemplates.openingRegression_WithValidation (
+            fun (_, before, after) ->
                 if before = after then
                     List.empty
                 else
                     [ StepValidationIssue.Warning "Regression mis-match" ]
-            )
+        )
 
-    member val removeExited =
-        StepTemplates.removeExited config.ExitedPolicies
-        
+    // ...REQUIRED...
+    override val removeExitedRecords =
+        StepTemplates.removeExited 
 
-    member val addNewBusiness =
-        StepTemplates.addNewBusiness config.ReinstatedPolicies
+
+    // --- PRODUCT SPECIFIC STEPS ---
+    // We need to make sure that these are registered as well as defined!
+
+    member val restatedOpeningData =
+        this.registerInteriorStep(
+            StepTemplates.restatedOpeningData config.RestatedOpeningDataChanges
+        )        
+
+    member val restatedOpeningReturns =
+        this.registerInteriorStep(
+            StepTemplates.restatedOpeningReturns
+        )      
+
+ 
+
+    // ...REQUIRED...
+    override val addNewRecords =
+        StepTemplates.addNewRecords
 
