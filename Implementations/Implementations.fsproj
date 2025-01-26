@@ -6,12 +6,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Common\ResultBuilderExtensions.fs" />
-    <Compile Include="Common\ResultExtensions.fs" />
-    <Compile Include="Common\Types.fs" />
-    <Compile Include="Common\RowParser.fs" />
+    <Compile Include="Common\StepTemplates.fs" />
     <Compile Include="OB Whole Of Life\PolicyRecord.fs" />
     <Compile Include="OB Whole Of Life\ValRowParser.fs" />
+    <Compile Include="OB Whole Of Life\Steps.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -19,6 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Common\Common.fsproj" />
     <ProjectReference Include="..\TypeProviders\TypeProviders.fsproj" />
   </ItemGroup>
 

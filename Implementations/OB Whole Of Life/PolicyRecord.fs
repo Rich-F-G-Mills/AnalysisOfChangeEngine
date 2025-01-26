@@ -3,7 +3,7 @@ namespace AnalysisOfChangeEngine.Implementations.OBWholeOfLife
 
 open System
 
-open AnalysisOfChangeEngine.Implementations
+open AnalysisOfChangeEngine.Common
 
 
 [<RequireQualifiedAccess>]
@@ -41,14 +41,14 @@ module PolicyStatus =
         else
             Error value
 
-[<NoEquality; NoComparison>]
+[<NoComparison>]
 type LifeData =
     {
         EntryAge: int
         Gender: Gender
     }
 
-[<NoEquality; NoComparison>]
+[<NoComparison>]
 type LivesBasis =
     | SingleLife of Life1: LifeData
     | JointLife of Life1: LifeData * Life2: LifeData * JointValuationAge: int
@@ -56,7 +56,7 @@ type LivesBasis =
 // By the time this has been populated, all required cleansing has been performed.
 // This is independent of the underlyine source.
 // Wherever the data is sourced from, it must ultimately end up as the following.
-[<NoEquality; NoComparison>]
+[<NoComparison>]
 type PolicyRecord =
     {
         PolicyNumber        : string
@@ -65,6 +65,7 @@ type PolicyRecord =
         PolicyStatus        : PolicyStatus
         LivesBasis          : LivesBasis
         PaymentTerm         : int
+        IsTaxable           : bool
     }
 
     interface IPolicyRecord with

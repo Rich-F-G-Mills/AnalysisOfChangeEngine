@@ -1,8 +1,9 @@
 ﻿
-namespace AnalysisOfChangeEngine.Implementations
+namespace AnalysisOfChangeEngine.Common
+
 
 [<AutoOpen>]
-module internal ResultBuilderExtensions =
+module ResultBuilderExtensions =
 
     open FsToolkit.ErrorHandling
 

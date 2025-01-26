@@ -8,7 +8,36 @@ open FSharp.Reflection
 open FsToolkit.ErrorHandling
 open ProviderImplementation.ProvidedTypes
 
-   
+
+[<RequireQualifiedAccess>]
+module private DocStrings =
+
+    // TODO - Why isn't this working?
+    let [<Literal>] SplitRowType =
+        """<summary>
+            <para>
+                Type provider that generates a simple record(-like) type that can provide <c>string</c> representations
+                of underlying row content.
+            </para>
+            <example>
+                For example:
+                <code>
+                    type SplitRow = SplitRowType&lt;"Pol_ID-&gt;POLICY_ID,DOE-&gt;ENTRY_DATE,ENTRY_AGE"&gt;
+                </code>
+            </example>
+        </summary>
+        <param name="RequiredColumns">A string containing a comma-separated list of columns expected
+        to be found. An optional mapping utilizing <c>-&gt;</c> can also be used.</param>"""
+
+    let generateForProperty (mapping: ColumnMapping) =
+        sprintf "<summary>String content taken from underlying '<c>%s</c>' column.</summary>" mapping.WithinFile
+
+    let generateForSplitterFactory (typeName: string) =
+        """When provided with the available columns from the underlying source, and assuming required
+           columns are available, will return a lambda that will convert an array of row contents
+           into the owning (record-like) type."""
+
+
 [<TypeProvider>]
 type public SplitRowTypeProvider (config: TypeProviderConfig) as this =
     inherit TypeProviderForNamespaces (config)
@@ -21,6 +50,8 @@ type public SplitRowTypeProvider (config: TypeProviderConfig) as this =
 
     let providerType =
         new ProvidedTypeDefinition (assembly, rootNS, "SplitRowType", None, hideObjectMethods = true, nonNullable = true)
+
+    do providerType.AddXmlDoc DocStrings.SplitRowType
 
     let staticParams =
         [ new ProvidedStaticParameter("RequiredColumns", typeof<string>) ]
@@ -64,6 +95,8 @@ type public SplitRowTypeProvider (config: TypeProviderConfig) as this =
             let property =
                 new ProvidedProperty (mapping.MemberName, typeof<string>, getterCode)
 
+            do property.AddXmlDoc (DocStrings.generateForProperty mapping)
+
             do providedSplitRowType.AddMember property
 
         let inline makeUnaryFunctionType (inputType, outputType) =
@@ -99,7 +132,7 @@ type public SplitRowTypeProvider (config: TypeProviderConfig) as this =
             let typedFactoryMI =
                 ProvidedTypeBuilder.MakeGenericMethod(genericFactoryMI, [ splitRowErasedType ])
 
-            // Rather than provide a load of quoted call for the type provider machinery to
+            // Rather than provide a load of quoted code for the type provider machinery to
             // compile, seemed easier to create a call expression to an existing generic method above.
             // Note that even though we want to return an object of type 'providedSplitRowType',
             // we can return the underlying tuple instead without issue.
@@ -113,6 +146,8 @@ type public SplitRowTypeProvider (config: TypeProviderConfig) as this =
                 invokeCode = createSplitterBody,
                 isStatic = true
             )
+
+        do createSplitterMethod.AddXmlDoc (DocStrings.generateForSplitterFactory typeName)
 
         do providedSplitRowType.AddMember createSplitterMethod
 

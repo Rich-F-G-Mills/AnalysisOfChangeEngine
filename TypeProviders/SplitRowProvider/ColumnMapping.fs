@@ -14,14 +14,14 @@ module private Parser =
             let _match = re.Match (pattern)
 
             if _match.Success then
-                let groupText =
+                let groupMatches =
                     _match.Groups
                     |> Seq.cast<Group>
                     |> Seq.skip 1
                     |> Seq.map _.Value
                     |> List.ofSeq
 
-                Some (_match.Value, groupText)
+                Some (_match.Value, groupMatches)
 
             else
                 None

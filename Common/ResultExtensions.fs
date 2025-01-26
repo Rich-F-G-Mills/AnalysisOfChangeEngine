@@ -1,17 +1,17 @@
 ﻿
-namespace AnalysisOfChangeEngine.Implementations
+namespace AnalysisOfChangeEngine.Common
 
 [<AutoOpen>]
-module internal ResultExtensions =
+module ResultExtensions =
 
     [<RequireQualifiedAccess>]
-    module internal Result =
+    module Result =
 
         open System
         open FsToolkit.ErrorHandling
 
 
-        let inline internal requireThat ([<InlineIfLambda>] predicate) onFail = function
+        let inline requireThat ([<InlineIfLambda>] predicate) onFail = function
             | Error _ as value -> value
             | Ok value' as value when predicate value' -> value
             | Ok value' -> Error onFail
@@ -21,39 +21,39 @@ module internal ResultExtensions =
             | true, value -> Ok value
             | false, _ -> Error str
 
-        let internal makeOptionalParser (parser: string -> Result<'T, string>) =
+        let makeOptionalParser (parser: string -> Result<'T, string>) =
             fun (str: string) ->
                 if String.IsNullOrEmpty str then
                     Ok None
                 else
                     parser str |> Result.map Some
 
-        let internal parseInt =
+        let parseInt =
             wrapTryParser Int32.TryParse
         
-        let internal parseOptionalInt =
+        let parseOptionalInt =
             makeOptionalParser parseInt
 
-        let inline internal parseDateOnly (format: string) (str: string) =
+        let inline parseDateOnly (format: string) (str: string) =
             match DateOnly.TryParseExact (str, format) with
             | true, date -> Ok date
             | false, _ -> Error str
 
-        let inline internal parseOptionalDateOnly (format: string) (str: string) =
+        let inline parseOptionalDateOnly (format: string) (str: string) =
             if String.IsNullOrEmpty str then
                 Ok None
             else
                 parseDateOnly format str
                 |> Result.map Some
 
-        let internal parseISODateOnly =
+        let parseISODateOnly =
             parseDateOnly "yyyy-MM-dd"
 
-        let internal parseOptionalISODateOnly =
+        let parseOptionalISODateOnly =
             makeOptionalParser parseISODateOnly
 
-        let internal parseDMYDateOnly =
+        let parseDMYDateOnly =
             parseDateOnly "dd/MM/yyyy"
 
-        let internal parseOptionalDMYDateOnly =
+        let parseOptionalDMYDateOnly =
             makeOptionalParser parseDMYDateOnly

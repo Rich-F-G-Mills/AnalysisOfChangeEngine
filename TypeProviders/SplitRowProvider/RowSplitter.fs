@@ -16,23 +16,20 @@ module private RowSplitter =
         <@@ ((%%arr: string array))[idx] @@>
 
     let findHdrIdx availableHeaders hdr =
-        result {
-            // Determine the index of the available header which corresponds to 'hdr' above.
-            let foundIdxs =
-                availableHeaders
-                |> Seq.indexed
-                |> Seq.choose (function | idx, hdr' when hdr = hdr' -> Some idx | _ -> None)
-                |> Seq.toList
+        // Determine the index of the available header which corresponds to 'hdr' above.
+        let foundIdxs =
+            availableHeaders
+            |> Seq.indexed
+            |> Seq.choose (function | idx, hdr' when hdr = hdr' -> Some idx | _ -> None)
+            |> Seq.toList
 
-            return!
-                match foundIdxs with
-                | [ idx ] ->
-                    Ok idx
-                | [] ->
-                    Error (sprintf "Unable to locate required header '%s'." hdr)                
-                | _ ->
-                    Error (sprintf "Multiple headers found for '%s'." hdr)
-        }
+        match foundIdxs with
+        | [ idx ] ->
+            Ok idx
+        | [] ->
+            Error (sprintf "Unable to locate required header '%s'." hdr)                
+        | _ ->
+            Error (sprintf "Multiple headers found for '%s'." hdr)
 
 
     let createCompiledSplitter<'TTuple> (sourceIdxs: int list, arrayLength) =

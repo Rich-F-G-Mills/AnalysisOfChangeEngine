@@ -1,5 +1,5 @@
 ﻿
-namespace AnalysisOfChangeEngine.Implementations
+namespace AnalysisOfChangeEngine.Common
 
 
 [<RequireQualifiedAccess>]
@@ -13,9 +13,9 @@ module RowParser =
         ((splitterFactory: string seq -> Result<string array -> Result<'TSplitRow, string>, string>),
          (policyIdGetter: 'TSplitRow -> string),
          (splitRowParser: (CleansingChange -> unit) * 'TSplitRow -> Result<'TPolicyRecord, string>))
-        availableHeaders =
+        availableHeaders: Result<string array -> ParseOutcome<_>, _> =
             result {
-                let! rowSplitter =
+                let! rowSplitter = 
                     splitterFactory availableHeaders
 
                 let rowParser row =
@@ -26,16 +26,16 @@ module RowParser =
 
                         let! splitRow =
                             rowSplitter row
-                            |> Result.mapError ParseOutcome.ReadFailure
+                            // Here we don't have any policy ID to assign to the error.
+                            |> Result.mapError (fun err -> None, err)
 
                         let! parsedRow =
                             splitRowParser (cleansingChanges.Add, splitRow)
-                            |> Result.mapError (fun msg ->
-                                ParseOutcome.ParseFailure (policyIdGetter splitRow, msg))
+                            // ...But here we do!
+                            |> Result.mapError (fun err -> Some (policyIdGetter splitRow), err)
 
-                        return ParseOutcome.Successful (parsedRow, Seq.toList cleansingChanges)                    
+                        return parsedRow, Seq.toList cleansingChanges
                     }
-                    |> Result.either id id
 
                 return rowParser                
             }
