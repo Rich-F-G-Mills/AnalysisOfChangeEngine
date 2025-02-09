@@ -153,24 +153,24 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
     override val openingRegression =
         StepTemplates.openingRegression {
             Source =
-                <@ fun from api _ ->
+                <@ fun from _ ->
                     {                    
                         UnsmoothedAssetShare =
-                            from.apiCall (api.px_OpeningRegression, _.UnsmoothedAssetShare)
+                            from.apiCall (_.px_OpeningRegression , _.UnsmoothedAssetShare)
                         SmoothedAssetShare =
-                            from.apiCall (api.px_OpeningRegression, _.SmoothedAssetShare)
+                            from.apiCall (_.px_OpeningRegression, _.SmoothedAssetShare)
                         GuaranteedDeathBenefit =
-                            from.apiCall (api.px_OpeningRegression, _.GuaranteedDeathBenefit)
+                            from.apiCall (_.px_OpeningRegression, _.GuaranteedDeathBenefit)
                         ExitBonusRate =
-                            from.apiCall (api.px_OpeningRegression, _.ExitBonusRate)
+                            from.apiCall (_.px_OpeningRegression, _.ExitBonusRate)
                         UnpaidPremiums =
-                            from.apiCall (api.px_OpeningRegression, _.UnpaidPremiums)
+                            from.apiCall (_.px_OpeningRegression, _.UnpaidPremiums)
                         SurrenderValue =
-                            from.apiCall (api.px_OpeningRegression, _.CashSurrenderValue)
+                            from.apiCall (_.px_OpeningRegression, _.CashSurrenderValue)
                         DeathUpliftFactor =
-                            from.apiCall (api.px_OpeningRegression, _.DeathUpliftFactor)
+                            from.apiCall (_.px_OpeningRegression, _.DeathUpliftFactor)
                         DeathBenefit =
-                            from.apiCall (api.px_OpeningRegression, _.DeathBenefit)
+                            from.apiCall (_.px_OpeningRegression, _.DeathBenefit)
                     }
                 @>
 
@@ -198,13 +198,13 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         this.registerInteriorStep(        
             StepTemplates.aocOpeningConsistencyCheck {
                 Source =
-                    <@ fun from api prior ->
+                    <@ fun from prior ->
                         {
                             prior with
                                 UnsmoothedAssetShare =
-                                    from.apiCall (api.px_OpeningRegression, _.Step0_Opening_UAS)
+                                    from.apiCall (_.px_OpeningRegression, _.Step0_Opening_UAS)
                                 SmoothedAssetShare =
-                                    from.apiCall (api.px_OpeningRegression, _.Step0_Opening_SAS)
+                                    from.apiCall (_.px_OpeningRegression, _.Step0_Opening_SAS)
                                 SurrenderValue =
                                     from.calculation (fun x ->
                                         x.SmoothedAssetShare * (1.0 + x.ExitBonusRate) - x.UnpaidPremiums)
@@ -239,13 +239,13 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         this.registerInteriorStep(
             StepTemplates.restatedOpeningReturns {
                 Source =
-                    <@ fun from api prior ->
+                    <@ fun from prior ->
                         {
                             prior with
                                 UnsmoothedAssetShare =
-                                    from.apiCall (api.px_PostOpeningRegression, _.Step2_RestatedActuals_UAS)
+                                    from.apiCall (_.px_PostOpeningRegression, _.Step2_RestatedActuals_UAS)
                                 SmoothedAssetShare =
-                                    from.apiCall (api.px_PostOpeningRegression, _.Step2_RestatedActuals_SAS)
+                                    from.apiCall (_.px_PostOpeningRegression, _.Step2_RestatedActuals_SAS)
                         } @>
                 Validator =
                     noValidator
@@ -256,13 +256,13 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         this.registerInteriorStep(
             StepTemplates.restatedOpeningDeductions {
                 Source =
-                    <@ fun from api prior ->
+                    <@ fun from prior ->
                         {
                             prior with
                                 UnsmoothedAssetShare =
-                                    from.apiCall (api.px_PostOpeningRegression, _.Step3_RestatedDeductions_UAS)
+                                    from.apiCall (_.px_PostOpeningRegression, _.Step3_RestatedDeductions_UAS)
                                 SmoothedAssetShare =
-                                    from.apiCall (api.px_PostOpeningRegression, _.Step3_RestatedDeductions_SAS)
+                                    from.apiCall (_.px_PostOpeningRegression, _.Step3_RestatedDeductions_SAS)
                         } @>
                 Validator =
                     noValidator

@@ -90,10 +90,10 @@ module rec Types =
 
 
     [<AbstractClass>]
-    type SourceAction<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> private () =
+    type SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> private () =
         /// Request specific output from the referenced API.
         abstract member apiCall<'TResponse, 'T>
-            : apiRequest: WrappedApiRequest<'TPolicyRecord, 'TResponse> * selector: ('TResponse -> 'T) -> 'T
+            : apiRequest: ('TApiCollection -> WrappedApiRequest<'TPolicyRecord, 'TResponse>) * selector: ('TResponse -> 'T) -> 'T
 
         /// Permits fields to be calculated using other fields within the step output.
         abstract member calculation<'T>
@@ -103,7 +103,7 @@ module rec Types =
     type SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
         // DD - If we supply 'from' and 'apis' as tupled arguments, the resulting quotation
         // is more cumbersome to process. Using curried form makes them easier to identify.
-        Expr<SourceAction<'TPolicyRecord, 'TStepResults> -> 'TApiCollection -> 'TStepResults -> 'TStepResults>
+        Expr<SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection> -> 'TStepResults -> 'TStepResults>
 
     module SourceDefinition =
         let castExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> expr
