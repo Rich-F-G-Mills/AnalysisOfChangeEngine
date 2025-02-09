@@ -246,7 +246,9 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
                                     from.apiCall (_.px_PostOpeningRegression, _.Step2_RestatedActuals_UAS)
                                 SmoothedAssetShare =
                                     from.apiCall (_.px_PostOpeningRegression, _.Step2_RestatedActuals_SAS)
-                        } @>
+                        }
+                    @>
+
                 Validator =
                     noValidator
             }
@@ -263,7 +265,9 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
                                     from.apiCall (_.px_PostOpeningRegression, _.Step3_RestatedDeductions_UAS)
                                 SmoothedAssetShare =
                                     from.apiCall (_.px_PostOpeningRegression, _.Step3_RestatedDeductions_SAS)
-                        } @>
+                        }
+                    @>
+
                 Validator =
                     noValidator
             }
