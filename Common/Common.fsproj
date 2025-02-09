@@ -6,11 +6,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="ResultExtensions.fs" />
-    <Compile Include="ResultBuilderExtensions.fs" />
+    <Compile Include="TypeExtentions.fs" />
     <Compile Include="RegEx.fs" />
     <Compile Include="Types.fs" />
-    <Compile Include="RowParser.fs" />
   </ItemGroup>
 
   <ItemGroup>

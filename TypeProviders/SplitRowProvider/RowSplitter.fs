@@ -32,69 +32,72 @@ module private RowSplitter =
             Error (sprintf "Multiple headers found for '%s'." hdr)
 
 
-    let createCompiledSplitter<'TTuple> (sourceIdxs: int list, arrayLength) =
-        let tupleLength =
-            FSharpType.GetTupleElements(typeof<'TTuple>).Length
+    let createCompiledSplitter<'TTuple> (sourceIdxs: int list, arrayLength)
+        : string array -> Result<'TTuple, string> =
+            let tupleLength =
+                FSharpType.GetTupleElements(typeof<'TTuple>).Length
 
-        if tupleLength <> sourceIdxs.Length then
-            failwith "Number of tuple elements inconsistent with number of index mappings."
+            if tupleLength <> sourceIdxs.Length then
+                failwith "Number of tuple elements inconsistent with number of index mappings."
 
-        let reqdArrayLenVar =
-            Var ("reqdArrayLen", typeof<int>)
+            let reqdArrayLenVarDef =
+                Var ("reqdArrayLen", typeof<int>)
 
-        let reqdArrayLenVarExpr =
-            Expr.Var reqdArrayLenVar
+            let reqdArrayLenVar =
+                Expr.Var reqdArrayLenVarDef
 
-        let tupleResultVar =
-            Var ("tupleResult", typeof<'TTuple>)
+            let tupleResultVarDef =
+                Var ("tupleResult", typeof<'TTuple>)
 
-        let tupleResultVarExpr =
-            Expr.Var tupleResultVar
+            let tupleResultVar =
+                Expr.Var tupleResultVarDef
 
-        let underlyingExpr: Expr<string array -> Result<'TTuple, string>> =
-            <@
-                fun (rowArray: string array) ->
-                    if rowArray.Length = %%reqdArrayLenVarExpr then
-                        Ok %%tupleResultVarExpr
-                    else
-                        Error "Incorrect array length."
-            @>
+            let underlyingExpr: Expr<string array -> Result<'TTuple, string>> =
+                <@
+                    fun (rowArray: string array) ->
+                        if rowArray.Length = %%reqdArrayLenVar then
+                            Ok %%tupleResultVar
+                        else
+                            Error "Incorrect array length."
+                @>
 
-        // Extract the row array variable created within the above quotation.
-        let rowArrayVar =
-            match underlyingExpr with
-            | Patterns.Lambda (v, _) -> v
-            | _ -> failwith "Unexpected pattern."
+            // Extract the row array variable created within the above quotation.
+            let rowArrayVar =
+                match underlyingExpr with
+                | Patterns.Lambda (v, _) -> v
+                | _ -> failwith "Unexpected pattern."
 
-        let rowArrayVarExpr =
-            Expr.Var rowArrayVar
+            let rowArrayVarExpr =
+                Expr.Var rowArrayVar
 
-        // Expressions representing the value for each tuple element.
-        let tupleElementExprs =
-            sourceIdxs
-            |> List.map (getArray rowArrayVarExpr)
+            // Expressions representing the value for each tuple element.
+            let tupleElementExprs =
+                sourceIdxs
+                |> List.map (getArray rowArrayVarExpr)
 
-        // This was previously tried using the Expr.Substitute instance method.
-        // It was failing due to compilation complaining about the 'rowArray' variable
-        // not being found! Very bizarre.
-        // Instead, used a more 'raw' approach to accomplish this.
-        let rec varMapper = function
-            | Patterns.Var v when v = reqdArrayLenVar ->
-                Expr.Value arrayLength
-            | Patterns.Var v when v = tupleResultVar ->
-                Expr.NewTuple tupleElementExprs
-            | ExprShape.ShapeLambda (var, expr) ->
-                Expr.Lambda (var, varMapper expr)
-            | ExprShape.ShapeCombination (shape, exprs) ->
-                ExprShape.RebuildShapeCombination (shape, exprs |> List.map varMapper)
-            | expr ->
-                expr
+            // This was previously tried using the Expr.Substitute instance method.
+            // It was failing due to compilation complaining about the 'rowArray' variable
+            // not being found! Very bizarre.
+            // Instead, used a more 'raw' approach to accomplish this.
+            let rec varMapper = function
+                | Patterns.Var v when v = reqdArrayLenVarDef ->
+                    Expr.Value arrayLength
+                | Patterns.Var v when v = tupleResultVarDef ->
+                    Expr.NewTuple tupleElementExprs
+                | ExprShape.ShapeLambda (var, expr) ->
+                    Expr.Lambda (var, varMapper expr)
+                | ExprShape.ShapeCombination (shape, exprs) ->
+                    ExprShape.RebuildShapeCombination (shape, exprs |> List.map varMapper)
+                | expr ->
+                    expr
 
-        let instantiatorExpr =
-            varMapper underlyingExpr
+            let instantiatorExpr =
+                varMapper underlyingExpr
 
-        LeafExpressionConverter.EvaluateQuotation instantiatorExpr
-        :?> (string array -> Result<'TTuple, string>)
+            let compiledInstantiator =
+                LeafExpressionConverter.EvaluateQuotation instantiatorExpr
+
+            downcast compiledInstantiator
 
 
 // The closest we can get to a static class without using a module.

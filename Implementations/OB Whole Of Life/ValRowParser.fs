@@ -8,6 +8,7 @@ module ValRowParser =
     open FsToolkit.ErrorHandling
 
     open AnalysisOfChangeEngine.Common
+    open AnalysisOfChangeEngine.Implementations.Common
     open AnalysisOfChangeEngine.TypeProviders
 
 
@@ -15,7 +16,8 @@ module ValRowParser =
     type private ValRow = SplitRowType<
         RequiredColumns="""
             POLICY_NUMBER,
-            TABLE_NUMBER,
+            TABLE_NUMBER->TABLE_CODE,
+            SUM_ASSURED,
             START_DATE,
             NPDD,
             LPTERM->LIMITED_PAYMENT_TERM,
@@ -67,7 +69,7 @@ module ValRowParser =
     let private (|ReTableNumber|_|) =
         (|ReMatch|_|) "^([0-9]{3})([A-Z]?)$"
 
-    let private splitTableNumber = function
+    let private splitTableCode = function
         | ReTableNumber (tableNumber, _) ->
             Ok tableNumber
         | tableNumber ->
@@ -98,9 +100,13 @@ module ValRowParser =
                 parseFlexibleDateOnly row.START_DATE
                 |> Result.mapError (sprintf "Unable to parse start date '%s'")
 
-            and! tableNumber =
-                splitTableNumber row.TABLE_NUMBER
-                |> Result.mapError (sprintf "Unable to parse table number '%s'")
+            and! tableCode =
+                splitTableCode row.TABLE_CODE
+                |> Result.mapError (sprintf "Unable to parse table code '%s'")
+
+            and! sumAssured =
+                Result.parseReal row.SUM_ASSURED
+                |> Result.mapError (sprintf "Unable to parse sum assured '%s'")
 
             and! npdd =
                 parseOptionalFlexibleDateOnly row.NPDD
@@ -149,16 +155,20 @@ module ValRowParser =
                     do notifyChange {
                         Field = "Next Premium Due Date"
                         From = "NULL"
-                        To = runContext.RunDate.ToShortDateString()
+                        To = runContext.ClosingRunDate.ToShortDateString()
                         Reason = "Missing NPDD; using run date as policy is PP"
                     }
 
-                    runContext.RunDate
+                    runContext.ClosingRunDate
 
                 // If missing and paid-up, assume a fixed number of years are the DOE.
                 | PolicyStatus.PaidUp, None ->
                     let newNpdd =
-                        entryDate.AddYears 20
+                        DateOnly.Min(
+                            entryDate.AddYears config.``Assumed premium paying term if PUP and missing NPDD``,
+                            // However, we cannot exceed the closing run date!
+                            runContext.ClosingRunDate
+                        )                       
 
                     do notifyChange {
                         Field = "Next Premium Due Date"
@@ -228,12 +238,13 @@ module ValRowParser =
 
             return {
                 PolicyNumber = row.POLICY_NUMBER
+                TableCode = tableCode
+                SumAssured = sumAssured
                 EntryDate = entryDate
                 NextPremiumDueDate = npdd
                 PolicyStatus = policyStatus
                 LivesBasis = livesBasis
                 PaymentTerm = limitedPaymentTerm
-                IsTaxable = taxableTableNumbers.Contains tableNumber
             }
         }
 

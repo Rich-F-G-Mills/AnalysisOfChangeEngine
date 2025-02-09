@@ -6,10 +6,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Common\PolicyRecord.fs" />
+    <Compile Include="Common\PxApi.fs" />
+    <Compile Include="Common\RowParser.fs" />
     <Compile Include="Common\StepTemplates.fs" />
     <Compile Include="OB Whole Of Life\PolicyRecord.fs" />
     <Compile Include="OB Whole Of Life\ValRowParser.fs" />
-    <Compile Include="OB Whole Of Life\Steps.fs" />
+    <Compile Include="OB Whole Of Life\PxApi.fs" />
+    <Compile Include="OB Whole Of Life\Walk.fs" />
   </ItemGroup>
 
   <ItemGroup>

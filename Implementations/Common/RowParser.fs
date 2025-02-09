@@ -1,5 +1,5 @@
 ﻿
-namespace AnalysisOfChangeEngine.Common
+namespace AnalysisOfChangeEngine.Implementations.Common
 
 
 [<RequireQualifiedAccess>]
@@ -7,6 +7,8 @@ module RowParser =
 
     open System.Collections.Generic
     open FsToolkit.ErrorHandling
+
+    open AnalysisOfChangeEngine.Common
     
 
     let createRowParser<'TSplitRow, 'TPolicyRecord>
