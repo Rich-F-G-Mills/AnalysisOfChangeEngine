@@ -41,19 +41,38 @@ module rec Types =
             Reason: string
         }
 
-
     type IPolicyRecord =
         interface
             abstract member ID: string with get
         end
 
-    // DD - Arguable this could be an interface. However, we're not intending for
-    // anything to inherit this, so a record suits our uses fine.
-    type ApiRequestConstructor<'TPolicyRecord, 'TResponse when 'TPolicyRecord :> IPolicyRecord> =
-        {
-            Name: string
-            Constructor: Map<string, PropertyInfo> -> 'TPolicyRecord -> Result<Map<string, obj>, string>
-        }
+
+    type ApiRequest<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+        Map<string, PropertyInfo> -> 'TPolicyRecord -> Result<Map<string, obj>, string>
+
+    type IUnwrappableApiRequest<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+        interface
+            abstract Name: string
+            abstract Requestor: ApiRequest<'TPolicyRecord>
+        end
+
+    // DD - Arguably this could be an interface. However, we're not intending for
+    // anything to inherit this, so a record suits our purposes fine. Furthermore,
+    // we need to pass in the response type in order for intellisense to work
+    // when users are creating the source specifications.
+    [<NoEquality; NoComparison>]
+    type WrappedApiRequest<'TPolicyRecord, 'TResponse when 'TPolicyRecord :> IPolicyRecord> =
+        | WrappedApiRequest of string * ApiRequest<'TPolicyRecord>
+
+        interface IUnwrappableApiRequest<'TPolicyRecord> with
+            member this.Name =
+                match this with
+                | WrappedApiRequest (name, _) -> name
+
+            member this.Requestor =
+                match this with
+                | WrappedApiRequest (_, requestor) -> requestor
+            
 
     type ILogger =
         interface
@@ -74,21 +93,22 @@ module rec Types =
     type SourceAction<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> private () =
         /// Request specific output from the referenced API.
         abstract member apiCall<'TResponse, 'T>
-            : apiRequest: ApiRequestConstructor<'TPolicyRecord, 'TResponse> * selector: ('TResponse -> 'T) -> 'T
+            : apiRequest: WrappedApiRequest<'TPolicyRecord, 'TResponse> * selector: ('TResponse -> 'T) -> 'T
 
         /// Permits fields to be calculated using other fields within the step output.
         abstract member calculation<'T>
             : definition: ('TStepResults -> 'T) -> 'T
 
-        /// Will re-apply the definition of this field from the immediately prior step.
-        // DD - Must be deferred as can't have generic property.
-        abstract member priorDefinition<'T>
-            : unit -> 'T
 
     type SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
         // DD - If we supply 'from' and 'apis' as tupled arguments, the resulting quotation
         // is more cumbersome to process. Using curried form makes them easier to identify.
-        Expr<SourceAction<'TPolicyRecord, 'TStepResults> -> 'TApiCollection -> 'TStepResults>
+        Expr<SourceAction<'TPolicyRecord, 'TStepResults> -> 'TApiCollection -> 'TStepResults -> 'TStepResults>
+
+    module SourceDefinition =
+        let castExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> expr
+            : SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
+                Expr.Cast<_> expr
 
 
     // The only items available for validation will be the record itself and the corresponding results.

@@ -6,7 +6,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Common\CsvReader.fs" />
+    <Compile Include="WalkParser.fs" />
+    <Compile Include="CsvReader.fs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -13,6 +13,7 @@ module Runner =
     open AnalysisOfChangeEngine.Common
     open AnalysisOfChangeEngine.Implementations
     open AnalysisOfChangeEngine.Implementations.Common
+    open AnalysisOfChangeEngine.Controller
 
 
     let logger =
@@ -52,7 +53,13 @@ module Runner =
             let! walk =
                 OBWholeOfLife.Walk.create (logger, runContext, walkConfig)
                 
-            do printfn "%A" walk.openingRegression.Source
+            do printfn "\n\n\n%A" walk.openingRegression.Source
+
+            do printfn "\n\n\n%A" walk.aocOpeningConsistencyCheck.Source
+
+            do printfn "\n\n\n%A" walk.restatedOpeningReturns.Source
+
+            do printfn "\n\n\n%A" (WalkParser.flattenSourceDefinition walk.openingRegression.Source)
 
             return 0
         }

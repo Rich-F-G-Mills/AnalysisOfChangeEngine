@@ -32,8 +32,8 @@ type WalkConfiguration =
 [<NoEquality; NoComparison>]
 type ApiCollection =
     {
-        px_OpeningRegression        : ApiRequestConstructor<PolicyRecord, PxApi.OutputAttributes>
-        px_PostOpeningRegression    : ApiRequestConstructor<PolicyRecord, PxApi.OutputAttributes>
+        px_OpeningRegression        : WrappedApiRequest<PolicyRecord, PxApi.OutputAttributes>
+        px_PostOpeningRegression    : WrappedApiRequest<PolicyRecord, PxApi.OutputAttributes>
     }
 
 
@@ -125,14 +125,14 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
     // --- API CALLS ---
 
     member val px_OpeningRegression
-        : ApiRequestConstructor<_, PxApi.OutputAttributes> =
+        : WrappedApiRequest<_, PxApi.OutputAttributes> =
             PxApi.createOpeningDispatcher<PolicyRecord> {
                 OpeningRunDate =
                     runContext.OpeningRunDate
             }
 
     member val px_PostOpeningRegression
-        : ApiRequestConstructor<_, PxApi.OutputAttributes> =
+        : WrappedApiRequest<_, PxApi.OutputAttributes> =
             PxApi.createPostOpeningDispatcher<PolicyRecord> {
                 OpeningRunDate =
                     runContext.OpeningRunDate
@@ -153,24 +153,24 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
     override val openingRegression =
         StepTemplates.openingRegression {
             Source =
-                <@ fun from apis ->
+                <@ fun from api _ ->
                     {                    
                         UnsmoothedAssetShare =
-                            from.apiCall (apis.px_OpeningRegression, _.UnsmoothedAssetShare)
+                            from.apiCall (api.px_OpeningRegression, _.UnsmoothedAssetShare)
                         SmoothedAssetShare =
-                            from.apiCall (apis.px_OpeningRegression, _.SmoothedAssetShare)
+                            from.apiCall (api.px_OpeningRegression, _.SmoothedAssetShare)
                         GuaranteedDeathBenefit =
-                            from.apiCall (apis.px_OpeningRegression, _.GuaranteedDeathBenefit)
+                            from.apiCall (api.px_OpeningRegression, _.GuaranteedDeathBenefit)
                         ExitBonusRate =
-                            from.apiCall (apis.px_OpeningRegression, _.ExitBonusRate)
+                            from.apiCall (api.px_OpeningRegression, _.ExitBonusRate)
                         UnpaidPremiums =
-                            from.apiCall (apis.px_OpeningRegression, _.UnpaidPremiums)
+                            from.apiCall (api.px_OpeningRegression, _.UnpaidPremiums)
                         SurrenderValue =
-                            from.apiCall (apis.px_OpeningRegression, _.CashSurrenderValue)
+                            from.apiCall (api.px_OpeningRegression, _.CashSurrenderValue)
                         DeathUpliftFactor =
-                            from.apiCall (apis.px_OpeningRegression, _.DeathUpliftFactor)
+                            from.apiCall (api.px_OpeningRegression, _.DeathUpliftFactor)
                         DeathBenefit =
-                            from.apiCall (apis.px_OpeningRegression, _.DeathBenefit)
+                            from.apiCall (api.px_OpeningRegression, _.DeathBenefit)
                     }
                 @>
 
@@ -198,30 +198,24 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         this.registerInteriorStep(        
             StepTemplates.aocOpeningConsistencyCheck {
                 Source =
-                    <@ fun from apis ->
-                        {                    
-                            UnsmoothedAssetShare =
-                                from.apiCall (apis.px_OpeningRegression, _.Step0_Opening_UAS)
-                            SmoothedAssetShare =
-                                from.apiCall (apis.px_OpeningRegression, _.Step0_Opening_SAS)
-                            GuaranteedDeathBenefit =
-                                from.priorDefinition ()
-                            ExitBonusRate =
-                                from.priorDefinition ()
-                            UnpaidPremiums =
-                                from.priorDefinition ()
-                            SurrenderValue =
-                                from.calculation (fun x ->
-                                    x.SmoothedAssetShare * (1.0 + x.ExitBonusRate) - x.UnpaidPremiums)
-                            DeathUpliftFactor =
-                                from.priorDefinition ()
-                            DeathBenefit =
-                                from.calculation (fun step ->
-                                    Math.Max(
-                                        step.SmoothedAssetShare * step.DeathUpliftFactor * (1.0 + step.ExitBonusRate),
-                                        step.GuaranteedDeathBenefit
-                                    ) - step.UnpaidPremiums)
-                        } @>
+                    <@ fun from api prior ->
+                        {
+                            prior with
+                                UnsmoothedAssetShare =
+                                    from.apiCall (api.px_OpeningRegression, _.Step0_Opening_UAS)
+                                SmoothedAssetShare =
+                                    from.apiCall (api.px_OpeningRegression, _.Step0_Opening_SAS)
+                                SurrenderValue =
+                                    from.calculation (fun x ->
+                                        x.SmoothedAssetShare * (1.0 + x.ExitBonusRate) - x.UnpaidPremiums)
+                                DeathBenefit =
+                                    from.calculation (fun step ->
+                                        Math.Max(
+                                            step.SmoothedAssetShare * step.DeathUpliftFactor * (1.0 + step.ExitBonusRate),
+                                            step.GuaranteedDeathBenefit
+                                        ) - step.UnpaidPremiums)
+                        }
+                    @>
 
                 Validator =
                     noValidator
@@ -245,24 +239,13 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         this.registerInteriorStep(
             StepTemplates.restatedOpeningReturns {
                 Source =
-                    <@ fun from apis ->
+                    <@ fun from api prior ->
                         {
-                            UnsmoothedAssetShare =
-                                from.apiCall (apis.px_PostOpeningRegression, _.Step2_RestatedActuals_UAS)
-                            SmoothedAssetShare =
-                                from.apiCall (apis.px_PostOpeningRegression, _.Step2_RestatedActuals_SAS)
-                            GuaranteedDeathBenefit =
-                                from.priorDefinition ()
-                            ExitBonusRate =
-                                from.priorDefinition ()
-                            UnpaidPremiums =
-                                from.priorDefinition ()
-                            SurrenderValue =
-                                from.priorDefinition ()
-                            DeathUpliftFactor =
-                                from.priorDefinition ()
-                            DeathBenefit =
-                                from.priorDefinition ()
+                            prior with
+                                UnsmoothedAssetShare =
+                                    from.apiCall (api.px_PostOpeningRegression, _.Step2_RestatedActuals_UAS)
+                                SmoothedAssetShare =
+                                    from.apiCall (api.px_PostOpeningRegression, _.Step2_RestatedActuals_SAS)
                         } @>
                 Validator =
                     noValidator
@@ -273,24 +256,13 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         this.registerInteriorStep(
             StepTemplates.restatedOpeningDeductions {
                 Source =
-                    <@ fun from apis ->
+                    <@ fun from api prior ->
                         {
-                            UnsmoothedAssetShare =
-                                from.apiCall (apis.px_PostOpeningRegression, _.Step3_RestatedDeductions_UAS)
-                            SmoothedAssetShare =
-                                from.apiCall (apis.px_PostOpeningRegression, _.Step3_RestatedDeductions_SAS)
-                            GuaranteedDeathBenefit =
-                                from.priorDefinition ()
-                            ExitBonusRate =
-                                from.priorDefinition ()
-                            UnpaidPremiums =
-                                from.priorDefinition ()
-                            SurrenderValue =
-                                from.priorDefinition ()
-                            DeathUpliftFactor =
-                                from.priorDefinition ()
-                            DeathBenefit =
-                                from.priorDefinition ()
+                            prior with
+                                UnsmoothedAssetShare =
+                                    from.apiCall (api.px_PostOpeningRegression, _.Step3_RestatedDeductions_UAS)
+                                SmoothedAssetShare =
+                                    from.apiCall (api.px_PostOpeningRegression, _.Step3_RestatedDeductions_SAS)
                         } @>
                 Validator =
                     noValidator
