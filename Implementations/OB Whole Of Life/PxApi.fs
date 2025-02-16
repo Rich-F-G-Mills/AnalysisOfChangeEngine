@@ -3,7 +3,7 @@ namespace AnalysisOfChangeEngine.Implementations.OBWholeOfLife
 
 open System
 
-open AnalysisOfChangeEngine.Common
+open AnalysisOfChangeEngine
 
 
 [<RequireQualifiedAccess>]

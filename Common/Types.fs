@@ -1,9 +1,9 @@
 ﻿
-namespace AnalysisOfChangeEngine.Common
+namespace AnalysisOfChangeEngine
 
 
 [<AutoOpen>]
-module rec Types =
+module Types =
 
     open System
     open System.Collections.Generic
@@ -13,13 +13,15 @@ module rec Types =
 
     type PolicyID = string
     type Reason = string
-    type CleansingChanges = CleansingChange list
+
+    type IPolicyRecord =
+        interface
+            abstract member ID: PolicyID with get
+        end
 
     type ValidatedPolicyRecord<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
         | ValidatedPolicyRecord of 'TPolicyRecord
 
-    type ParseOutcome<'T> =
-        Result<'T * CleansingChanges, PolicyID option * Reason>
 
     [<NoEquality; NoComparison>]
     type RunContext =
@@ -41,10 +43,11 @@ module rec Types =
             Reason: string
         }
 
-    type IPolicyRecord =
-        interface
-            abstract member ID: string with get
-        end
+    type CleansingChanges =
+        CleansingChange list
+
+    type ParseOutcome<'T> =
+        Result<'T * CleansingChanges, PolicyID option * Reason>
 
 
     type ApiRequest<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
@@ -92,6 +95,8 @@ module rec Types =
     [<AbstractClass>]
     type SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> private () =
         /// Request specific output from the referenced API.
+        // DD - Could have used curried call rather than tupled; however, deciphering it
+        // from the resulting call from code quotation is a lot more complicated.
         abstract member apiCall<'TResponse, 'T>
             : apiRequest: ('TApiCollection -> WrappedApiRequest<'TPolicyRecord, 'TResponse>) * selector: ('TResponse -> 'T) -> 'T
 
@@ -150,8 +155,8 @@ module rec Types =
 
     type IStepHeader =
         interface
-            abstract member Title: string with get
-            abstract member Description: string with get
+            abstract member Title       : string with get
+            abstract member Description : string with get
         end
 
 
@@ -160,9 +165,9 @@ module rec Types =
     [<NoEquality; NoComparison>]
     type OpeningStep<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         {
-            Title: string
-            Description: string
-            Validator: OpeningStepValidator<'TPolicyRecord, 'TStepResults>
+            Title           : string
+            Description     : string
+            Validator       : OpeningStepValidator<'TPolicyRecord, 'TStepResults>
         }
 
         interface IStepHeader with
@@ -175,10 +180,10 @@ module rec Types =
     [<NoEquality; NoComparison>]
     type RegressionStep<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
         {
-            Title: string
-            Description: string
-            Source: SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-            Validator: RegressionValidator<'TPolicyRecord, 'TStepResults>
+            Title           : string
+            Description     : string
+            Source          : SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+            Validator       : RegressionValidator<'TPolicyRecord, 'TStepResults>
         }
 
         interface IStepHeader with
@@ -190,10 +195,10 @@ module rec Types =
     [<NoEquality; NoComparison>]
     type DataChangeStep<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         {
-            Title: string
-            Description: string
-            DataChanger: PolicyRecordChanger<'TPolicyRecord>
-            Validator: DataChangeValidator<'TPolicyRecord, 'TStepResults>
+            Title           : string
+            Description     : string
+            DataChanger     : PolicyRecordChanger<'TPolicyRecord>
+            Validator       : DataChangeValidator<'TPolicyRecord, 'TStepResults>
         }
 
         interface IStepHeader with
@@ -204,10 +209,10 @@ module rec Types =
     [<NoEquality; NoComparison>]
     type ParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
         {
-            Title: string
-            Description: string
-            Source: SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-            Validator: ParameterChangeValidator<'TPolicyRecord, 'TStepResults>
+            Title           : string
+            Description     : string
+            Source          : SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+            Validator       : ParameterChangeValidator<'TPolicyRecord, 'TStepResults>
         }
 
         interface IStepHeader with
@@ -218,45 +223,25 @@ module rec Types =
     [<NoEquality; NoComparison>]
     type RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         {
-            Title: string
-            Description: string
+            Title           : string
+            Description     : string
         }
 
         interface IStepHeader with
             member this.Title = this.Title
             member this.Description = this.Description 
 
-    [<RequireQualifiedAccess; NoEquality; NoComparison>]
-    type InteriorStep<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
-        | Regression of Step: RegressionStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-        | DataChange of Step: DataChangeStep<'TPolicyRecord, 'TStepResults>
-        | ParameterChange of Step: ParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>     
-
-        interface IStepHeader with
-            member this.Title =
-                match this with
-                | Regression { Title = title }
-                | DataChange { Title = title }
-                | ParameterChange { Title = title } ->
-                    title
-
-            member this.Description =
-                match this with
-                | Regression { Description = description }
-                | DataChange { Description = description }
-                | ParameterChange { Description = description } ->
-                    description
 
     // This a catch-all to ensure that there are no outstanding changes in order
     // to reach the closing data. Given we're only changing the underlying policy
     // data, no change in underlying API expected and validator signature matches
     // this reasoning.
     [<NoEquality; NoComparison>]
-    type MoveToClosingExistingDataStep<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
+    type ClosingExistingDataStep<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         {
-            Title: string
-            Description: string
-            Validator: DataChangeValidator<'TPolicyRecord, 'TStepResults>
+            Title           : string
+            Description     : string
+            Validator       : DataChangeValidator<'TPolicyRecord, 'TStepResults>
         }
 
         interface IStepHeader with
@@ -269,9 +254,9 @@ module rec Types =
     [<NoEquality; NoComparison>]
     type AddNewRecordsStep<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         {
-            Title: string
-            Description: string
-            Validator: AddNewRecordsValidator<'TPolicyRecord, 'TStepResults>
+            Title           : string
+            Description     : string
+            Validator       : AddNewRecordsValidator<'TPolicyRecord, 'TStepResults>
         }
 
         interface IStepHeader with
@@ -284,7 +269,7 @@ module rec Types =
         (logger: ILogger) =
 
             let _interiorSteps =
-                new List<InteriorStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>> ()
+                new List<IStepHeader> ()
 
 
             // --- REQUIRED STEPS ---
@@ -302,7 +287,7 @@ module rec Types =
             // --- FURTHER REQUIRED STEPS ---
 
             abstract member moveToClosingExistingData :
-                MoveToClosingExistingDataStep<'TPolicyRecord, 'TStepResults> with get
+                ClosingExistingDataStep<'TPolicyRecord, 'TStepResults> with get
 
             abstract member addNewRecords :
                 AddNewRecordsStep<'TPolicyRecord, 'TStepResults> with get
@@ -310,23 +295,20 @@ module rec Types =
 
             // --- INTERIOR STEP REGISTRATION ---
 
-            member private _.registerInteriorStep (step: InteriorStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
-                let stepHeader =
-                    step :> IStepHeader
+            member private _._registerInteriorStep (step: IStepHeader) =
 
-                do logger.LogDebug (sprintf "Registering interior step '%s'." stepHeader.Title)
+                do logger.LogDebug (sprintf "Registering interior step '%s'." step.Title)
                 do _interiorSteps.Add step
 
-            // Via multiple dispatch we can control the types of interior steps
-            // we're expecting.
+            // DD - Using multiple dispatch we can control the types of interior steps we're expecting.
             member this.registerInteriorStep (step: RegressionStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
-                do this.registerInteriorStep (InteriorStep.Regression step)
+                do this._registerInteriorStep step
                 step
 
             member this.registerInteriorStep (step: DataChangeStep<'TPolicyRecord, 'TStepResults>) =
-                do this.registerInteriorStep (InteriorStep.DataChange step)
+                do this._registerInteriorStep step
                 step
 
             member this.registerInteriorStep (step: ParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
-                do this.registerInteriorStep (InteriorStep.ParameterChange step)
+                do this._registerInteriorStep step
                 step

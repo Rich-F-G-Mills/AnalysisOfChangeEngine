@@ -3,8 +3,8 @@ namespace AnalysisOfChangeEngine.Implementations.OBWholeOfLife
 
 open System
 open FsToolkit.ErrorHandling
-open AnalysisOfChangeEngine.Common
-open AnalysisOfChangeEngine.Implementations.Common
+open AnalysisOfChangeEngine
+open AnalysisOfChangeEngine.Implementations
 
 
 // Retain the compiler generated structural equality as used later.
@@ -156,7 +156,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
                 <@ fun from _ ->
                     {                    
                         UnsmoothedAssetShare =
-                            from.apiCall (_.px_OpeningRegression , _.UnsmoothedAssetShare)
+                            from.apiCall (_.px_OpeningRegression, _.UnsmoothedAssetShare)
                         SmoothedAssetShare =
                             from.apiCall (_.px_OpeningRegression, _.SmoothedAssetShare)
                         GuaranteedDeathBenefit =

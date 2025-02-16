@@ -2,17 +2,20 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>	  
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="WalkParser.fs" />
-    <Compile Include="CsvReader.fs" />
+    <Compile Include="DataStore.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FsToolkit.ErrorHandling" Version="4.18.0" />
+    <PackageReference Include="Npgsql.FSharp" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Controller.Common\Controller.Common.fsproj" />
-    <ProjectReference Include="..\Implementations\Implementations.fsproj" />
   </ItemGroup>
 
 </Project>

@@ -7,8 +7,8 @@ module ValRowParser =
 
     open FsToolkit.ErrorHandling
 
-    open AnalysisOfChangeEngine.Common
-    open AnalysisOfChangeEngine.Implementations.Common
+    open AnalysisOfChangeEngine
+    open AnalysisOfChangeEngine.Implementations
     open AnalysisOfChangeEngine.TypeProviders
 
 

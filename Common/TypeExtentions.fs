@@ -1,5 +1,5 @@
 ﻿
-namespace AnalysisOfChangeEngine.Common
+namespace AnalysisOfChangeEngine
 
 [<AutoOpen>]
 module TypeExtensions =

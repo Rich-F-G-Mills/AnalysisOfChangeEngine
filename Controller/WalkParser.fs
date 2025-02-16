@@ -7,7 +7,7 @@ module WalkParser =
 
     open System.Reflection
     open FSharp.Quotations
-    open AnalysisOfChangeEngine.Common
+    open AnalysisOfChangeEngine
 
 
     [<RequireQualifiedAccess>]

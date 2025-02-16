@@ -4,16 +4,12 @@ namespace AnalysisOfChangeEngine
 
 module Runner =
 
-    open System
-    open System.IO
-    open System.Text
-    open Microsoft.VisualBasic.FileIO
     open FsToolkit.ErrorHandling
-
-    open AnalysisOfChangeEngine.Common
-    open AnalysisOfChangeEngine.Implementations
-    open AnalysisOfChangeEngine.Implementations.Common
+    open Npgsql
+    open Npgsql.FSharp
+    open AnalysisOfChangeEngine
     open AnalysisOfChangeEngine.Controller
+    open AnalysisOfChangeEngine.Controller.DataStore
 
 
     let logger =
@@ -36,30 +32,30 @@ module Runner =
     [<EntryPoint>]
     let main _ =
         result {
-            let walkConfig: OBWholeOfLife.WalkConfiguration =
-                {
-                    X = 0
-                }
+            let sessionContext: SessionContext =
+                { UserName = "RICH" }
 
-            let runContext =
-                {
-                    OpeningRunDate =
-                        DateOnly.FromDateTime DateTime.Now
+            let connStr =
+                Sql.host "localhost"
+                |> Sql.port 5432
+                |> Sql.database "analysis_of_change"
+                |> Sql.username "postgres"
+                |> Sql.password "internet"
+                |> Sql.formatConnectionString
 
-                    ClosingRunDate =
-                        DateOnly.FromDateTime DateTime.Now
-                }
+            use connection =
+                new NpgsqlConnection (connStr)
 
-            let! walk =
-                OBWholeOfLife.Walk.create (logger, runContext, walkConfig)
-                
-            do printfn "\n\n\n%A" walk.openingRegression.Source
+            let dataStore =
+                new PostgresDataStore (sessionContext, connection)
 
-            do printfn "\n\n\n%A" walk.aocOpeningConsistencyCheck.Source
+            //let newProduct =
+            //    dataStore.CreateProduct ("OB Whole-Life", "LVFS CWP OB Whole-Life")
 
-            do printfn "\n\n\n%A" walk.restatedOpeningReturns.Source
+            let products =
+                dataStore.GetAllProducts ()
 
-            do printfn "\n\n\n%A" (WalkParser.flattenSourceDefinition walk.openingRegression.Source)
+            do printfn "%A" products
 
             return 0
         }

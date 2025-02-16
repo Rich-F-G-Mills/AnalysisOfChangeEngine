@@ -7,12 +7,10 @@
 
   <ItemGroup>
     <Compile Include="Program.fs" />
-    <None Include="POLICY_DATA.csv">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Controller.DataStore.Postgres\Controller.DataStore.Postgres.fsproj" />
     <ProjectReference Include="..\Controller\Controller.fsproj" />
   </ItemGroup>
 
