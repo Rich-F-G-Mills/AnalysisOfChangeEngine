@@ -13,8 +13,6 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Runner", "Runner\Runner.fsp
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Common", "Common\Common.fsproj", "{55DC3B80-F05D-4FCB-9ECC-D956BE8C2B03}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Sandbox", "Sandbox\Sandbox.fsproj", "{FA6974D0-FF0F-4F4E-92EA-BC50B5A9B988}"
-EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Controller.DataStore.Postgres", "Controller.DataStore.Postgres\Controller.DataStore.Postgres.fsproj", "{4782845B-7866-48DA-B5A0-810B1D41D336}"
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Controller.Common", "Controller.Common\Controller.Common.fsproj", "{5E6D1267-8DA3-4BF6-B20C-0770FFA48870}"
@@ -45,10 +43,6 @@ Global
 		{55DC3B80-F05D-4FCB-9ECC-D956BE8C2B03}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{55DC3B80-F05D-4FCB-9ECC-D956BE8C2B03}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{55DC3B80-F05D-4FCB-9ECC-D956BE8C2B03}.Release|Any CPU.Build.0 = Release|Any CPU
-		{FA6974D0-FF0F-4F4E-92EA-BC50B5A9B988}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{FA6974D0-FF0F-4F4E-92EA-BC50B5A9B988}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{FA6974D0-FF0F-4F4E-92EA-BC50B5A9B988}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{FA6974D0-FF0F-4F4E-92EA-BC50B5A9B988}.Release|Any CPU.Build.0 = Release|Any CPU
 		{4782845B-7866-48DA-B5A0-810B1D41D336}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{4782845B-7866-48DA-B5A0-810B1D41D336}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4782845B-7866-48DA-B5A0-810B1D41D336}.Release|Any CPU.ActiveCfg = Release|Any CPU

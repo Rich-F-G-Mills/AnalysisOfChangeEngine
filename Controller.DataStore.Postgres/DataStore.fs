@@ -4,9 +4,17 @@ namespace AnalysisOfChangeEngine.Controller.DataStore
 
 open System
 open FsToolkit.ErrorHandling
+open FSharp.Data.Sql
 open Npgsql
 open Npgsql.FSharp
 open AnalysisOfChangeEngine.Controller
+
+
+type DbSchema =
+    SqlDataProvider<
+        DatabaseVendor=Common.DatabaseProviderTypes.POSTGRESQL,
+        ConnectionString="Host=localhost;Port=5432;Database=analysis_of_change;Username=postgres;Password=internet",
+        UseOptionTypes=Common.NullableColumnType.OPTION>
 
 
 [<NoEquality; NoComparison>]
@@ -18,7 +26,6 @@ type Product =
         CreatedBy                   : string
         CreatedWhen                 : DateTime
     }
-
 
 [<NoEquality; NoComparison>]
 type RunHeader =
@@ -32,71 +39,74 @@ type RunHeader =
         ClosingRunDate              : DateOnly
         ProductUid                  : Guid
         PolicyDataTableOid          : uint32
-        PolicyDataTableName         : string
         PolicyDataExtractionUid     : Guid        
     }
 
 
 type PostgresDataStore (sessionContext: SessionContext, connection: NpgsqlConnection) =
 
+    let dbContext =
+        DbSchema.GetDataContext (connection.ConnectionString)
+
     static let [<Literal>] productSql =
         "SELECT * FROM products"
 
     static let [<Literal>] runHeaderSql =
-        "SELECT *, pgc.relname
+        "SELECT pgc.relname
          FROM run_headers AS rh
          LEFT JOIN pg_catalog.pg_class AS pgc
          ON pgc.oid = rh.policy_data_oid"
 
-    static let parseProductRow (r: RowReader) =
+    static let parseProductRow (row: DbSchema.dataContext.``public.productsEntity``) =
         {
-            Uid = r.uuid "uid"
-            Name = r.text "name"
-            Description = r.text "description"
-            CreatedBy = r.text "created_by"
-            CreatedWhen = r.dateTime "created_when"
+            Uid = row.Uid
+            Name = row.Name
+            Description = row.Description
+            CreatedBy = row.CreatedBy
+            CreatedWhen = row.CreatedWhen
         }
 
-    static let parseRunHeader (r: RowReader) =
+    static let parseRunHeaderRow (row: DbSchema.dataContext.``public.run_headersEntity``) =
         {
-            Uid = r.uuid "uid"
-            Title = r.text "title"
-            Comments = r.textOrNone "comments"
-            CreatedBy = r.text "created_by"
-            CreatedWhen = r.dateTime "created_when"
-            OpeningRunUid = r.uuidOrNone "opening_run_uid"
-            ClosingRunDate = r.dateOnly "closing_run_date"
-            ProductUid = r.uuid "product_uid"
-            PolicyDataTableOid = BitConverter.ToUInt32 (r.bytea "policy_data_oid")
-            PolicyDataTableName = r.text "policy_data_table_name"
-            PolicyDataExtractionUid = r.uuid "policy_data_extraction_uid"
+            Uid = row.Uid
+            Title = row.Title
+            Comments = row.Comments
+            ProductUid = row.ProductUid
+            CreatedBy = row.CreatedBy
+            CreatedWhen = row.CreatedWhen
+            OpeningRunUid = row.OpeningRunUid
+            ClosingRunDate = DateOnly.FromDateTime row.ClosingRunDate
+            PolicyDataTableOid = row.PolicyDataTableOid
+            PolicyDataExtractionUid = row.PolicyDataExtractionUid
         }
-
 
     member _.GetProduct (uid: Guid) =
-        connection
-        |> Sql.existingConnection
-        |> Sql.query (sprintf "%s WHERE uid = '%A'" productSql uid)
-        |> Sql.executeRow parseProductRow
+        query {
+            for product in dbContext.Public.Products do
+                where (product.Uid = uid)
+                select (product)
+        }
+        |> Seq.map parseProductRow
+        |> Seq.toList
 
     member _.GetAllProducts () =
-        connection
-        |> Sql.existingConnection
-        |> Sql.query productSql
-        |> Sql.execute parseProductRow
+        dbContext.Public.Products
+        |> Seq.map parseProductRow
+        |> Seq.toList
 
     member _.GetRunHeader (uid: Guid) =
-        connection
-        |> Sql.existingConnection
-        |> Sql.query (sprintf "%s WHERE uid = '%A'" runHeaderSql uid)
-        |> Sql.executeRow parseRunHeader
+        query {
+            for runHdr in dbContext.Public.RunHeaders do
+                where (runHdr.Uid = uid)
+                select runHdr
+        }
+        |> Seq.map parseRunHeaderRow
+        |> Seq.toList
 
     member _.GetAllRunHeaders () =
-        connection
-        |> Sql.existingConnection
-        |> Sql.query runHeaderSql
-        |> Sql.execute parseRunHeader
-
+        dbContext.Public.RunHeaders
+        |> Seq.map parseRunHeaderRow
+        |> Seq.toList
 
     member _.CreateProduct (name, description, ?uid) =
         let newProduct: Product =
@@ -110,9 +120,9 @@ type PostgresDataStore (sessionContext: SessionContext, connection: NpgsqlConnec
 
         connection
         |> Sql.existingConnection
-        |> Sql.query "INSERT INTO products (
-	        uid, name, description, created_by, created_when)
-            VALUES (@uid, @name, @description, @created_by, @created_when)"
+        |> Sql.query 
+            "INSERT INTO products (uid, name, description, created_by, created_when)
+             VALUES (@uid, @name, @description, @created_by, @created_when)"
         |> Sql.parameters
             [
                 "uid", SqlValue.Uuid newProduct.Uid
