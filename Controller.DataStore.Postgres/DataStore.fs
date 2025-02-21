@@ -10,54 +10,48 @@ open Npgsql.FSharp
 open AnalysisOfChangeEngine.Controller
 
 
-type DbSchema =
-    SqlDataProvider<
-        DatabaseVendor=Common.DatabaseProviderTypes.POSTGRESQL,
-        ConnectionString="Host=localhost;Port=5432;Database=analysis_of_change;Username=postgres;Password=internet",
-        UseOptionTypes=Common.NullableColumnType.OPTION>
+[<RequireQualifiedAccess>]
+module Postgres =
+
+    let [<Literal>] private resolutionPath =
+        @"C:\Users\Millch\Documents\AnalysisOfChangeEngine\Controller.DataStore.Postgres"
 
 
-[<NoEquality; NoComparison>]
-type Product =
-    {
-        Uid                         : Guid
-        Name                        : string
-        Description                 : string
-        CreatedBy                   : string
-        CreatedWhen                 : DateTime
-    }
-
-[<NoEquality; NoComparison>]
-type RunHeader =
-    {
-        Uid                         : Guid
-        Title                       : string
-        Comments                    : string option
-        CreatedBy                   : string
-        CreatedWhen                 : DateTime
-        OpeningRunUid               : Guid option
-        ClosingRunDate              : DateOnly
-        ProductUid                  : Guid
-        PolicyDataTableOid          : uint32
-        PolicyDataExtractionUid     : Guid        
-    }
+    type private DbSchema =
+        SqlDataProvider<
+            DatabaseVendor=Common.DatabaseProviderTypes.POSTGRESQL,
+            ConnectionString="Host=localhost;Port=5432;Database=analysis_of_change;Username=postgres;Password=internet",
+            UseOptionTypes=Common.NullableColumnType.OPTION,
+            ResolutionPath=resolutionPath>
 
 
-type PostgresDataStore (sessionContext: SessionContext, connection: NpgsqlConnection) =
+    [<NoEquality; NoComparison>]
+    type Product =
+        {
+            Uid                         : Guid
+            Name                        : string
+            Description                 : string
+            CreatedBy                   : string
+            CreatedWhen                 : DateTime
+        }
 
-    let dbContext =
-        DbSchema.GetDataContext (connection.ConnectionString)
+    [<NoEquality; NoComparison>]
+    type RunHeader =
+        {
+            Uid                         : Guid
+            Title                       : string
+            Comments                    : string option
+            CreatedBy                   : string
+            CreatedWhen                 : DateTime
+            OpeningRunUid               : Guid option
+            ClosingRunDate              : DateOnly
+            ProductUid                  : Guid
+            PolicyDataTableOid          : uint32
+            PolicyDataExtractionUid     : Guid        
+        }
 
-    static let [<Literal>] productSql =
-        "SELECT * FROM products"
 
-    static let [<Literal>] runHeaderSql =
-        "SELECT pgc.relname
-         FROM run_headers AS rh
-         LEFT JOIN pg_catalog.pg_class AS pgc
-         ON pgc.oid = rh.policy_data_oid"
-
-    static let parseProductRow (row: DbSchema.dataContext.``public.productsEntity``) =
+    let private parseProductRow (row: DbSchema.dataContext.``public.productsEntity``) =
         {
             Uid = row.Uid
             Name = row.Name
@@ -66,7 +60,7 @@ type PostgresDataStore (sessionContext: SessionContext, connection: NpgsqlConnec
             CreatedWhen = row.CreatedWhen
         }
 
-    static let parseRunHeaderRow (row: DbSchema.dataContext.``public.run_headersEntity``) =
+    let private parseRunHeaderRow (row: DbSchema.dataContext.``public.run_headersEntity``) =
         {
             Uid = row.Uid
             Title = row.Title
@@ -80,58 +74,64 @@ type PostgresDataStore (sessionContext: SessionContext, connection: NpgsqlConnec
             PolicyDataExtractionUid = row.PolicyDataExtractionUid
         }
 
-    member _.GetProduct (uid: Guid) =
-        query {
-            for product in dbContext.Public.Products do
-                where (product.Uid = uid)
-                select (product)
-        }
-        |> Seq.map parseProductRow
-        |> Seq.toList
 
-    member _.GetAllProducts () =
-        dbContext.Public.Products
-        |> Seq.map parseProductRow
-        |> Seq.toList
+    type DataStore (sessionContext: SessionContext, connection: NpgsqlConnection) =
 
-    member _.GetRunHeader (uid: Guid) =
-        query {
-            for runHdr in dbContext.Public.RunHeaders do
-                where (runHdr.Uid = uid)
-                select runHdr
-        }
-        |> Seq.map parseRunHeaderRow
-        |> Seq.toList
+        let dbContext =
+            DbSchema.GetDataContext (connection.ConnectionString)        
 
-    member _.GetAllRunHeaders () =
-        dbContext.Public.RunHeaders
-        |> Seq.map parseRunHeaderRow
-        |> Seq.toList
-
-    member _.CreateProduct (name, description, ?uid) =
-        let newProduct: Product =
-            {
-                Uid = defaultArg uid (Guid.NewGuid ())
-                Name = name
-                Description = description
-                CreatedBy = sessionContext.UserName
-                CreatedWhen = DateTime.Now
+        member _.GetProduct (uid: Guid) =
+            query {
+                for product in dbContext.Public.Products do
+                    where (product.Uid = uid)
+                    select (product)
             }
+            |> Seq.map parseProductRow
+            |> Seq.toList
 
-        connection
-        |> Sql.existingConnection
-        |> Sql.query 
-            "INSERT INTO products (uid, name, description, created_by, created_when)
-             VALUES (@uid, @name, @description, @created_by, @created_when)"
-        |> Sql.parameters
-            [
-                "uid", SqlValue.Uuid newProduct.Uid
-                "name", SqlValue.String newProduct.Name
-                "description", SqlValue.String newProduct.Description
-                "created_by", SqlValue.String newProduct.CreatedBy
-                "created_when", SqlValue.Timestamp newProduct.CreatedWhen
-            ]
-        |> Sql.executeNonQuery
-        |> ignore
+        member _.GetAllProducts () =
+            dbContext.Public.Products
+            |> Seq.map parseProductRow
+            |> Seq.toList
 
-        newProduct
+        member _.GetRunHeader (uid: Guid) =
+            query {
+                for runHdr in dbContext.Public.RunHeaders do
+                    where (runHdr.Uid = uid)
+                    select runHdr
+            }
+            |> Seq.map parseRunHeaderRow
+            |> Seq.toList
+
+        member _.GetAllRunHeaders () =
+            dbContext.Public.RunHeaders
+            |> Seq.map parseRunHeaderRow
+            |> Seq.toList
+
+        member _.CreateProduct (name, description, ?uid) =
+            let newProduct: Product =
+                {
+                    Uid = defaultArg uid (Guid.NewGuid ())
+                    Name = name
+                    Description = description
+                    CreatedBy = sessionContext.UserName
+                    CreatedWhen = DateTime.Now
+                }
+
+            connection
+            |> Sql.existingConnection
+            |> Sql.query 
+                "INSERT INTO products (uid, name, description, created_by, created_when)
+                 VALUES (@uid, @name, @description, @created_by, @created_when)"
+            |> Sql.parameters
+                [
+                    "uid", SqlValue.Uuid newProduct.Uid
+                    "name", SqlValue.String newProduct.Name
+                    "description", SqlValue.String newProduct.Description
+                    "created_by", SqlValue.String newProduct.CreatedBy
+                    "created_when", SqlValue.Timestamp newProduct.CreatedWhen
+                ]
+            |> Sql.executeNonQuery
+            |> ignore
+
+            newProduct

@@ -60,6 +60,18 @@ module PxApi =
             Step2_RestatedActuals_SAS       : double
             Step3_RestatedDeductions_UAS    : double
             Step3_RestatedDeductions_SAS    : double
+            Step4_MoveToClosingDate_UAS     : double
+            Step4_MoveToClosingDate_SAS     : double
+            Step5_Adjustments_UAS           : double
+            Step5_Adjustments_SAS           : double
+            Step6_Premiums_UAS              : double
+            Step6_Premiums_SAS              : double
+            Step7_Deductions_UAS            : double
+            Step7_Deductions_SAS            : double
+            Step8_MortalityCharge_UAS       : double
+            Step8_MortalityCharge_SAS       : double
+            Step9_InvestmentReturn_UAS      : double
+            Step9_InvestmentReturn_SAS      : double
         }
 
 

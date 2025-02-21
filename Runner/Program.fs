@@ -47,7 +47,7 @@ module Runner =
                 new NpgsqlConnection (connStr)
 
             let dataStore =
-                new PostgresDataStore (sessionContext, connection)
+                new Postgres.DataStore (sessionContext, connection)
 
             //let newProduct =
             //    dataStore.CreateProduct ("OB Whole-Life", "LVFS CWP OB Whole-Life")
@@ -55,7 +55,7 @@ module Runner =
             let products =
                 dataStore.GetAllProducts ()
 
-            do printfn "%A" products
+            do printfn "Test: %A" products
 
             return 0
         }

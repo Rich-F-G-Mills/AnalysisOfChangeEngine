@@ -115,6 +115,10 @@ module Types =
             : SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
                 Expr.Cast<_> expr
 
+        let usePrior<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord>
+            : SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
+                <@ fun _ prior -> prior @>
+
 
     // The only items available for validation will be the record itself and the corresponding results.
     type OpeningStepValidator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
@@ -172,7 +176,7 @@ module Types =
 
         interface IStepHeader with
             member this.Title = this.Title
-            member this.Description = this.Description                
+            member this.Description = this.Description  
 
     // We'd usually run a regression test because of a change in parameterisation
     // of the underlying API. As such, no data changes are expected (nor permitted)
