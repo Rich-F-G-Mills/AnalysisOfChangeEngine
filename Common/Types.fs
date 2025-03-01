@@ -19,6 +19,8 @@ module Types =
             abstract member ID: PolicyID with get
         end
 
+
+    [<NoEquality; NoComparison>]
     type ValidatedPolicyRecord<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
         | ValidatedPolicyRecord of 'TPolicyRecord
 
@@ -28,6 +30,13 @@ module Types =
         {
             OpeningRunDate: DateOnly
             ClosingRunDate: DateOnly
+        }
+
+
+    [<NoEquality; NoComparison>]
+    type SessionContext =
+        {
+            UserName    : string
         }
 
 
@@ -159,6 +168,7 @@ module Types =
 
     type IStepHeader =
         interface
+            abstract member Uid         : Guid with get
             abstract member Title       : string with get
             abstract member Description : string with get
         end
@@ -169,12 +179,14 @@ module Types =
     [<NoEquality; NoComparison>]
     type OpeningStep<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         {
+            Uid             : Guid
             Title           : string
             Description     : string
             Validator       : OpeningStepValidator<'TPolicyRecord, 'TStepResults>
         }
 
         interface IStepHeader with
+            member this.Uid = this.Uid
             member this.Title = this.Title
             member this.Description = this.Description  
 
@@ -184,6 +196,7 @@ module Types =
     [<NoEquality; NoComparison>]
     type RegressionStep<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
         {
+            Uid             : Guid
             Title           : string
             Description     : string
             Source          : SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>
@@ -191,6 +204,7 @@ module Types =
         }
 
         interface IStepHeader with
+            member this.Uid = this.Uid
             member this.Title = this.Title
             member this.Description = this.Description    
 
@@ -199,6 +213,7 @@ module Types =
     [<NoEquality; NoComparison>]
     type DataChangeStep<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         {
+            Uid             : Guid
             Title           : string
             Description     : string
             DataChanger     : PolicyRecordChanger<'TPolicyRecord>
@@ -206,6 +221,7 @@ module Types =
         }
 
         interface IStepHeader with
+            member this.Uid = this.Uid
             member this.Title = this.Title
             member this.Description = this.Description 
 
@@ -213,6 +229,7 @@ module Types =
     [<NoEquality; NoComparison>]
     type ParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
         {
+            Uid             : Guid
             Title           : string
             Description     : string
             Source          : SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>
@@ -220,6 +237,7 @@ module Types =
         }
 
         interface IStepHeader with
+            member this.Uid = this.Uid
             member this.Title = this.Title
             member this.Description = this.Description 
 
@@ -227,11 +245,13 @@ module Types =
     [<NoEquality; NoComparison>]
     type RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         {
+            Uid             : Guid
             Title           : string
             Description     : string
         }
 
         interface IStepHeader with
+            member this.Uid = this.Uid
             member this.Title = this.Title
             member this.Description = this.Description 
 
@@ -243,12 +263,14 @@ module Types =
     [<NoEquality; NoComparison>]
     type ClosingExistingDataStep<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         {
+            Uid             : Guid
             Title           : string
             Description     : string
             Validator       : DataChangeValidator<'TPolicyRecord, 'TStepResults>
         }
 
         interface IStepHeader with
+            member this.Uid = this.Uid
             member this.Title = this.Title
             member this.Description = this.Description
 
@@ -258,12 +280,14 @@ module Types =
     [<NoEquality; NoComparison>]
     type AddNewRecordsStep<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         {
+            Uid             : Guid
             Title           : string
             Description     : string
             Validator       : AddNewRecordsValidator<'TPolicyRecord, 'TStepResults>
         }
 
         interface IStepHeader with
+            member this.Uid = this.Uid
             member this.Title = this.Title
             member this.Description = this.Description
 
@@ -274,6 +298,9 @@ module Types =
 
             let _interiorSteps =
                 new List<IStepHeader> ()
+
+            member val InteriorSteps =
+                _interiorSteps.AsReadOnly ()
 
 
             // --- REQUIRED STEPS ---

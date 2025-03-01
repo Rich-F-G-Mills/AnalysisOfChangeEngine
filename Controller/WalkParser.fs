@@ -24,9 +24,8 @@ module WalkParser =
 
     let private (|SourceLambda|_|) = function
         | Patterns.Lambda (from,
-            Patterns.Lambda (api,
-                Patterns.Lambda (prior, expr))) ->
-                    Some (from, api, prior, expr)
+            Patterns.Lambda (prior, expr)) ->
+                Some (from, prior, expr)
         | _ ->
             None
 
@@ -38,10 +37,10 @@ module WalkParser =
     // Given there are no side-effects to worry about here, we can collapse everything down
     // into the correctly ordered new record expression.
     let flattenSourceDefinition (source: SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
-        let fromVarDef, apiVarDef, priorVarDef, sourceBody =
+        let fromVarDef, priorVarDef, sourceBody =
             match source with
-            | SourceLambda (from, api, prior, expr) ->
-                (from, api, prior, expr)
+            | SourceLambda (from, prior, expr) ->
+                (from, prior, expr)
             | _ ->
                 failwith "Unexpected source definition."
 
@@ -68,25 +67,21 @@ module WalkParser =
 
         let newSource =
             Expr.Lambda (fromVarDef,
-                Expr.Lambda (apiVarDef,
-                    Expr.Lambda (priorVarDef, newSourceBody)))
+                Expr.Lambda (priorVarDef, newSourceBody))
 
         newSource
         |> SourceDefinition.castExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection>
 
     let parseSource (apiCollection: 'TApiCollection) (source: SourceDefinition<_, _, 'TApiCollection>) =
-        let fromVarDef, apiVarDef, priorVarDef, sourceBody =
+        let fromVarDef, priorVarDef, sourceBody =
             match source with
-            | SourceLambda (from, api, prior, expr) ->
-                (from, api, prior, expr)
+            | SourceLambda (from,  prior, expr) ->
+                (from, prior, expr)
             | _ ->
                 failwith "Unexpected source lambda definition."
 
         let (|FromVarDef|_|) = function
             | v when v = fromVarDef -> Some () | _ -> None
-
-        let (|ApiVarDef|_|) = function
-            | v when v = apiVarDef -> Some () | _ -> None
 
         let (|PriorVarDef|_|) = function
             | v when v = priorVarDef -> Some () | _ -> None
@@ -94,13 +89,10 @@ module WalkParser =
         let (|FromVar|_|) = function
             | Patterns.Var FromVarDef -> Some () | _ -> None
 
-        let (|ApiVar|_|) = function
-            | Patterns.Var ApiVarDef -> Some () | _ -> None
-
         let (|PriorVar|_|) = function
             | Patterns.Var PriorVarDef -> Some () | _ -> None
 
-        let (|ApiRequest|_|) = function
+        (*let (|ApiRequest|_|) = function
             | Patterns.Call (Some FromVar, apiCallMI, [
                 Patterns.PropertyGet (Some ApiVar, wrappedRequestorPI, [])
                 Patterns.Lambda (_, Patterns.PropertyGet (_, apiOutputPI, []))]) ->
@@ -108,7 +100,7 @@ module WalkParser =
                         downcast wrappedRequestorPI.GetValue apiCollection
 
                     Some (SourceElementType.ApiCall (unwrapped.Name, unwrapped.Requestor, apiOutputPI))
-                    
+         *)          
 
         0
             

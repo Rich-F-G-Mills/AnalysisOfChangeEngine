@@ -26,7 +26,8 @@ type StepResults =
 [<NoEquality; NoComparison>]
 type WalkConfiguration =
     {
-        X: int
+        StepFactory: StepFactory
+        PxDispatcher: Object
     }
 
 
@@ -41,6 +42,28 @@ type ApiCollection =
 [<Sealed>]
 type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfiguration) as this =
     inherit AbstractWalk<PolicyRecord, StepResults, ApiCollection> (logger)
+
+
+    // --- HELPERS ---
+
+    let createStep =
+        config.StepFactory
+
+    // Short-hand way of changing our source for UAS and SAS (post-opening regression!)
+    let useForAssetShares
+        (unsmoothedSelector: Expr<PxApi.OutputAttributes -> double>)
+        (smoothedSelector: Expr<PxApi.OutputAttributes -> double>)
+        : SourceDefinition<PolicyRecord, StepResults, _> =
+            <@
+                fun from prior ->
+                    {
+                        prior with
+                            UnsmoothedAssetShare =
+                                from.apiCall (_.px_PostOpeningRegression, %unsmoothedSelector)
+                            SmoothedAssetShare =
+                                from.apiCall (_.px_PostOpeningRegression, %smoothedSelector)
+                    }
+            @>
 
 
     // --- DATA CHANGERS ---
@@ -144,33 +167,17 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
                 ClosingRunDate =
                     runContext.ClosingRunDate
             }
-
-    // Short-hand way of changing our source for UAS and SAS (post-opening regression!)
-    member private this.useForAssetShares
-        (unsmoothedSelector: Expr<PxApi.OutputAttributes -> double>)
-        (smoothedSelector: Expr<PxApi.OutputAttributes -> double>)
-        : SourceDefinition<PolicyRecord, StepResults, _> =
-            <@
-                fun from prior ->
-                    {
-                        prior with
-                            UnsmoothedAssetShare =
-                                from.apiCall (_.px_PostOpeningRegression, %unsmoothedSelector)
-                            SmoothedAssetShare =
-                                from.apiCall (_.px_PostOpeningRegression, %smoothedSelector)
-                    }
-            @>
                                 
 
     // --- REQUIRED STEPS ---
 
     override val opening =
-        StepTemplates.opening {
+        createStep.opening  {
             Validator = noValidator
         }
 
     override val openingRegression =
-        StepTemplates.openingRegression {
+        createStep.openingRegression {
             Source = <@
                 fun from _ ->
                     {                    
@@ -201,7 +208,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         }                
 
     override val removeExitedRecords =
-        StepTemplates.removeExited 
+        createStep.removeExited ()
 
 
     // --- PRODUCT SPECIFIC STEPS ---
@@ -214,7 +221,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         // UAS and SAS outputs as provided by PX's AoC machinery. In theory,
         // they should (!) always tie up. This just proves it.
         this.registerInteriorStep(        
-            StepTemplates.aocOpeningConsistencyCheck {
+            createStep.aocOpeningConsistencyCheck {
                 Source = <@
                     fun from prior ->
                         {
@@ -241,7 +248,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
 
     member val restatedOpeningData =
         this.registerInteriorStep(
-            StepTemplates.restatedOpeningData {
+            createStep.restatedOpeningData {
                 DataChanger =
                     dataChanger_RestatedOpening
                 Validator =
@@ -251,7 +258,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
 
     member val restatedOpeningAdjustments =
         this.registerInteriorStep(
-            StepTemplates.restatedOpeningAdjustments {
+            createStep.restatedOpeningAdjustments {
                 Source =
                     // Effectively makes this a null step.
                     SourceDefinition.usePrior
@@ -262,9 +269,9 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
 
     member val restatedOpeningReturns =
         this.registerInteriorStep(
-            StepTemplates.restatedOpeningReturns {
+            createStep.restatedOpeningReturns {
                 Source =
-                    this.useForAssetShares
+                    useForAssetShares
                         <@ _.Step2_RestatedActuals_UAS @>
                         <@ _.Step2_RestatedActuals_SAS @>
 
@@ -275,9 +282,9 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
             
     member val restatedOpeningDeductions =
         this.registerInteriorStep(
-            StepTemplates.restatedOpeningDeductions {
+            createStep.restatedOpeningDeductions {
                 Source =
-                    this.useForAssetShares
+                    useForAssetShares
                         <@ _.Step3_RestatedDeductions_UAS @>
                         <@ _.Step3_RestatedDeductions_SAS @>
                     
@@ -288,9 +295,9 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         
     member val moveToClosingDate =
         this.registerInteriorStep(
-            StepTemplates.moveToClosingDate {
+            createStep.moveToClosingDate {
                 Source =
-                    this.useForAssetShares
+                    useForAssetShares
                         <@ _.Step4_MoveToClosingDate_UAS @>
                         <@ _.Step4_MoveToClosingDate_SAS @>
 
@@ -301,7 +308,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
 
     member val dataRollForward =
         this.registerInteriorStep (
-            StepTemplates.dataRollForward {
+            createStep.dataRollForward {
                 DataChanger =
                     dataChanger_RollForward
                 Validator =
@@ -311,9 +318,9 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
 
     member val adjustments =
         this.registerInteriorStep (
-            StepTemplates.adjustments {
+            createStep.adjustments {
                 Source =
-                    this.useForAssetShares
+                    useForAssetShares
                         <@ _.Step5_Adjustments_UAS @>
                         <@ _.Step5_Adjustments_SAS @>
 
@@ -324,9 +331,9 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
 
     member val premiums =
         this.registerInteriorStep (
-            StepTemplates.premiums {
+            createStep.premiums {
                 Source =
-                    this.useForAssetShares
+                    useForAssetShares
                         <@ _.Step6_Premiums_UAS @>
                         <@ _.Step6_Premiums_SAS @>
 
@@ -337,9 +344,9 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
 
     member val deductions =
         this.registerInteriorStep (
-            StepTemplates.deductions {
+            createStep.deductions {
                 Source =
-                    this.useForAssetShares
+                    useForAssetShares
                         <@ _.Step7_Deductions_UAS @>
                         <@ _.Step7_Deductions_SAS @>
 
@@ -350,9 +357,9 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
 
     member val mortalityCharges =
         this.registerInteriorStep (
-            StepTemplates.mortalityCharges {
+            createStep.mortalityCharges {
                 Source =
-                    this.useForAssetShares
+                    useForAssetShares
                         <@ _.Step8_MortalityCharge_UAS @>
                         <@ _.Step8_MortalityCharge_SAS @>
 
@@ -363,9 +370,9 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
 
     member val investmentReturn =
         this.registerInteriorStep (
-            StepTemplates.investmentReturns {
+            createStep.investmentReturns {
                 Source =
-                    this.useForAssetShares
+                    useForAssetShares
                         <@ _.Step9_InvestmentReturn_UAS @>
                         <@ _.Step9_InvestmentReturn_SAS @>
 
@@ -376,7 +383,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
 
     member val closingGuaranteedDeathBenefit =
         this.registerInteriorStep (
-            StepTemplates.closingGuaranteedDeathBenefit {
+            createStep.closingGuaranteedDeathBenefit {
                 Source = <@
                     fun from prior ->
                         {
@@ -392,7 +399,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
 
     member val closingDeathUpliftFactor =
         this.registerInteriorStep (
-            StepTemplates.closingDeathUpliftFactor {
+            createStep.closingDeathUpliftFactor {
                 Source = <@
                     fun from prior ->
                         {
@@ -408,7 +415,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
 
     member val closingExitBonusRate =
         this.registerInteriorStep (
-            StepTemplates.closingDeathUpliftFactor {
+            createStep.closingExitBonusRate {
                 Source = <@
                     fun from prior ->
                         {
@@ -424,7 +431,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
 
     member val recentPaidUps  =
         this.registerInteriorStep (
-            StepTemplates.recentPaidUps {
+            createStep.recentPaidUps {
                 DataChanger =
                     dataChanger_RecentPaidUps
                 Validator =
@@ -435,7 +442,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
     // Same rationale as per the opening equivalent.
     member val aocClosingConsistencyCheck =
         this.registerInteriorStep (
-            StepTemplates.aocClosingConsistencyCheck {
+            createStep.aocClosingConsistencyCheck {
                 Source = <@
                     fun from _ ->
                         {                    
@@ -465,12 +472,12 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
     // --- REQUIRED STEPS ---
 
     override val moveToClosingExistingData =
-        StepTemplates.moveToClosingExistingData {            
+        createStep.moveToClosingExistingData {            
             Validator =
                 noValidator
         }
  
     override val addNewRecords =
-        StepTemplates.addNewRecords {
+        createStep.addNewRecords {
             Validator = noValidator
         }
