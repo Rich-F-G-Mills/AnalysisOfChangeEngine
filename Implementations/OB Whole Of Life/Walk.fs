@@ -34,8 +34,8 @@ type WalkConfiguration =
 [<NoEquality; NoComparison>]
 type ApiCollection =
     {
-        px_OpeningRegression        : WrappedApiRequest<PolicyRecord, PxApi.OutputAttributes>
-        px_PostOpeningRegression    : WrappedApiRequest<PolicyRecord, PxApi.OutputAttributes>
+        px_OpeningRegression        : WrappedApiRequestor<PolicyRecord, PxApi.OutputAttributes>
+        px_PostOpeningRegression    : WrappedApiRequestor<PolicyRecord, PxApi.OutputAttributes>
     }
 
 
@@ -153,14 +153,14 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
     // --- API CALLS ---
 
     member val px_OpeningRegression
-        : WrappedApiRequest<_, PxApi.OutputAttributes> =
+        : WrappedApiRequestor<_, PxApi.OutputAttributes> =
             PxApi.createOpeningDispatcher<PolicyRecord> {
                 OpeningRunDate =
                     runContext.OpeningRunDate
             }
 
     member val px_PostOpeningRegression
-        : WrappedApiRequest<_, PxApi.OutputAttributes> =
+        : WrappedApiRequestor<_, PxApi.OutputAttributes> =
             PxApi.createPostOpeningDispatcher<PolicyRecord> {
                 OpeningRunDate =
                     runContext.OpeningRunDate
@@ -205,15 +205,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
                         List.empty
                     else
                         [ StepValidationIssue.Warning "Regression mis-match" ]
-        } 
-        
-    override val restatedOpeningData =
-        createStep.restatedOpeningData {
-            DataChanger =
-                dataChanger_RestatedOpening
-            Validator =
-                noValidator            
-        }     
+        }    
 
     override val removeExitedRecords =
         createStep.removeExited ()
@@ -221,6 +213,17 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
 
     // --- PRODUCT SPECIFIC STEPS ---
     // We need to make sure that these are registered as well as defined!
+
+    // We can only restate data which is still in-force!
+    member val restatedOpeningData =
+        this.registerInteriorStep(
+            createStep.restatedOpeningData {
+                DataChanger =
+                    dataChanger_RestatedOpening
+                Validator =
+                    noValidator            
+            }
+        )
 
     member val aocOpeningConsistencyCheck =
         // The interested reader may be wondering why this is needed...
@@ -427,16 +430,6 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
             }
         )
 
-    member val recentPaidUps  =
-        this.registerInteriorStep (
-            createStep.recentPaidUps {
-                DataChanger =
-                    dataChanger_RecentPaidUps
-                Validator =
-                    noValidator
-            }
-        )
-
     // Same rationale as per the opening equivalent.
     member val aocClosingConsistencyCheck =
         this.registerInteriorStep (
@@ -462,6 +455,16 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
                                 from.apiCall (_.px_PostOpeningRegression, _.DeathBenefit)
                         } @>
 
+                Validator =
+                    noValidator
+            }
+        )
+
+    member val recentPaidUps  =
+        this.registerInteriorStep (
+            createStep.recentPaidUps {
+                DataChanger =
+                    dataChanger_RecentPaidUps
                 Validator =
                     noValidator
             }

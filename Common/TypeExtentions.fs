@@ -14,6 +14,9 @@ module TypeExtensions =
         let inline merge (x: Map<'K, 'V>) (y: Map<'K, 'V>) =
             Map.fold (fun acc key value -> acc |> Map.add key value) x y
 
+        let inline singleton key value =
+            Map.ofList [key, value]
+
 
     [<RequireQualifiedAccess>]
     module DateOnly =

@@ -14,7 +14,7 @@ module StepSourceParser =
     [<RequireQualifiedAccess>]
     type SourceElementType<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
         | ApiCall of Requestor: Map<string, ApiRequest<'TPolicyRecord>> * Output: PropertyInfo
-        | Calculation of DependsOn: string Set * OriginalDefinition: Expr * RebuiltDefinition: Expr
+        | Calculation of DependsOn: Map<string, PropertyInfo> * OriginalDefinition: Expr * RebuiltDefinition: Expr
 
     [<NoEquality; NoComparison>]
     type SourceElement<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
@@ -42,6 +42,9 @@ module StepSourceParser =
     // Given there are no side-effects to worry about here, we can collapse everything down
     // into the correctly ordered new record expression.
     let private getSourceBodyElements (sourceBody: Expr<'TStepResults>) =
+        let stepResultMembers =
+            FSharpType.GetRecordFields (typeof<'TStepResults>)
+
         let rec inner mappings expr =
             match expr with
             | Patterns.Let (var, def, body) ->
@@ -58,6 +61,9 @@ module StepSourceParser =
                                 expr)
 
                     newValues
+                    |> Seq.zip stepResultMembers
+                    |> Seq.map (fun (pi, v) -> pi.Name, v)
+                    |> Map.ofSeq
 
             | _ ->
                 failwith "Unexpected pattern."
@@ -75,6 +81,8 @@ module StepSourceParser =
 
             let stepResultMembers =
                 FSharpType.GetRecordFields (typeof<'TStepResults>)
+                |> Seq.map (fun pi -> pi.Name, pi)
+                |> Map.ofSeq
 
             let getCalculationDependencies (resultsVar, calcBody: Expr) =
                 let rec inner = function
@@ -88,7 +96,12 @@ module StepSourceParser =
                     | _ ->
                         Set.empty
 
-                inner calcBody
+                let dependsOnMembers =
+                    inner calcBody
+
+                stepResultMembers
+                |> Map.filter (fun name _ -> dependsOnMembers.Contains name)
+                
 
             fun (source: SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>) ->
                 let fromVarDef, priorVarDef, sourceBody =
@@ -167,24 +180,26 @@ module StepSourceParser =
                     | ApiRequest (wrappedRequestPI, selectorPI)
                         // In theory, a mismatch here shouldn't be possible, but it's better to be safe!
                         when sourceElementPI.PropertyType = selectorPI.PropertyType  ->
-                            let (wrappedRequest: IUnwrappableApiRequest<'TPolicyRecord>) =
+                            let (wrappedRequest: IApiRequestor<'TPolicyRecord>) =
                                 downcast wrappedRequestPI.GetValue apiCollection
 
                             let sourceElementType =
                                 SourceElementType.ApiCall (
-                                    Map.ofList [wrappedRequest.Name, wrappedRequest.Requestor],
+                                    Map.singleton wrappedRequest.Name wrappedRequest.Requestor,
                                     selectorPI
                                 )
 
                             Some sourceElementType
 
                     | Calculation (resultsVar, calcBody)
-                        when sourceElementPI.PropertyType = calcBody.Type ->                      
-
+                        when sourceElementPI.PropertyType = calcBody.Type ->                  
                             let dependsOn =
                                 getCalculationDependencies (resultsVar, calcBody)                        
 
-                            Some (SourceElementType.Calculation (dependsOn, calcBody, calcBody))
+                            let sourceElementType =
+                                SourceElementType.Calculation (dependsOn, calcBody, calcBody)
+
+                            Some sourceElementType
 
                     | UsePrior priorSourceElementPI when priorSourceElementPI = sourceElementPI ->
                         None
@@ -201,13 +216,16 @@ module StepSourceParser =
                         let sourceElements =
                             getSourceBodyElements sourceBody
 
-                        sourceElements
-                        |> Seq.zip stepResultMembers
-                        |> Seq.map (fun (pi, defn) ->
-                            pi, parseSourceElementType pi defn)
+                        stepResultMembers
+                        |> Map.keys
+                        |> Seq.map (fun name ->
+                            name, stepResultMembers[name], sourceElements[name])
+                        |> Seq.map (fun (name, pi, defn) ->
+                            name, pi, parseSourceElementType pi defn)
                         |> Seq.choose (function
-                            | pi, Some elementType ->
-                                Some (pi.Name, { PropertyInfo = pi; Type = elementType })
+                            // Ignore any source elements where we're just using the prior definition. 
+                            | name, pi, Some elementType ->
+                                Some (name, { PropertyInfo = pi; Type = elementType })
                             | _ ->
                                 None)
                         |> Map.ofSeq

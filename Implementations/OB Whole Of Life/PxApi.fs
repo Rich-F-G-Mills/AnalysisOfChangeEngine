@@ -115,11 +115,23 @@ module PxApi =
 
     let createOpeningDispatcher<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord>
         (config: OpeningDispatcherConfig)
-        : WrappedApiRequest<'TPolicyRecord, OutputAttributes> =
-            WrappedApiRequest ("PX API [Opening]", fun field record -> Error "failed")
+        : WrappedApiRequestor<'TPolicyRecord, OutputAttributes> =
+            WrappedApiRequestor {
+                new IApiRequestor<_> with
+                    member _.Name =
+                        "PX API [Opening]"
+                    member _.Requestor =
+                        fun field record -> Error "failed"
+            }
 
 
     let createPostOpeningDispatcher<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord>
         (config: PostOpeningDispatcherConfig)
-        : WrappedApiRequest<'TPolicyRecord, OutputAttributes> =
-            WrappedApiRequest ("PX API [Post Opening]", fun field record -> Error "failed")
+        : WrappedApiRequestor<'TPolicyRecord, OutputAttributes> =
+            WrappedApiRequestor {
+                new IApiRequestor<_> with
+                    member _.Name =
+                        "PX API [Post-Opening Regression]"
+                    member _.Requestor =
+                        fun field record -> Error "failed"
+            }

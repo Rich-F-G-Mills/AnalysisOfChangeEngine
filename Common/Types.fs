@@ -55,28 +55,30 @@ module Types =
     type ApiRequest<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
         Map<string, PropertyInfo> -> 'TPolicyRecord -> Result<Map<string, obj>, string>
 
-    type IUnwrappableApiRequest<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+    type IApiRequestor<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
         interface
             abstract Name: string
             abstract Requestor: ApiRequest<'TPolicyRecord>
         end
 
-    // DD - Arguably this could be an interface. However, we're not intending for
-    // anything to inherit this, so a record suits our purposes fine. Furthermore,
-    // we need to pass in the response type in order for intellisense to work
-    // when users are creating the source specifications.
+    // DD - We also need to track the possible API responses... We cannot use
+    // a vanilla type alias as it will complain about TResponse not actually getting used.
+    // However, we have no such issue using a DU. Ultimately, this is just an IApiRequestor
+    // with some additional type information.
     [<NoEquality; NoComparison>]
-    type WrappedApiRequest<'TPolicyRecord, 'TResponse when 'TPolicyRecord :> IPolicyRecord> =
-        | WrappedApiRequest of string * ApiRequest<'TPolicyRecord>
+    type WrappedApiRequestor<'TPolicyRecord, 'TResponse when 'TPolicyRecord :> IPolicyRecord> =
+        | WrappedApiRequestor of IApiRequestor<'TPolicyRecord>
 
-        interface IUnwrappableApiRequest<'TPolicyRecord> with
+        interface IApiRequestor<'TPolicyRecord> with
             member this.Name =
                 match this with
-                | WrappedApiRequest (name, _) -> name
+                | WrappedApiRequestor inner ->
+                    inner.Name
 
             member this.Requestor =
                 match this with
-                | WrappedApiRequest (_, requestor) -> requestor
+                | WrappedApiRequestor inner ->
+                    inner.Requestor
             
 
     type ILogger =
@@ -100,7 +102,7 @@ module Types =
         // DD - Could have used curried call rather than tupled; however, deciphering it
         // from the resulting call from code quotation is a lot more complicated.
         abstract member apiCall<'TResponse, 'T>
-            : apiRequest: ('TApiCollection -> WrappedApiRequest<'TPolicyRecord, 'TResponse>) * selector: ('TResponse -> 'T) -> 'T
+            : apiRequest: ('TApiCollection -> WrappedApiRequestor<'TPolicyRecord, 'TResponse>) * selector: ('TResponse -> 'T) -> 'T
 
         /// Permits fields to be calculated using other fields within the step output.
         abstract member calculation<'T>
@@ -319,9 +321,6 @@ module Types =
             abstract member openingRegression :
                 RegressionStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> with get
 
-            abstract member restatedOpeningData :
-                DataChangeStep<'TPolicyRecord, 'TStepResults> with get 
-
             abstract member removeExitedRecords :
                 RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> with get 
 
@@ -360,7 +359,6 @@ module Types =
                 seq {
                     yield this.opening :> IStepHeader
                     yield this.openingRegression :> IStepHeader
-                    yield this.restatedOpeningData :> IStepHeader
                     yield this.removeExitedRecords :> IStepHeader
                     yield! this.InteriorSteps
                     yield this.moveToClosingExistingData :> IStepHeader

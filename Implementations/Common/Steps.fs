@@ -199,7 +199,7 @@ type StepFactory (uidResolver: Guid -> string * string) as this =
             (Guid ("aff89bf5-604e-4989-8b11-c3ba24d1fca1")) details
 
     member _.aocClosingConsistencyCheck<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> details =
-        this.makeParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        this.makeRegressionStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             (Guid ("7e38d53b-960c-44e1-8adc-13bf645196ec")) details
 
     member _.recentPaidUps<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> details =
