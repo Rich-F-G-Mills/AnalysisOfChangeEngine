@@ -10,7 +10,7 @@ module Runner =
     open Npgsql.FSharp
     open AnalysisOfChangeEngine
     open AnalysisOfChangeEngine.Controller
-    open AnalysisOfChangeEngine.Controller.DataStore
+    open AnalysisOfChangeEngine.DataStore
     open AnalysisOfChangeEngine.Implementations
 
 
@@ -65,7 +65,7 @@ module Runner =
                         closingRunDate
                 }
 
-            let sessionContext: SessionContext =
+            let sessionContext: Postgres.SessionContext =
                 { UserName = "RICH" }
 
             let connStr =
@@ -108,24 +108,31 @@ module Runner =
             let! walk =
                 OBWholeOfLife.Walk.create (logger LogLevel.WARNING, runContext, walkConfig)
 
-            let steps =
-                [
-                    yield walk.opening :> IStepHeader
-                    yield walk.openingRegression :> IStepHeader
-                    yield walk.removeExitedRecords :> IStepHeader
-                    yield! walk.InteriorSteps
-                    yield walk.moveToClosingExistingData :> IStepHeader
-                    yield walk.addNewRecords :> IStepHeader
-                ]
+            // The walk creates our api end-points which we can then use below.
+            // This means that our logic to define the APIs and the steps is kept
+            // together in one place.
+            let apiCollection: OBWholeOfLife.ApiCollection =
+                {
+                    px_OpeningRegression =
+                        walk.px_OpeningRegression
+                    px_PostOpeningRegression =
+                        walk.px_PostOpeningRegression
+                }
 
-            do printfn "Steps:"
 
-            for step in steps do
-                do printfn "  %s: %s" (step.Title.PadRight 35) step.Description
+            do printfn "Steps: (%i found)" (walk.AllSteps |> Seq.length)
+
+            for (idx, step) in walk.AllSteps |> Seq.indexed do
+                do printfn "%2i -  %s: %s" idx (step.Title.PadRight 35) step.Description
 
             do printfn "\n\n\n"
 
-            do printfn "%A" (WalkParser.flattenSourceDefinition walk.openingRegression.Source)
+            let parsedWalk =
+                WalkParser.parseStepSourcesForWalk apiCollection walk
+
+            do printfn "%A" parsedWalk
+
+            do printfn "\n\n%i" parsedWalk.Length
 
             return 0
         }

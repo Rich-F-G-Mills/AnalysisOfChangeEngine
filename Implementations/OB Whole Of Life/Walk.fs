@@ -25,7 +25,7 @@ type StepResults =
 
 [<NoEquality; NoComparison>]
 type WalkConfiguration =
-    {
+    {        
         StepFactory: StepFactory
         PxDispatcher: Object
     }
@@ -205,7 +205,15 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
                         List.empty
                     else
                         [ StepValidationIssue.Warning "Regression mis-match" ]
-        }                
+        } 
+        
+    override val restatedOpeningData =
+        createStep.restatedOpeningData {
+            DataChanger =
+                dataChanger_RestatedOpening
+            Validator =
+                noValidator            
+        }     
 
     override val removeExitedRecords =
         createStep.removeExited ()
@@ -244,17 +252,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
                 Validator =
                     noValidator
             }
-        )
-
-    member val restatedOpeningData =
-        this.registerInteriorStep(
-            createStep.restatedOpeningData {
-                DataChanger =
-                    dataChanger_RestatedOpening
-                Validator =
-                    noValidator            
-            }
-        )                
+        )          
 
     member val restatedOpeningAdjustments =
         this.registerInteriorStep(

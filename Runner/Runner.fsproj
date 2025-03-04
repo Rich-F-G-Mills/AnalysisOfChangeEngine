@@ -10,8 +10,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Controller.DataStore.Postgres\Controller.DataStore.Postgres.fsproj" />
     <ProjectReference Include="..\Controller\Controller.fsproj" />
+    <ProjectReference Include="..\DataStore.Postgres\DataStore.Postgres.fsproj" />
+    <ProjectReference Include="..\Implementations\Implementations.fsproj" />
   </ItemGroup>
 
 </Project>

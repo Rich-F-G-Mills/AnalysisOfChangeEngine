@@ -9,6 +9,13 @@ module TypeExtensions =
 
 
     [<RequireQualifiedAccess>]
+    module Map =
+    
+        let inline merge (x: Map<'K, 'V>) (y: Map<'K, 'V>) =
+            Map.fold (fun acc key value -> acc |> Map.add key value) x y
+
+
+    [<RequireQualifiedAccess>]
     module DateOnly =
         
         let inline Min (x: DateOnly, y: DateOnly) =

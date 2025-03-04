@@ -1,4 +1,0 @@
-﻿uid, title, description, created_by
-'890c481d-bebe-44d4-8330-bccbaa584d4a', "Opening Position", "Represents prior closing position.", "RICH"
-'f198c564-7f6b-46a7-af3c-bd9b4ef6bc1b', "Opening Re-Run", "Re-run of prior closing data using latest model and assumptions.", "RICH"
-'6d3385fc-8e01-4e95-9dc2-65471813ea5e', "Restated Opening Data", "Re-run using latest view of opening data.", "RICH"

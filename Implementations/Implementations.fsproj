@@ -6,7 +6,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="Common\StepHeaders.csv" />
     <Compile Include="Common\RowParser.fs" />
     <Compile Include="Common\PxApi.fs" />
     <Compile Include="Common\Steps.fs" />

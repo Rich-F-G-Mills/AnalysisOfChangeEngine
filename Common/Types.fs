@@ -33,13 +33,6 @@ module Types =
         }
 
 
-    [<NoEquality; NoComparison>]
-    type SessionContext =
-        {
-            UserName    : string
-        }
-
-
     // Whereas we want to log cleansing changes, we're not interested in loggin
     // data changes made as part of the data roll-forward between the opening
     // and closing position.
@@ -134,20 +127,20 @@ module Types =
         'TPolicyRecord * 'TStepResults -> StepValidationIssue list
 
     // We have both before and after data along with corresponding step results.
-    type DataChangeValidator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
+    type DataChangeStepValidator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         'TPolicyRecord * 'TStepResults * 'TPolicyRecord * 'TStepResults -> StepValidationIssue list
 
     // For a regression step, we aren't changing policy data. As such, we're only
     // expecting variability due to a change in the underlying API.
-    type RegressionValidator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
+    type RegressionStepValidator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         'TPolicyRecord * 'TStepResults * 'TStepResults -> StepValidationIssue list
 
     // Similar situation as for the regression validator above.
-    type ParameterChangeValidator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
+    type ParameterChangeStepValidator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         'TPolicyRecord * 'TStepResults * 'TStepResults -> StepValidationIssue list
 
     // Similar situation to the open step validator above.
-    type AddNewRecordsValidator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
+    type AddNewRecordsStepValidator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         'TPolicyRecord * 'TStepResults -> StepValidationIssue list
 
 
@@ -171,6 +164,12 @@ module Types =
             abstract member Uid         : Guid with get
             abstract member Title       : string with get
             abstract member Description : string with get
+        end
+
+    type IApiSourcedStep<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
+        interface
+            inherit IStepHeader
+            abstract member Source: SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection> with get
         end
 
 
@@ -200,13 +199,18 @@ module Types =
             Title           : string
             Description     : string
             Source          : SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-            Validator       : RegressionValidator<'TPolicyRecord, 'TStepResults>
+            Validator       : RegressionStepValidator<'TPolicyRecord, 'TStepResults>
         }
 
         interface IStepHeader with
             member this.Uid = this.Uid
             member this.Title = this.Title
             member this.Description = this.Description    
+
+        interface IApiSourcedStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> with
+            member this.Source =
+                this.Source
+                
 
     // Intended this would be used as part of an opening data restatement along
     // will subsequent data changes in order to walk to the closing data.
@@ -217,7 +221,7 @@ module Types =
             Title           : string
             Description     : string
             DataChanger     : PolicyRecordChanger<'TPolicyRecord>
-            Validator       : DataChangeValidator<'TPolicyRecord, 'TStepResults>
+            Validator       : DataChangeStepValidator<'TPolicyRecord, 'TStepResults>
         }
 
         interface IStepHeader with
@@ -233,13 +237,17 @@ module Types =
             Title           : string
             Description     : string
             Source          : SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-            Validator       : ParameterChangeValidator<'TPolicyRecord, 'TStepResults>
+            Validator       : ParameterChangeStepValidator<'TPolicyRecord, 'TStepResults>
         }
 
         interface IStepHeader with
             member this.Uid = this.Uid
             member this.Title = this.Title
             member this.Description = this.Description 
+
+        interface IApiSourcedStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> with
+            member this.Source =
+                this.Source
 
     // No data changer or validator needed here.
     [<NoEquality; NoComparison>]
@@ -266,7 +274,7 @@ module Types =
             Uid             : Guid
             Title           : string
             Description     : string
-            Validator       : DataChangeValidator<'TPolicyRecord, 'TStepResults>
+            Validator       : DataChangeStepValidator<'TPolicyRecord, 'TStepResults>
         }
 
         interface IStepHeader with
@@ -283,7 +291,7 @@ module Types =
             Uid             : Guid
             Title           : string
             Description     : string
-            Validator       : AddNewRecordsValidator<'TPolicyRecord, 'TStepResults>
+            Validator       : AddNewRecordsStepValidator<'TPolicyRecord, 'TStepResults>
         }
 
         interface IStepHeader with
@@ -294,13 +302,13 @@ module Types =
 
     [<AbstractClass>]
     type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection  when 'TPolicyRecord :> IPolicyRecord>
-        (logger: ILogger) =
+        (logger: ILogger) as this =
 
             let _interiorSteps =
                 new List<IStepHeader> ()
 
             member val InteriorSteps =
-                _interiorSteps.AsReadOnly ()
+                _interiorSteps.AsReadOnly ()            
 
 
             // --- REQUIRED STEPS ---
@@ -310,6 +318,9 @@ module Types =
 
             abstract member openingRegression :
                 RegressionStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> with get
+
+            abstract member restatedOpeningData :
+                DataChangeStep<'TPolicyRecord, 'TStepResults> with get 
 
             abstract member removeExitedRecords :
                 RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> with get 
@@ -343,3 +354,15 @@ module Types =
             member this.registerInteriorStep (step: ParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
                 do this._registerInteriorStep step
                 step
+
+
+            member val AllSteps =
+                seq {
+                    yield this.opening :> IStepHeader
+                    yield this.openingRegression :> IStepHeader
+                    yield this.restatedOpeningData :> IStepHeader
+                    yield this.removeExitedRecords :> IStepHeader
+                    yield! this.InteriorSteps
+                    yield this.moveToClosingExistingData :> IStepHeader
+                    yield this.addNewRecords :> IStepHeader
+                }

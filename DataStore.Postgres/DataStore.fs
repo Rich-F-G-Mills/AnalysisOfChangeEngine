@@ -1,16 +1,22 @@
 ﻿ 
-namespace AnalysisOfChangeEngine.Controller.DataStore
+namespace AnalysisOfChangeEngine.DataStore
 
 
 open System
-open FsToolkit.ErrorHandling
 open Npgsql
 open Npgsql.FSharp
-open AnalysisOfChangeEngine.Controller
+open AnalysisOfChangeEngine
 
 
 [<RequireQualifiedAccess>]
 module Postgres =
+    
+    [<NoEquality; NoComparison>]
+    type SessionContext =
+        {
+            UserName    : string
+        }
+
 
     [<NoEquality; NoComparison>]
     type Product =

@@ -15,33 +15,33 @@ type OpeningStepDetails<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPo
 type RegressionStepDetails<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
     {
         Source: SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-        Validator: RegressionValidator<'TPolicyRecord, 'TStepResults>
+        Validator: RegressionStepValidator<'TPolicyRecord, 'TStepResults>
     }
 
 [<NoEquality; NoComparison>]
 type DataChangeStepDetails<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
     {
         DataChanger: PolicyRecordChanger<'TPolicyRecord>
-        Validator: DataChangeValidator<'TPolicyRecord, 'TStepResults>
+        Validator: DataChangeStepValidator<'TPolicyRecord, 'TStepResults>
     }
 
 [<NoEquality; NoComparison>]
 type ParameterChangeStepDetails<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
     {
         Source: SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-        Validator: ParameterChangeValidator<'TPolicyRecord, 'TStepResults>
+        Validator: ParameterChangeStepValidator<'TPolicyRecord, 'TStepResults>
     }
 
 [<NoEquality; NoComparison>]
 type ClosingExistingDataStepDetails<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
     {
-        Validator: DataChangeValidator<'TPolicyRecord, 'TStepResults>
+        Validator: DataChangeStepValidator<'TPolicyRecord, 'TStepResults>
     }
 
 [<NoEquality; NoComparison>]
 type AddNewRecordsStepDetails<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
     {
-        Validator: AddNewRecordsValidator<'TPolicyRecord, 'TStepResults>
+        Validator: AddNewRecordsStepValidator<'TPolicyRecord, 'TStepResults>
     }
 
 
