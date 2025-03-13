@@ -141,51 +141,46 @@ module StepSource =
                 let processElementCalculation calcBody =
                     // Why use mutable state via a closure when you can use a state monad?!
                     let rec inner (expr: Expr) =
-                        state {
-                            let! newExpr =
-                                match expr with
-                                | ExprShape.ShapeLambda _ ->
-                                    failwith "Cannot define lambdas within a source element."
+                        match expr with
+                        | ExprShape.ShapeLambda _ ->
+                            failwith "Cannot define lambdas within a source element."
 
-                                | Patterns.ValueWithName (_, _, name) ->
-                                    failwithf "Cannot use closures [%s] within a source element." name
+                        | Patterns.ValueWithName (_, _, name) ->
+                            failwithf "Cannot use closures [%s] within a source element." name
 
-                                | PriorResultsVar ->
-                                    failwith "Cannot use the prior result in a calculation (ambiguous intent)."
+                        | PriorResultsVar ->
+                            failwith "Cannot use the prior result in a calculation (ambiguous intent)."
 
-                                | ApiRequest (requestPI, selectorPI) ->
-                                    state {
-                                        let apiRequest =
-                                            requestPI.GetValue apiCollection
-                                            :?> IApiRequestor<'TPolicyRecord>
+                        | ApiRequest (requestPI, selectorPI) ->
+                            state {
+                                let apiRequest =
+                                    requestPI.GetValue apiCollection
+                                    :?> IApiRequestor<'TPolicyRecord>
 
-                                        let! varDef =
-                                            SourceElementDependencies.addApiCall (apiRequest, selectorPI)                        
+                                let! varDef =
+                                    SourceElementDependencies.addApiCall (apiRequest, selectorPI)                        
 
-                                        return Expr.Var varDef
-                                    }                                    
+                                return Expr.Var varDef
+                            }                                    
                 
-                                | Patterns.PropertyGet (Some CurrentResultsVar, pi, []) ->
-                                    state {
-                                        let! varDef =
-                                            SourceElementDependencies.addCurrentResult pi
+                        | Patterns.PropertyGet (Some CurrentResultsVar, pi, []) ->
+                            state {
+                                let! varDef =
+                                    SourceElementDependencies.addCurrentResult pi
 
-                                        return Expr.Var varDef
-                                    }
+                                return Expr.Var varDef
+                            }
 
-                                | ExprShape.ShapeCombination (shape, exprs) ->
-                                    state {
-                                        let! newExprs =
-                                            List.mapStateM inner exprs
+                        | ExprShape.ShapeCombination (shape, exprs) ->
+                            state {
+                                let! newExprs =
+                                    List.mapStateM inner exprs
 
-                                        return ExprShape.RebuildShapeCombination (shape, newExprs)
-                                    }
+                                return ExprShape.RebuildShapeCombination (shape, newExprs)
+                            }
 
-                                | _ ->
-                                    State.returnM expr
-
-                            return newExpr
-                        }                        
+                        | _ ->
+                            State.returnM expr                  
 
                     inner calcBody   
                     |> State.run SourceElementDependencies.empty
