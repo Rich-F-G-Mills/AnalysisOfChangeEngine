@@ -12,10 +12,10 @@ type OpeningStepDetails<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPo
     }
 
 [<NoEquality; NoComparison>]
-type RegressionStepDetails<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
+type SourceChangeStepDetails<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
     {
         Source: SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-        Validator: RegressionStepValidator<'TPolicyRecord, 'TStepResults>
+        Validator: SourceChangeStepValidator<'TPolicyRecord, 'TStepResults>
     }
 
 [<NoEquality; NoComparison>]
@@ -23,13 +23,6 @@ type DataChangeStepDetails<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> 
     {
         DataChanger: PolicyRecordChanger<'TPolicyRecord>
         Validator: DataChangeStepValidator<'TPolicyRecord, 'TStepResults>
-    }
-
-[<NoEquality; NoComparison>]
-type ParameterChangeStepDetails<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
-    {
-        Source: SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-        Validator: ParameterChangeStepValidator<'TPolicyRecord, 'TStepResults>
     }
 
 [<NoEquality; NoComparison>]
@@ -66,24 +59,10 @@ type StepFactory (uidResolver: Guid -> string * string) as this =
   
 
     // Must be members in order to be generic.
-    member private _.makeRegressionStep<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord>
+    member private _.makeSourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord>
         (uid: Guid)
-        (details: RegressionStepDetails<_, _, _>)
-        : RegressionStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
-            let header =
-                uidResolver' uid
-
-            {
-                Uid = uid
-                Title = header.Title
-                Description = header.Description
-                Source = details.Source
-                Validator = details.Validator
-            }
-
-    member private _.makeParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord>
-        uid (details: ParameterChangeStepDetails<_, _, _>)
-        : ParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
+        (details: SourceChangeStepDetails<_, _, _>)
+        : SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
             let header =
                 uidResolver' uid
 
@@ -124,7 +103,7 @@ type StepFactory (uidResolver: Guid -> string * string) as this =
             }
 
     member _.openingRegression<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> details =
-        this.makeRegressionStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        this.makeSourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             (Guid ("f198c564-7f6b-46a7-af3c-bd9b4ef6bc1b")) details
 
     member _.restatedOpeningData<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> details =
@@ -143,23 +122,23 @@ type StepFactory (uidResolver: Guid -> string * string) as this =
             }
 
     member _.aocOpeningConsistencyCheck<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> details =
-        this.makeRegressionStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        this.makeSourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             (Guid ("1254ec7b-e4ee-4a3b-b295-def984bc7e80")) details
 
     member _.restatedOpeningAdjustments<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> details =
-        this.makeParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        this.makeSourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             (Guid ("7f0492ca-6211-4032-bf89-a15879d07856")) details
 
     member _.restatedOpeningReturns<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> details =
-        this.makeParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        this.makeSourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             (Guid ("d3d411ec-f5d7-419a-a9ff-67e3d95a9e15")) details
 
     member _.restatedOpeningDeductions<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> details =
-        this.makeParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        this.makeSourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             (Guid ("61530067-7402-435c-8c3e-933d80d19220")) details
 
     member _.moveToClosingDate<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> details =
-        this.makeParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        this.makeSourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             (Guid ("12ff0e3a-eab8-4d55-94d5-92a561abd141")) details
 
     member _.dataRollForward<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> details =
@@ -167,39 +146,39 @@ type StepFactory (uidResolver: Guid -> string * string) as this =
             (Guid ("92ae5c91-e2f7-4112-8063-b143c467e4b3")) details
 
     member _.adjustments<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> details =
-        this.makeParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        this.makeSourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             (Guid ("1b901498-b74d-408c-a3b4-f8654f63cf41")) details
 
     member _.premiums<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> details =
-        this.makeParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        this.makeSourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             (Guid ("320d8985-c752-43e1-89ba-72411a2053ad")) details
 
     member _.deductions<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> details =
-        this.makeParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        this.makeSourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             (Guid ("a1639a6e-9660-4f8f-8029-ce01d2767ce7")) details
 
     member _.mortalityCharges<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> details =
-        this.makeParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        this.makeSourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             (Guid ("4eafa688-4ae0-4ded-aa92-2710f876a981")) details            
 
     member _.investmentReturns<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> details =
-        this.makeParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        this.makeSourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             (Guid ("2df7f353-9b69-40c3-9f97-7b1fef2b8b2b")) details
 
     member _.closingGuaranteedDeathBenefit<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> details =
-        this.makeParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        this.makeSourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             (Guid ("8d823d72-6027-49c0-8962-c1f725d199a5")) details
 
     member _.closingDeathUpliftFactor<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> details =
-        this.makeParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        this.makeSourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             (Guid ("4698425d-e165-4881-a5dd-b90e342e1795")) details
 
     member _.closingExitBonusRate<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> details =
-        this.makeParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        this.makeSourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             (Guid ("aff89bf5-604e-4989-8b11-c3ba24d1fca1")) details
 
     member _.aocClosingConsistencyCheck<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> details =
-        this.makeRegressionStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        this.makeSourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             (Guid ("7e38d53b-960c-44e1-8adc-13bf645196ec")) details
 
     member _.recentPaidUps<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> details =

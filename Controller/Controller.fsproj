@@ -6,7 +6,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="WalkParser.fs" />
+    <Compile Include="Walk Analyser\Common.fs" />
+    <Compile Include="Walk Analyser\SourceParser.fs" />
     <Compile Include="CsvReader.fs" />
   </ItemGroup>
 

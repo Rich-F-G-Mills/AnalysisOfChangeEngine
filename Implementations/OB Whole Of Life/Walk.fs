@@ -55,7 +55,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         (smoothedSelector: Expr<PxApi.OutputAttributes -> double>)
         : SourceDefinition<PolicyRecord, StepResults, _> =
             <@
-                fun from prior ->
+                fun from _ prior _ ->
                     {
                         prior with
                             UnsmoothedAssetShare =
@@ -179,7 +179,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
     override val openingRegression =
         createStep.openingRegression {
             Source = <@
-                fun from _ ->
+                fun from _ _ _ ->
                     {                    
                         UnsmoothedAssetShare =
                             from.apiCall (_.px_OpeningRegression, _.UnsmoothedAssetShare)
@@ -234,7 +234,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         this.registerInteriorStep(        
             createStep.aocOpeningConsistencyCheck {
                 Source = <@
-                    fun from prior ->
+                    fun from _ prior current ->
                         {
                             prior with
                                 UnsmoothedAssetShare =
@@ -242,14 +242,13 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
                                 SmoothedAssetShare =
                                     from.apiCall (_.px_PostOpeningRegression, _.Step0_Opening_SAS)
                                 SurrenderValue =
-                                    from.calculation (fun x ->
-                                        x.SmoothedAssetShare * (1.0 + x.ExitBonusRate) - x.UnpaidPremiums)
+                                    current.SmoothedAssetShare * (1.0 + current.ExitBonusRate)
+                                        - current.UnpaidPremiums
                                 DeathBenefit =
-                                    from.calculation (fun step ->
-                                        Math.Max(
-                                            step.SmoothedAssetShare * step.DeathUpliftFactor * (1.0 + step.ExitBonusRate),
-                                            step.GuaranteedDeathBenefit
-                                        ) - step.UnpaidPremiums)
+                                    Math.Max(
+                                        current.SmoothedAssetShare * current.DeathUpliftFactor * (1.0 + current.ExitBonusRate),
+                                        current.GuaranteedDeathBenefit
+                                    ) - current.UnpaidPremiums
                         } @>
 
                 Validator =
@@ -261,8 +260,10 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         this.registerInteriorStep(
             createStep.restatedOpeningAdjustments {
                 Source =
-                    // Effectively makes this a null step.
-                    SourceDefinition.usePrior
+                    useForAssetShares
+                        <@ _.Step1_RestatedAdjustments_UAS @>
+                        <@ _.Step1_RestatedAdjustments_SAS @>
+
                 Validator =
                     noValidator
             }
@@ -369,7 +370,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
             }
         )
 
-    member val investmentReturn =
+    member val investmentReturns =
         this.registerInteriorStep (
             createStep.investmentReturns {
                 Source =
@@ -386,7 +387,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         this.registerInteriorStep (
             createStep.closingGuaranteedDeathBenefit {
                 Source = <@
-                    fun from prior ->
+                    fun from _ prior _ ->
                         {
                             prior with
                                 GuaranteedDeathBenefit =
@@ -402,7 +403,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         this.registerInteriorStep (
             createStep.closingDeathUpliftFactor {
                 Source = <@
-                    fun from prior ->
+                    fun from _ prior _ ->
                         {
                             prior with
                                 DeathUpliftFactor =
@@ -418,7 +419,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         this.registerInteriorStep (
             createStep.closingExitBonusRate {
                 Source = <@
-                    fun from prior ->
+                    fun from _ prior _ ->
                         {
                             prior with
                                 ExitBonusRate =
@@ -435,7 +436,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         this.registerInteriorStep (
             createStep.aocClosingConsistencyCheck {
                 Source = <@
-                    fun from _ ->
+                    fun from _ _ _ ->
                         {                    
                             UnsmoothedAssetShare =
                                 from.apiCall (_.px_PostOpeningRegression, _.UnsmoothedAssetShare)

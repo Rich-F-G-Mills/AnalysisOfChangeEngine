@@ -52,13 +52,13 @@ module Types =
         Result<'T * CleansingChanges, PolicyID option * Reason>
 
 
-    type ApiRequest<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+    type ApiRequestor<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
         Map<string, PropertyInfo> -> 'TPolicyRecord -> Result<Map<string, obj>, string>
 
     type IApiRequestor<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
         interface
             abstract Name: string
-            abstract Requestor: ApiRequest<'TPolicyRecord>
+            abstract Requestor: ApiRequestor<'TPolicyRecord>
         end
 
     // DD - We also need to track the possible API responses... We cannot use
@@ -104,15 +104,15 @@ module Types =
         abstract member apiCall<'TResponse, 'T>
             : apiRequest: ('TApiCollection -> WrappedApiRequestor<'TPolicyRecord, 'TResponse>) * selector: ('TResponse -> 'T) -> 'T
 
-        /// Permits fields to be calculated using other fields within the step output.
-        abstract member calculation<'T>
-            : definition: ('TStepResults -> 'T) -> 'T
-
 
     type SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
         // DD - If we supply 'from' and 'apis' as tupled arguments, the resulting quotation
         // is more cumbersome to process. Using curried form makes them easier to identify.
-        Expr<SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection> -> 'TStepResults -> 'TStepResults>
+        Expr<SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+                -> 'TPolicyRecord
+                -> 'TStepResults    // Prior
+                -> 'TStepResults    // Current
+                -> 'TStepResults>
 
     module SourceDefinition =
         let castExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> expr
@@ -121,7 +121,7 @@ module Types =
 
         let usePrior<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord>
             : SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
-                <@ fun _ prior -> prior @>
+                <@ fun _ _ prior _ -> prior @>
 
 
     // The only items available for validation will be the record itself and the corresponding results.
@@ -132,13 +132,7 @@ module Types =
     type DataChangeStepValidator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         'TPolicyRecord * 'TStepResults * 'TPolicyRecord * 'TStepResults -> StepValidationIssue list
 
-    // For a regression step, we aren't changing policy data. As such, we're only
-    // expecting variability due to a change in the underlying API.
-    type RegressionStepValidator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
-        'TPolicyRecord * 'TStepResults * 'TStepResults -> StepValidationIssue list
-
-    // Similar situation as for the regression validator above.
-    type ParameterChangeStepValidator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
+    type SourceChangeStepValidator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         'TPolicyRecord * 'TStepResults * 'TStepResults -> StepValidationIssue list
 
     // Similar situation to the open step validator above.
@@ -195,13 +189,13 @@ module Types =
     // of the underlying API. As such, no data changes are expected (nor permitted)
     // for these.
     [<NoEquality; NoComparison>]
-    type RegressionStep<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
+    type SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
         {
             Uid             : Guid
             Title           : string
             Description     : string
             Source          : SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-            Validator       : RegressionStepValidator<'TPolicyRecord, 'TStepResults>
+            Validator       : SourceChangeStepValidator<'TPolicyRecord, 'TStepResults>
         }
 
         interface IStepHeader with
@@ -231,25 +225,6 @@ module Types =
             member this.Title = this.Title
             member this.Description = this.Description 
 
-    // Intended that a parameter change is achieved via a change in the underlying API.
-    [<NoEquality; NoComparison>]
-    type ParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
-        {
-            Uid             : Guid
-            Title           : string
-            Description     : string
-            Source          : SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-            Validator       : ParameterChangeStepValidator<'TPolicyRecord, 'TStepResults>
-        }
-
-        interface IStepHeader with
-            member this.Uid = this.Uid
-            member this.Title = this.Title
-            member this.Description = this.Description 
-
-        interface IApiSourcedStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> with
-            member this.Source =
-                this.Source
 
     // No data changer or validator needed here.
     [<NoEquality; NoComparison>]
@@ -319,7 +294,7 @@ module Types =
                 OpeningStep<'TPolicyRecord, 'TStepResults> with get
 
             abstract member openingRegression :
-                RegressionStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> with get
+                SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> with get
 
             abstract member removeExitedRecords :
                 RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> with get 
@@ -342,15 +317,11 @@ module Types =
                 do _interiorSteps.Add step
 
             // DD - Using multiple dispatch we can control the types of interior steps we're expecting.
-            member this.registerInteriorStep (step: RegressionStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
+            member this.registerInteriorStep (step: SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
                 do this._registerInteriorStep step
                 step
 
             member this.registerInteriorStep (step: DataChangeStep<'TPolicyRecord, 'TStepResults>) =
-                do this._registerInteriorStep step
-                step
-
-            member this.registerInteriorStep (step: ParameterChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
                 do this._registerInteriorStep step
                 step
 

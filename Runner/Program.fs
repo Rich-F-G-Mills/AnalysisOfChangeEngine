@@ -127,12 +127,10 @@ module Runner =
 
             do printfn "\n\n\n"
 
-            let parsedWalk =
-                WalkParser.parseStepSourcesForWalk apiCollection walk
+            //let parsedWalk =
+            //    WalkSourcesParser.parse apiCollection walk
 
-            do printfn "%A" parsedWalk
-
-            do printfn "\n\n%i" parsedWalk.Length
+            //do printfn "%A" parsedWalk
 
             return 0
         }
