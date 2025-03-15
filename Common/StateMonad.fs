@@ -68,8 +68,6 @@ type StateBuilder internal () =
         delayed ()
                 
 
-
-
 [<AutoOpen>]
 module StateBuilder =
     let state =
@@ -97,7 +95,7 @@ module List =
     // TODO - Could this be made tail-recursive?
     let rec mapStateM f = function
         | [] ->
-            State.returnM []
+            State.returnM List.empty
         | x :: xs ->
             State.bindM (f x) (fun x' ->
                 State.bindM (mapStateM f xs) (fun xs' ->

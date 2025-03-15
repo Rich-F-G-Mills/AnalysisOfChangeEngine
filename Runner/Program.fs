@@ -127,10 +127,10 @@ module Runner =
 
             do printfn "\n\n\n"
 
-            //let parsedWalk =
-            //    WalkSourcesParser.parse apiCollection walk
+            let parsedStep =
+                StepSource.processSource apiCollection walk.investmentReturns.Source
 
-            //do printfn "%A" parsedWalk
+            do printfn "%A" parsedStep
 
             return 0
         }

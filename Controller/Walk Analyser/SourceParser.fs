@@ -60,8 +60,8 @@ module StepSource =
         inner Map.empty sourceBody
 
 
-    let processStep<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord>
-        (apiCollection: 'TApiCollection) = 
+    let processSource<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord>
+        (apiCollection: 'TApiCollection) newPolicyRecordVarDef = 
             let sourceActionType =
                 typeof<SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection>>
 
@@ -71,10 +71,15 @@ module StepSource =
             let stepResultMembers =
                 FSharpType.GetRecordFields (typeof<'TStepResults>)
                 |> Seq.map (fun pi -> pi.Name, pi)
-                |> Map.ofSeq               
+                |> Map.ofSeq   
+                
+            let stepResultMemberNames =
+                stepResultMembers
+                |> Map.keys
+                |> Set
 
-            fun (source: SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>) ->
-                let fromVarDef, policyRecordsVarDef, priorResultsVarDef, currentResultsVarDef, sourceBody =
+            fun priorElementDefns (source: SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>) ->
+                let fromVarDef, policyRecordVarDef, priorResultsVarDef, currentResultsVarDef, sourceBody =
                     match source with
                     | SourceLambda (from, policyRecord, priorResults, currentResults, expr) ->
                         (from, policyRecord, priorResults, currentResults, Expr.Cast<'TStepResults> expr)
@@ -88,7 +93,7 @@ module StepSource =
                     | v when v = fromVarDef -> Some () | _ -> None
 
                 let (|PolicyRecordVarDef|_|) = function
-                    | v when v = policyRecordsVarDef -> Some () | _ -> None
+                    | v when v = policyRecordVarDef -> Some () | _ -> None
 
                 let (|PriorResultsVarDef|_|) = function
                     | v when v = priorResultsVarDef -> Some () | _ -> None
@@ -99,7 +104,7 @@ module StepSource =
                 let (|FromVar|_|) = function
                     | Patterns.Var FromVarDef -> Some () | _ -> None
 
-                let (|PolicyRecordsVar|_|) = function
+                let (|PolicyRecordVar|_|) = function
                     | Patterns.Var PolicyRecordVarDef -> Some () | _ -> None
 
                 let (|PriorResultsVar|_|) = function
@@ -138,10 +143,10 @@ module StepSource =
                     | _ ->
                         None
 
-                let processElementCalculation calcBody =
+                let processElementCalculation calcDefn: SourceElementDefinition<'TPolicyRecord> =
                     // Why use mutable state via a closure when you can use a state monad?!
-                    let rec inner (expr: Expr) =
-                        match expr with
+                    // ...Right?!
+                    let rec inner = function
                         | ExprShape.ShapeLambda _ ->
                             failwith "Cannot define lambdas within a source element."
 
@@ -150,6 +155,10 @@ module StepSource =
 
                         | PriorResultsVar ->
                             failwith "Cannot use the prior result in a calculation (ambiguous intent)."
+
+                        | PolicyRecordVar ->
+                            // Allows us to standardise the policy record variable across all sources.
+                            State.returnM (Expr.Var newPolicyRecordVarDef)
 
                         | ApiRequest (requestPI, selectorPI) ->
                             state {
@@ -179,13 +188,85 @@ module StepSource =
                                 return ExprShape.RebuildShapeCombination (shape, newExprs)
                             }
 
-                        | _ ->
+                        | expr ->
                             State.returnM expr                  
 
-                    inner calcBody   
-                    |> State.run SourceElementDependencies.empty
+                    let newCalcDefn, dependencies =
+                        State.run SourceElementDependencies.empty (inner calcDefn)
+
+                    {
+                        Dependencies    = dependencies
+                        Original        = calcDefn
+                        Rebuilt         = newCalcDefn
+                    }
+
+                let processElement elementPI = function
+                    | UsePrior elementPI' when elementPI = elementPI' ->
+                        None
+
+                    | calcDefn ->
+                        Some (processElementCalculation calcDefn)
+
+                let definedElements =
+                    flattenedSourceBody
+                    |> Map.toSeq
+                    |> Seq.map (fun (name, defn) ->
+                        name, processElement stepResultMembers[name] defn)
+                    |> Seq.choose (function
+                        | name, Some element -> Some (name, element)
+                        | _ -> None)
+                    |> Map.ofSeq
+
+                let combinedElements =
+                    Map.merge priorElementDefns definedElements
+
+                let combinedElementNames =
+                    combinedElements
+                    |> Map.keys
+                    |> Set
+
+                // Provided the first post-opening step has been defined correctly,
+                // we shouldn't have any issues thereafter.
+                if combinedElementNames <> stepResultMemberNames then
+                    failwith "Not all step result members have been defined."
+
+                // Key is the member name.
+                // Value is the set of member names that the key depends on.
+                let currentStepDependencies =
+                    combinedElements
+                    |> Map.map (fun _ { Dependencies = deps } ->
+                        deps.CurrentResults
+                        |> Map.keys
+                        |> Seq.map _.ElementProperty.Name
+                        |> Set)
+
+                let dependencySorter = function
+                    | _, remaining when Set.isEmpty remaining ->
+                        None
+
+                    | ordered, remaining ->
+                        let next =
+                            remaining
+                            |> Seq.tryFind (fun elementName ->
+                                let dependsOn =
+                                    currentStepDependencies[elementName]
+                                Set.isSubset dependsOn ordered)
+                            |> Option.defaultWith (fun _ ->
+                                failwith "Circular dependency detected.")
+
+                        let newOrdered =
+                            ordered |> Set.add next
+
+                        let newRemaining =
+                            remaining |> Set.remove next
+
+                        Some (next, (newOrdered, newRemaining))
+
+                let currentStepOrdering =
+                    List.unfold dependencySorter (Set.empty, stepResultMemberNames)                 
 
                 0
+                            
 
 
 (*

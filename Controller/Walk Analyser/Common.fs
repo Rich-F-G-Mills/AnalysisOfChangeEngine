@@ -175,16 +175,21 @@ module SourceElementDependencies =
 
             return varDef
         }
-        
+          
 
-        
-       
-
-[<RequireQualifiedAccess; NoEquality; NoComparison>]
-type ProcessedSourceElement<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+[<NoEquality; NoComparison>]
+type SourceElementDefinition<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
     {
-        Dependencies    : SourceElementDependencies<'TPolicyRecord>
-        OriginalBody    : Expr
-        RebuiltBody     : Expr
+        Dependencies        : SourceElementDependencies<'TPolicyRecord>
+        Original            : Expr
+        Rebuilt             : Expr
     }
 
+
+[<NoEquality; NoComparison>]
+type SourceDefinition<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+    {
+        ElementDefinitions  : Map<string, SourceElementDefinition<'TPolicyRecord>>
+        Ordering            : Set<string> list
+        Dependencies        : SourceElementDependencies<'TPolicyRecord>
+    }
