@@ -105,7 +105,7 @@ module Types =
             : apiRequest: ('TApiCollection -> WrappedApiRequestor<'TPolicyRecord, 'TResponse>) * selector: ('TResponse -> 'T) -> 'T
 
 
-    type SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
+    type SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
         // DD - If we supply 'from' and 'apis' as tupled arguments, the resulting quotation
         // is more cumbersome to process. Using curried form makes them easier to identify.
         Expr<SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection>
@@ -114,13 +114,13 @@ module Types =
                 -> 'TStepResults    // Current
                 -> 'TStepResults>
 
-    module SourceDefinition =
+    module SourceExpr =
         let castExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> expr
-            : SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
+            : SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
                 Expr.Cast<_> expr
 
         let usePrior<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord>
-            : SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
+            : SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
                 <@ fun _ _ prior _ -> prior @>
 
 
@@ -152,6 +152,7 @@ module Types =
     // It is assumed that logic cannot be put in a situation where it is NOT
     // possible to provide revised data.
     type PolicyRecordChanger<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+        // Opening * Prior * Closing -> Optional Revised
         'TPolicyRecord * 'TPolicyRecord * 'TPolicyRecord -> 'TPolicyRecord option
 
 
@@ -162,10 +163,16 @@ module Types =
             abstract member Description : string with get
         end
 
-    type IApiSourcedStep<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
+    type ISourcedStep<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
         interface
             inherit IStepHeader
-            abstract member Source: SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection> with get
+            abstract member Source: SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection> with get
+        end
+
+    type IDataChangeStep<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+        interface
+            inherit IStepHeader
+            abstract member DataChanger: PolicyRecordChanger<'TPolicyRecord> with get
         end
 
 
@@ -183,7 +190,12 @@ module Types =
         interface IStepHeader with
             member this.Uid = this.Uid
             member this.Title = this.Title
-            member this.Description = this.Description  
+            member this.Description = this.Description
+
+        interface IDataChangeStep<'TPolicyRecord> with
+            member _.DataChanger =
+                fun (opening, _, _) ->
+                    Some opening
 
     // We'd usually run a regression test because of a change in parameterisation
     // of the underlying API. As such, no data changes are expected (nor permitted)
@@ -194,7 +206,7 @@ module Types =
             Uid             : Guid
             Title           : string
             Description     : string
-            Source          : SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+            Source          : SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             Validator       : SourceChangeStepValidator<'TPolicyRecord, 'TStepResults>
         }
 
@@ -203,7 +215,7 @@ module Types =
             member this.Title = this.Title
             member this.Description = this.Description    
 
-        interface IApiSourcedStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> with
+        interface ISourcedStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> with
             member this.Source =
                 this.Source
                 
@@ -259,6 +271,11 @@ module Types =
             member this.Title = this.Title
             member this.Description = this.Description
 
+        interface IDataChangeStep<'TPolicyRecord> with
+            member _.DataChanger =
+                fun (_, _, closing) ->
+                    Some closing
+
     // Again, no change in data or API allowed (or permitted). All we're doing is
     // changing the filter applied as to whether a given record is considered for
     // processing.
@@ -278,7 +295,7 @@ module Types =
 
 
     [<AbstractClass>]
-    type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection  when 'TPolicyRecord :> IPolicyRecord>
+    type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection  when 'TPolicyRecord :> IPolicyRecord and 'TPolicyRecord : equality>
         (logger: ILogger) as this =
 
             let _interiorSteps =
@@ -327,6 +344,8 @@ module Types =
 
 
             member val AllSteps =
+                // Must be a sequence or we'll get an error about using
+                // members before they've been defined.
                 seq {
                     yield this.opening :> IStepHeader
                     yield this.openingRegression :> IStepHeader

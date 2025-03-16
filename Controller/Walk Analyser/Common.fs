@@ -117,7 +117,7 @@ module SourceElementDependencies =
 
                     | None ->
                         let newVarName =
-                            "Api Call [" + requestor.Name + "].[" + outputProperty.Name + "]"
+                            "Api Call <" + requestor.Name + ">.<" + outputProperty.Name + ">"
 
                         let newVarDef =
                             Var (newVarName, outputProperty.PropertyType)
@@ -157,7 +157,7 @@ module SourceElementDependencies =
 
                     | None ->
                         let newVarName =
-                            "Current Result [" + elementProperty.Name + "]"
+                            "Current Result <" + elementProperty.Name + ">"
 
                         let newVarDef =
                             Var (newVarName, elementProperty.PropertyType)
@@ -187,9 +187,28 @@ type SourceElementDefinition<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord
 
 
 [<NoEquality; NoComparison>]
-type SourceDefinition<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+type ParsedSource<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
     {
         ElementDefinitions  : Map<string, SourceElementDefinition<'TPolicyRecord>>
-        Ordering            : Set<string> list
-        Dependencies        : SourceElementDependencies<'TPolicyRecord>
+        Ordering            : string list
+    }
+
+
+[<NoEquality; NoComparison>]
+type DataStages<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
+    {
+        // Note that not all data changes occur at a DataChangeStep!
+        // Data changes also ocurr for the opening and penultimate steps.
+        DataChangeStep          : IDataChangeStep<'TPolicyRecord>        
+        // Not including the data change step above.
+        WithinStageSteps        : IStepHeader list
+        // These are the API calls arising from steps within this data stage.
+        WithinStageApiCalls     : SourceElementApiCallDependency<'TPolicyRecord> Set
+    }
+
+
+[<NoEquality; NoComparison>]
+type ParsedWalk =
+    {
+        PolicyRecordVarDef  : Var
     }

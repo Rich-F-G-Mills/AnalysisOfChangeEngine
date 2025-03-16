@@ -14,7 +14,7 @@ type OpeningStepDetails<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPo
 [<NoEquality; NoComparison>]
 type SourceChangeStepDetails<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
     {
-        Source: SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        Source: SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection>
         Validator: SourceChangeStepValidator<'TPolicyRecord, 'TStepResults>
     }
 

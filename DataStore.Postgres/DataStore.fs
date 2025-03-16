@@ -97,6 +97,18 @@ module Postgres =
 
     type DataStore (sessionContext: SessionContext, connection: NpgsqlConnection) =
 
+        member this.CreateUidResolver () =
+            let stepHeaders =
+                this.GetAllStepHeaders ()
+                |> Seq.map (fun sh -> sh.Uid, sh)
+                |> Map.ofSeq
+
+            fun uid ->
+                let stepHeader =
+                    stepHeaders[uid]
+
+                stepHeader.Title, stepHeader.Description
+
         member _.TryGetProduct (uid: Guid) =
             connection
             |> Sql.existingConnection

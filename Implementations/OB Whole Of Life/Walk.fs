@@ -53,7 +53,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
     let useForAssetShares
         (unsmoothedSelector: Expr<PxApi.OutputAttributes -> double>)
         (smoothedSelector: Expr<PxApi.OutputAttributes -> double>)
-        : SourceDefinition<PolicyRecord, StepResults, _> =
+        : SourceExpr<PolicyRecord, StepResults, _> =
             <@
                 fun from _ prior _ ->
                     {

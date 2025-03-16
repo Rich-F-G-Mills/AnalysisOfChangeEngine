@@ -1,9 +1,9 @@
 ﻿
-namespace AnalysisOfChangeEngine.Controller
+namespace AnalysisOfChangeEngine.Controller.WalkAnalyser
 
 
 [<RequireQualifiedAccess>]
-module StepSource =
+module SourceParser =
 
     open System
     open System.Reflection
@@ -11,7 +11,6 @@ module StepSource =
     open FSharp.Reflection
     open AnalysisOfChangeEngine
     open AnalysisOfChangeEngine.StateMonad
-    open AnalysisOfChangeEngine.Controller.WalkAnalyser
 
 
     let private (|SourceLambda|_|) = function
@@ -60,8 +59,8 @@ module StepSource =
         inner Map.empty sourceBody
 
 
-    let processSource<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord>
-        (apiCollection: 'TApiCollection) newPolicyRecordVarDef = 
+    let execute<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord>
+        (apiCollection: 'TApiCollection, newPolicyRecordVarDef) = 
             let sourceActionType =
                 typeof<SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection>>
 
@@ -78,7 +77,7 @@ module StepSource =
                 |> Map.keys
                 |> Set
 
-            fun priorElementDefns (source: SourceDefinition<'TPolicyRecord, 'TStepResults, 'TApiCollection>) ->
+            fun priorElementDefns (source: SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection>) ->
                 let fromVarDef, policyRecordVarDef, priorResultsVarDef, currentResultsVarDef, sourceBody =
                     match source with
                     | SourceLambda (from, policyRecord, priorResults, currentResults, expr) ->
@@ -145,9 +144,9 @@ module StepSource =
 
                 let processElementCalculation calcDefn: SourceElementDefinition<'TPolicyRecord> =
                     // Why use mutable state via a closure when you can use a state monad?!
-                    // ...Right?!
+                    // It's obvious... Right???
                     let rec inner = function
-                        | ExprShape.ShapeLambda _ ->
+                        | Patterns.Lambda _ ->
                             failwith "Cannot define lambdas within a source element."
 
                         | Patterns.ValueWithName (_, _, name) ->
@@ -180,16 +179,27 @@ module StepSource =
                                 return Expr.Var varDef
                             }
 
-                        | ExprShape.ShapeCombination (shape, exprs) ->
+                        | Patterns.Call (Some obj, mi, exprs) ->                            
                             state {
                                 let! newExprs =
                                     List.mapStateM inner exprs
 
-                                return ExprShape.RebuildShapeCombination (shape, newExprs)
+                                return Expr.Call (obj, mi, newExprs)
                             }
 
+                        | Patterns.Call (None, mi, exprs) ->                            
+                            state {
+                                let! newExprs =
+                                    List.mapStateM inner exprs
+
+                                return Expr.Call (mi, newExprs)
+                            }
+
+                        | Patterns.Value _ as valueExpr ->
+                            State.returnM valueExpr
+
                         | expr ->
-                            State.returnM expr                  
+                            failwithf "Unsupported expression: %A" expr
 
                     let newCalcDefn, dependencies =
                         State.run SourceElementDependencies.empty (inner calcDefn)
@@ -230,9 +240,9 @@ module StepSource =
                 if combinedElementNames <> stepResultMemberNames then
                     failwith "Not all step result members have been defined."
 
-                // Key is the member name.
-                // Value is the set of member names that the key depends on.
-                let currentStepDependencies =
+                // Here we're identifying dependencies between elements of the
+                // current step.
+                let withinStepDependencies =
                     combinedElements
                     |> Map.map (fun _ { Dependencies = deps } ->
                         deps.CurrentResults
@@ -240,118 +250,40 @@ module StepSource =
                         |> Seq.map _.ElementProperty.Name
                         |> Set)
 
-                let dependencySorter = function
-                    | _, remaining when Set.isEmpty remaining ->
+                let dependencySorter ordered =
+                    // Not the most efficient way of doing things.
+                    // However, a set doesn't maintain insertion order.
+                    // And, frankly, far from being a performance bottleneck.
+                    let orderedSet =
+                        Set ordered
+
+                    let remaining =
+                        Set.difference stepResultMemberNames orderedSet
+
+                    if remaining.IsEmpty then
+                        // Nothing else left to sort!
                         None
 
-                    | ordered, remaining ->
+                    else
                         let next =
                             remaining
                             |> Seq.tryFind (fun elementName ->
                                 let dependsOn =
-                                    currentStepDependencies[elementName]
-                                Set.isSubset dependsOn ordered)
+                                    withinStepDependencies[elementName]
+                                Set.isSubset dependsOn orderedSet)
                             |> Option.defaultWith (fun _ ->
                                 failwith "Circular dependency detected.")
 
                         let newOrdered =
-                            ordered |> Set.add next
+                            ordered @ [next]
 
-                        let newRemaining =
-                            remaining |> Set.remove next
+                        Some (next, newOrdered)
 
-                        Some (next, (newOrdered, newRemaining))
+                let memberOrdering =
+                    List.unfold dependencySorter List.empty          
 
-                let currentStepOrdering =
-                    List.unfold dependencySorter (Set.empty, stepResultMemberNames)                 
-
-                0
+                {
+                    ElementDefinitions  = combinedElements
+                    Ordering            = memberOrdering
+                }
                             
-
-
-(*
-[<RequireQualifiedAccess>]
-module WalkSourcesParser =
-
-    open FSharp.Reflection
-    open AnalysisOfChangeEngine
-
-
-    let parse (apiCollection: 'TApiCollection) (walk: AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
-        let stepResultMembers =
-            FSharpType.GetRecordFields (typeof<'TStepResults>)
-            |> Seq.map (fun pi -> pi.Name, pi)
-            |> Map.ofSeq
-
-        let stepsPostOpening =
-            walk.AllSteps
-            // We don't care about the opening step here.
-            |> Seq.tail
-
-        let startingParsedSource =
-            stepsPostOpening
-            |> Seq.head
-            // The fist post-opening step MUST have a source; otherwise, what are we using?
-            :?> IApiSourcedStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-            |> _.Source
-            |> StepSourceParser.parse apiCollection
-
-        let stepResultMemberNames =
-            stepResultMembers
-            |> Map.keys
-            |> Set.ofSeq
-
-        let startingParsedSourceNames =
-            startingParsedSource
-            |> Map.keys
-            |> Set.ofSeq
-
-        if stepResultMemberNames <> startingParsedSourceNames then
-            failwith "Incorrect mappings supplied for inital post-opening step."
-
-        let accumulator prior: IStepHeader -> Map<string, StepSourceParser.SourceElement<_, _>> = function
-            | :? IApiSourcedStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> as step' ->
-                let parsedSource =
-                    step'.Source
-                    |> StepSourceParser.parse apiCollection
-
-                let parsedSourceKeys =
-                    parsedSource
-                    |> Map.keys
-                    |> Set.ofSeq
-
-                if not (Set.isSubset parsedSourceKeys stepResultMemberNames) then
-                    failwithf "Unexpected result mappings supplied for step '%s'." step'.Title
-
-                let accumParsedSource =
-                    parsedSource
-                    |> Map.merge prior
-
-                let calculatedElements =
-                    accumParsedSource
-                    |> Map.toSeq
-                    |> Seq.choose (function
-                        | memberName, { Type = StepSourceParser.SourceElementType.Calculation (dependsOn, _) } ->
-                            Some (memberName, (set dependsOn.Keys))
-                        | _ ->
-                            None)
-                    |> Map.ofSeq
-
-                let nonCalculatedElements =
-                    calculatedElements
-                    |> Map.keys
-                    |> Set
-                    |> Set.difference stepResultMemberNames
-
-                accumParsedSource
-
-            | _ ->
-                // If we don't have a sourceable step, we just pass the prior mappings along.
-                prior
-
-        stepsPostOpening
-        // Drop the first of the post-opening steps.
-        |> Seq.tail
-        |> Seq.scan accumulator startingParsedSource
-        |> Seq.toList
-*)

@@ -5,11 +5,12 @@ namespace AnalysisOfChangeEngine
 module Runner =
 
     open System
+    open FSharp.Quotations
     open FsToolkit.ErrorHandling
     open Npgsql
     open Npgsql.FSharp
     open AnalysisOfChangeEngine
-    open AnalysisOfChangeEngine.Controller
+    open AnalysisOfChangeEngine.Controller.WalkAnalyser
     open AnalysisOfChangeEngine.DataStore
     open AnalysisOfChangeEngine.Implementations
 
@@ -83,16 +84,7 @@ module Runner =
                 new Postgres.DataStore (sessionContext, connection)
 
             let stepUidResolver =
-                let stepHeaders =
-                    dataStore.GetAllStepHeaders ()
-                    |> Seq.map (fun sh -> sh.Uid, sh)
-                    |> Map.ofSeq
-
-                fun uid ->
-                    let stepHeader =
-                        stepHeaders[uid]
-
-                    stepHeader.Title, stepHeader.Description
+                dataStore.CreateUidResolver ()
 
             //let newProduct =
             //    dataStore.CreateProduct ("OB Whole-Life", "LVFS CWP OB Whole-Life")
@@ -110,7 +102,7 @@ module Runner =
 
             // The walk creates our api end-points which we can then use below.
             // This means that our logic to define the APIs and the steps is kept
-            // together in one place.
+            // together in one place. More of an aesthetic choice than anything else.
             let apiCollection: OBWholeOfLife.ApiCollection =
                 {
                     px_OpeningRegression =
@@ -124,13 +116,11 @@ module Runner =
 
             for (idx, step) in walk.AllSteps |> Seq.indexed do
                 do printfn "%2i -  %s: %s" idx (step.Title.PadRight 35) step.Description
+            
+            let parsedWalk =
+                WalkParser.execute apiCollection walk
 
-            do printfn "\n\n\n"
-
-            let parsedStep =
-                StepSource.processSource apiCollection walk.investmentReturns.Source
-
-            do printfn "%A" parsedStep
+            do printfn "%i" parsedWalk.Length
 
             return 0
         }
