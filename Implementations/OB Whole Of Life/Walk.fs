@@ -150,33 +150,35 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         }
 
 
-    // --- API CALLS ---
+    // --- API COLLECTION ---
 
-    member val px_OpeningRegression
-        : WrappedApiRequestor<_, PxApi.OutputAttributes> =
-            PxApi.createOpeningDispatcher<PolicyRecord> {
-                OpeningRunDate =
-                    runContext.OpeningRunDate
-            }
-
-    member val px_PostOpeningRegression
-        : WrappedApiRequestor<_, PxApi.OutputAttributes> =
-            PxApi.createPostOpeningDispatcher<PolicyRecord> {
-                OpeningRunDate =
-                    runContext.OpeningRunDate
-                ClosingRunDate =
-                    runContext.ClosingRunDate
-            }
-                                
+    // DD - We've chosen to define the API collection itself within the walk.
+    // This was just so that we can keep everything together.
+    member val ApiCollection =
+        {
+            px_OpeningRegression =
+                PxApi.createOpeningDispatcher<PolicyRecord> {
+                    OpeningRunDate =
+                        runContext.OpeningRunDate
+                }
+            px_PostOpeningRegression =
+                PxApi.createPostOpeningDispatcher<PolicyRecord> {
+                    OpeningRunDate =
+                        runContext.OpeningRunDate
+                    ClosingRunDate =
+                        runContext.ClosingRunDate
+                }
+        }
+             
 
     // --- REQUIRED STEPS ---
 
-    override val opening =
+    override val Opening =
         createStep.opening  {
             Validator = noValidator
         }
 
-    override val openingRegression =
+    override val OpeningRegression =
         createStep.openingRegression {
             Source = <@
                 fun from _ _ _ ->
@@ -207,7 +209,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
                         [ StepValidationIssue.Warning "Regression mis-match" ]
         }    
 
-    override val removeExitedRecords =
+    override val RemoveExitedRecords =
         createStep.removeExited ()
 
 
@@ -215,7 +217,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
     // We need to make sure that these are registered as well as defined!
 
     // We can only restate data which is still in-force!
-    member val restatedOpeningData =
+    member val RestatedOpeningData =
         this.registerInteriorStep(
             createStep.restatedOpeningData {
                 DataChanger =
@@ -225,7 +227,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
             }
         )
 
-    member val aocOpeningConsistencyCheck =
+    member val AocOpeningConsistencyCheck =
         // The interested reader may be wondering why this is needed...
         // As of the previous step, we're using the same UAS and SAS outputs as
         // underlying claims calculations. From this step onwards, we're using
@@ -256,7 +258,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
             }
         )          
 
-    member val restatedOpeningAdjustments =
+    member val RestatedOpeningAdjustments =
         this.registerInteriorStep(
             createStep.restatedOpeningAdjustments {
                 Source =
@@ -269,7 +271,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
             }
         )
 
-    member val restatedOpeningReturns =
+    member val RestatedOpeningReturns =
         this.registerInteriorStep(
             createStep.restatedOpeningReturns {
                 Source =
@@ -282,7 +284,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
             }
         )
             
-    member val restatedOpeningDeductions =
+    member val RestatedOpeningDeductions =
         this.registerInteriorStep(
             createStep.restatedOpeningDeductions {
                 Source =
@@ -295,7 +297,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
             }
         )   
         
-    member val moveToClosingDate =
+    member val MoveToClosingDate =
         this.registerInteriorStep(
             createStep.moveToClosingDate {
                 Source =
@@ -308,7 +310,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
             }
         )
 
-    member val dataRollForward =
+    member val DataRollForward =
         this.registerInteriorStep (
             createStep.dataRollForward {
                 DataChanger =
@@ -318,7 +320,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
             }
         )
 
-    member val adjustments =
+    member val Adjustments =
         this.registerInteriorStep (
             createStep.adjustments {
                 Source =
@@ -331,7 +333,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
             }
         )
 
-    member val premiums =
+    member val Premiums =
         this.registerInteriorStep (
             createStep.premiums {
                 Source =
@@ -344,7 +346,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
             }
         )
 
-    member val deductions =
+    member val Deductions =
         this.registerInteriorStep (
             createStep.deductions {
                 Source =
@@ -357,7 +359,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
             }
         )
 
-    member val mortalityCharges =
+    member val MortalityCharges =
         this.registerInteriorStep (
             createStep.mortalityCharges {
                 Source =
@@ -370,7 +372,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
             }
         )
 
-    member val investmentReturns =
+    member val InvestmentReturns =
         this.registerInteriorStep (
             createStep.investmentReturns {
                 Source =
@@ -383,7 +385,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
             }
         )
 
-    member val closingGuaranteedDeathBenefit =
+    member val ClosingGuaranteedDeathBenefit =
         this.registerInteriorStep (
             createStep.closingGuaranteedDeathBenefit {
                 Source = <@
@@ -399,7 +401,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
             }
         )
 
-    member val closingDeathUpliftFactor =
+    member val ClosingDeathUpliftFactor =
         this.registerInteriorStep (
             createStep.closingDeathUpliftFactor {
                 Source = <@
@@ -415,7 +417,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
             }
         )
 
-    member val closingExitBonusRate =
+    member val ClosingExitBonusRate =
         this.registerInteriorStep (
             createStep.closingExitBonusRate {
                 Source = <@
@@ -432,7 +434,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         )
 
     // Same rationale as per the opening equivalent.
-    member val aocClosingConsistencyCheck =
+    member val AocClosingConsistencyCheck =
         this.registerInteriorStep (
             createStep.aocClosingConsistencyCheck {
                 Source = <@
@@ -461,7 +463,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
             }
         )
 
-    member val recentPaidUps  =
+    member val RecentPaidUps  =
         this.registerInteriorStep (
             createStep.recentPaidUps {
                 DataChanger =
@@ -473,13 +475,13 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
 
     // --- REQUIRED STEPS ---
 
-    override val moveToClosingExistingData =
+    override val MoveToClosingExistingData =
         createStep.moveToClosingExistingData {            
             Validator =
                 noValidator
         }
  
-    override val addNewRecords =
+    override val AddNewRecords =
         createStep.addNewRecords {
             Validator = noValidator
         }

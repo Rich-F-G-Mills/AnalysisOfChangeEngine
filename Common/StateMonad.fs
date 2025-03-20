@@ -77,21 +77,6 @@ module StateBuilder =
 [<RequireQualifiedAccess>]
 module List =
 
-    (*
-    Unfortunately, Copilot's implementation of List.mapM is not tail-recursive.
-    
-    [<TailCall>]
-    let rec private mapStateM_inner f agg = function
-        | [] ->
-            State.returnM (List.rev agg)
-        | x :: xs ->
-            State.bindM (f x) (fun x' ->
-                mapStateM_inner f (x' :: agg) xs)
-
-    let mapStateM f =
-        mapStateM_inner f []
-    *)
-
     // TODO - Could this be made tail-recursive?
     let rec mapStateM f = function
         | [] ->

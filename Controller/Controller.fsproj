@@ -9,7 +9,6 @@
     <Compile Include="Walk Analyser\Common.fs" />
     <Compile Include="Walk Analyser\SourceParser.fs" />
     <Compile Include="Walk Analyser\WalkParser.fs" />
-    <Compile Include="CsvReader.fs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -26,7 +26,7 @@ module SourceParser =
     // the exact same order as the original record type definition, the compiler uses (nested)
     // let bindings which are then passed into the new record expression.
     // This is (likely) just in case the member definitions have side-effects which can then
-    // be executed in the same order as the member name-value pairings.
+    // be executed in the same order as the member name-value pairings as supplied.
     // Given there are no side-effects to worry about here, we can collapse everything down
     // into the correctly ordered new record expression.
     let private flattenSourceBody (sourceBody: Expr<'TStepResults>) =
@@ -123,6 +123,7 @@ module SourceParser =
                         let mi' =
                             mi.GetGenericMethodDefinition()
 
+                        // Make sure we're comparing generic vs generic MIs.
                         if mi' = callMI then Some () else None
 
                 let (|ApiRequest|_|) = function
@@ -179,6 +180,10 @@ module SourceParser =
                                 return Expr.Var varDef
                             }
 
+                        // DD - Previously we were using ExprShape.ShapeCombination.
+                        // ...However, this was leading to unanticipated items being returned
+                        // within 'exprs'. Have decided to use specific patterns instead
+                        // so as to better control what expression elements can get used.
                         | Patterns.Call (Some obj, mi, exprs) ->                            
                             state {
                                 let! newExprs =
@@ -206,7 +211,7 @@ module SourceParser =
 
                     {
                         Dependencies    = dependencies
-                        Original        = calcDefn
+                        //Original        = calcDefn
                         Rebuilt         = newCalcDefn
                     }
 
@@ -275,15 +280,24 @@ module SourceParser =
                                 failwith "Circular dependency detected.")
 
                         let newOrdered =
+                            // DD - Would be better to prepend and then reverse.
                             ordered @ [next]
 
                         Some (next, newOrdered)
 
                 let memberOrdering =
-                    List.unfold dependencySorter List.empty          
+                    List.unfold dependencySorter List.empty     
+                    
+                let combinedApiCalls =
+                    combinedElements
+                    |> Map.values
+                    |> Seq.map _.Dependencies.ApiCalls
+                    |> Seq.collect Map.keys
+                    |> Set
 
                 {
                     ElementDefinitions  = combinedElements
+                    ApiCalls            = combinedApiCalls
                     Ordering            = memberOrdering
                 }
                             

@@ -21,35 +21,11 @@ module Types =
 
 
     [<NoEquality; NoComparison>]
-    type ValidatedPolicyRecord<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
-        | ValidatedPolicyRecord of 'TPolicyRecord
-
-
-    [<NoEquality; NoComparison>]
     type RunContext =
         {
             OpeningRunDate: DateOnly
             ClosingRunDate: DateOnly
         }
-
-
-    // Whereas we want to log cleansing changes, we're not interested in loggin
-    // data changes made as part of the data roll-forward between the opening
-    // and closing position.
-    [<NoEquality; NoComparison>]
-    type CleansingChange =
-        {
-            Field:  string
-            From:   string
-            To:     string
-            Reason: string
-        }
-
-    type CleansingChanges =
-        CleansingChange list
-
-    type ParseOutcome<'T> =
-        Result<'T * CleansingChanges, PolicyID option * Reason>
 
 
     type ApiRequestor<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
@@ -169,12 +145,13 @@ module Types =
             abstract member Source: SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection> with get
         end
 
+    // Applied to steps where policy record fields may change.
+    // Does NOT relate to whether individual records themselves are included/excluded.
     type IDataChangeStep<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
         interface
             inherit IStepHeader
             abstract member DataChanger: PolicyRecordChanger<'TPolicyRecord> with get
         end
-
 
     // The opening data will be specified outside of this. We need only worry
     // about validation.
@@ -191,11 +168,6 @@ module Types =
             member this.Uid = this.Uid
             member this.Title = this.Title
             member this.Description = this.Description
-
-        interface IDataChangeStep<'TPolicyRecord> with
-            member _.DataChanger =
-                fun (opening, _, _) ->
-                    Some opening
 
     // We'd usually run a regression test because of a change in parameterisation
     // of the underlying API. As such, no data changes are expected (nor permitted)
@@ -237,6 +209,9 @@ module Types =
             member this.Title = this.Title
             member this.Description = this.Description 
 
+        interface IDataChangeStep<'TPolicyRecord> with
+            member this.DataChanger = this.DataChanger                
+
 
     // No data changer or validator needed here.
     [<NoEquality; NoComparison>]
@@ -276,9 +251,9 @@ module Types =
                 fun (_, _, closing) ->
                     Some closing
 
-    // Again, no change in data or API allowed (or permitted). All we're doing is
-    // changing the filter applied as to whether a given record is considered for
-    // processing.
+    // Again, no change in data or API allowed. All we're doing is
+    // changing the filter applied as to whether a given record is
+    // considered for processing.
     [<NoEquality; NoComparison>]
     type AddNewRecordsStep<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
         {
@@ -307,22 +282,22 @@ module Types =
 
             // --- REQUIRED STEPS ---
 
-            abstract member opening :
+            abstract member Opening :
                 OpeningStep<'TPolicyRecord, 'TStepResults> with get
 
-            abstract member openingRegression :
+            abstract member OpeningRegression :
                 SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> with get
 
-            abstract member removeExitedRecords :
+            abstract member RemoveExitedRecords :
                 RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> with get 
 
 
             // --- FURTHER REQUIRED STEPS ---
 
-            abstract member moveToClosingExistingData :
+            abstract member MoveToClosingExistingData :
                 ClosingExistingDataStep<'TPolicyRecord, 'TStepResults> with get
 
-            abstract member addNewRecords :
+            abstract member AddNewRecords :
                 AddNewRecordsStep<'TPolicyRecord, 'TStepResults> with get
 
 
@@ -344,13 +319,13 @@ module Types =
 
 
             member val AllSteps =
-                // Must be a sequence or we'll get an error about using
+                // Must be a sequence or we get an error about using
                 // members before they've been defined.
                 seq {
-                    yield this.opening :> IStepHeader
-                    yield this.openingRegression :> IStepHeader
-                    yield this.removeExitedRecords :> IStepHeader
+                    yield this.Opening :> IStepHeader
+                    yield this.OpeningRegression :> IStepHeader
+                    yield this.RemoveExitedRecords :> IStepHeader
                     yield! this.InteriorSteps
-                    yield this.moveToClosingExistingData :> IStepHeader
-                    yield this.addNewRecords :> IStepHeader
+                    yield this.MoveToClosingExistingData :> IStepHeader
+                    yield this.AddNewRecords :> IStepHeader
                 }

@@ -18,6 +18,9 @@ type SourceElementApiCallDependency<'TPolicyRecord when 'TPolicyRecord :> IPolic
     // Inspired by...
     // https://www.compositional-it.com/news-blog/custom-equality-and-comparison-in-f/
 
+    // Although this seems like a lot of work, it allows us to identify
+    // distinct dependencies. This allows them to be used as Map<_, _> keys
+    // and within Set<_>.
     override this.Equals (other) =
         match other with
         | :? SourceElementApiCallDependency<'TPolicyRecord> as other' ->
@@ -49,6 +52,7 @@ type SourceElementApiCallDependency<'TPolicyRecord when 'TPolicyRecord :> IPolic
                 failwith "Cannot compare different types of source element dependencies."
 
 
+// Used to track dependencies between members of the current step results.
 [<CustomEquality; CustomComparison>]
 type SourceElementResultDependency<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
     {
@@ -82,6 +86,7 @@ type SourceElementResultDependency<'TPolicyRecord when 'TPolicyRecord :> IPolicy
                 failwith "Cannot compare different types of source element dependencies."
 
 
+// Used to track all of the dependencies for a given step element.
 [<NoEquality; NoComparison>]
 type SourceElementDependencies<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
     {
@@ -181,34 +186,58 @@ module SourceElementDependencies =
 type SourceElementDefinition<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
     {
         Dependencies        : SourceElementDependencies<'TPolicyRecord>
-        Original            : Expr
+        //Original            : Expr
         Rebuilt             : Expr
     }
-
 
 [<NoEquality; NoComparison>]
 type ParsedSource<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
     {
         ElementDefinitions  : Map<string, SourceElementDefinition<'TPolicyRecord>>
+        // Collection of API calls across for the entire step (ie. across all elements).
+        ApiCalls            : SourceElementApiCallDependency<'TPolicyRecord> Set
         Ordering            : string list
     }
 
-
 [<NoEquality; NoComparison>]
-type DataStages<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord> =
-    {
-        // Note that not all data changes occur at a DataChangeStep!
-        // Data changes also ocurr for the opening and penultimate steps.
-        DataChangeStep          : IDataChangeStep<'TPolicyRecord>        
-        // Not including the data change step above.
-        WithinStageSteps        : IStepHeader list
+type OpeningDataStage<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+    {        
+        OpeningStepHeader           : IStepHeader
+        // This does NOT include the data change step header above.
+        WithinStageSteps            : (IStepHeader * ParsedSource<'TPolicyRecord>) list
         // These are the API calls arising from steps within this data stage.
-        WithinStageApiCalls     : SourceElementApiCallDependency<'TPolicyRecord> Set
+        WithinStageApiCalls         : SourceElementApiCallDependency<'TPolicyRecord> Set
     }
 
+[<NoEquality; NoComparison>]
+type PostOpeningDataStage<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+    {
+        // Note that not all data changes occur at a DataChangeStep!
+        // Data changes can also ocurr at the penultimate step.
+        DataChangeStep              : IDataChangeStep<'TPolicyRecord>
+        // Although a data change step has no source, it inherits that
+        // as used for the previous step.
+        DataChangeStepParsedSource  : ParsedSource<'TPolicyRecord>
+        // This does NOT include the data change step header above.
+        WithinStageSteps            : (IStepHeader * ParsedSource<'TPolicyRecord>) list
+        // These are the API calls arising from steps within this data stage.
+        // This will include those arising from the data change step itself
+        // which will have inherited the source from the previous step.
+        WithinStageApiCalls         : SourceElementApiCallDependency<'TPolicyRecord> Set
+    }
 
 [<NoEquality; NoComparison>]
-type ParsedWalk =
+type ParsedWalk<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
     {
-        PolicyRecordVarDef  : Var
+        PolicyRecordVarDef                      : Var
+        // For exiting records, they only fall within the opening data stage.
+        //ExitedRecordDataStage                   : OpeningDataStage<'TPolicyRecord>
+        // For records that have remained in-force over the period, they have both
+        // an opening data stage (which could include additional steps relative to
+        // an exited record) as well as all data stages afterwards, which would
+        // include the move to closing data as a minimum.
+        RemainingRecordOpeningDataStage         : OpeningDataStage<'TPolicyRecord>
+        RemainingRecordPostOpeningDataStages    : PostOpeningDataStage<'TPolicyRecord> list
+        // New records just need to know the source used for the prior step.
+        //NewRecordSource                         : ParsedSource<'TPolicyRecord>
     }

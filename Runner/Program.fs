@@ -100,27 +100,26 @@ module Runner =
             let! walk =
                 OBWholeOfLife.Walk.create (logger LogLevel.WARNING, runContext, walkConfig)
 
-            // The walk creates our api end-points which we can then use below.
-            // This means that our logic to define the APIs and the steps is kept
-            // together in one place. More of an aesthetic choice than anything else.
-            let apiCollection: OBWholeOfLife.ApiCollection =
-                {
-                    px_OpeningRegression =
-                        walk.px_OpeningRegression
-                    px_PostOpeningRegression =
-                        walk.px_PostOpeningRegression
-                }
-
-
             do printfn "Steps: (%i found)" (walk.AllSteps |> Seq.length)
 
             for (idx, step) in walk.AllSteps |> Seq.indexed do
-                do printfn "%2i -  %s: %s" idx (step.Title.PadRight 35) step.Description
+                let isDataChange =
+                    match step with
+                    | :? IDataChangeStep<OBWholeOfLife.PolicyRecord> -> true
+                    | _ -> false
+                    
+                do printfn "%2i -  %s %s: %s"
+                    idx
+                    (step.Title.PadRight 35)
+                    (if isDataChange then "X" else " ")
+                    step.Description
             
-            let parsedWalk =
-                WalkParser.execute apiCollection walk
+            do printf "\n\nParsing walk... "
 
-            do printfn "%i" parsedWalk.Length
+            let parsedWalk =
+                WalkParser.execute walk.ApiCollection walk
+
+            do printfn "Done."
 
             return 0
         }
