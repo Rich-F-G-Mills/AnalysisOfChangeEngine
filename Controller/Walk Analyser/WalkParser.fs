@@ -24,8 +24,7 @@ module WalkParser =
                 |> function
                     | :? ISourcedStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> as step' ->
                         sourceParser Map.empty step'.Source
-                    | x ->
-                        do printfn "%A" (x.GetType().GetInterfaces())
+                    | _ ->
                         failwith "First step must be a sourceable step."
 
             let sourceAccumulator priorParsedStep (stepHdr: IStepHeader) =
