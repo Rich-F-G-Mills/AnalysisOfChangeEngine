@@ -1,11 +1,17 @@
 ﻿
+// This deals with parsing the source for a given step. Note that
+// only certain steps will (/can) have a source specified.
+// Once the source for a step has been processed, we will:
+//  * Have rebuilt the logic to obtain the corresponding member value.
+//  * Have identified all of the dependencies, both API and internal.
+//  * Have identified the required calculation ordering of result members.
+
 namespace AnalysisOfChangeEngine.Controller.WalkAnalyser
 
 
 [<RequireQualifiedAccess>]
 module SourceParser =
 
-    open System
     open System.Reflection
     open FSharp.Quotations
     open FSharp.Reflection
@@ -13,6 +19,7 @@ module SourceParser =
     open AnalysisOfChangeEngine.StateMonad
 
 
+    // Used to break apart a source definition.
     let private (|SourceLambda|_|) = function
         | Patterns.Lambda (from,
             Patterns.Lambda (policyRecord,
@@ -58,246 +65,284 @@ module SourceParser =
 
         inner Map.empty sourceBody
 
+    let private dependencySorter (stepResultMemberNames: string Set, withinStepDependencies: Map<_, _>) ordered =
+        // Not the most efficient way of doing things.
+        // However, a set doesn't maintain insertion order.
+        // And, frankly, far from being a performance bottleneck.
+        let orderedSet =
+            Set ordered
 
-    let execute<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord>
-        (apiCollection: 'TApiCollection, newPolicyRecordVarDef) = 
+        let remaining =
+            Set.difference stepResultMemberNames orderedSet
+
+        if remaining.IsEmpty then
+            // Nothing else left to sort!
+            None
+
+        else
+            let next =
+                remaining
+                |> Seq.tryFind (fun elementName ->
+                    let dependsOn =
+                        withinStepDependencies[elementName]
+                    Set.isSubset dependsOn orderedSet)
+                |> Option.defaultWith (fun _ ->
+                    failwith "Circular dependency detected.")
+
+            let newOrdered =
+                // DD - Would be better to prepend and then reverse.
+                ordered @ [next]
+
+            Some (next, newOrdered)
+
+
+    let internal execute<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord>
+        (apiCollection: 'TApiCollection, newPolicyRecordVarDef, currentResultsVarDefMapping) = 
             let sourceActionType =
                 typeof<SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection>>
 
             let dummySourceAction =
                 Unchecked.defaultof<SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection>>
 
+            let stepResultsType =
+                typeof<'TStepResults>
+
             let stepResultMembers =
-                FSharpType.GetRecordFields (typeof<'TStepResults>)
+                FSharpType.GetRecordFields (stepResultsType)
                 |> Seq.map (fun pi -> pi.Name, pi)
                 |> Map.ofSeq   
                 
             let stepResultMemberNames =
                 stepResultMembers
                 |> Map.keys
-                |> Set
+                |> Seq.toList
 
-            fun priorElementDefns (source: SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection>) ->
-                let fromVarDef, policyRecordVarDef, priorResultsVarDef, currentResultsVarDef, sourceBody =
-                    match source with
-                    | SourceLambda (from, policyRecord, priorResults, currentResults, expr) ->
-                        (from, policyRecord, priorResults, currentResults, Expr.Cast<'TStepResults> expr)
-                    | _ ->
-                        failwith "Unexpected source lambda definition."
+            let stepResultMemberNamesSet =
+                Set stepResultMemberNames
 
-                let flattenedSourceBody =
-                    flattenSourceBody sourceBody
+            let elementInvokerFactory =
+                ElementInvoker.create<'TPolicyRecord>
+                    (newPolicyRecordVarDef, currentResultsVarDefMapping)
 
-                let (|FromVarDef|_|) = function
-                    | v when v = fromVarDef -> Some () | _ -> None
+            let sourceInvokerFactory =
+                SourceInvoker.create<'TPolicyRecord, 'TStepResults>
+                    (newPolicyRecordVarDef, currentResultsVarDefMapping)
 
-                let (|PolicyRecordVarDef|_|) = function
-                    | v when v = policyRecordVarDef -> Some () | _ -> None
+            // When specificying the source for a given step, we can inherite
+            // element definitions from the previous step. As sight, we need
+            // to see what they were so we can merge with the current step's source.
+            fun (source: SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection>) ->
+                state {
+                    let! (apiCallVarDefMapping, accruedElements) =
+                        State.get
 
-                let (|PriorResultsVarDef|_|) = function
-                    | v when v = priorResultsVarDef -> Some () | _ -> None
+                    let fromVarDef, policyRecordVarDef, priorResultsVarDef, currentResultsVarDef, sourceBody =
+                        match source with
+                        | SourceLambda (from, policyRecord, priorResults, currentResults, expr) ->
+                            (from, policyRecord, priorResults, currentResults, Expr.Cast<'TStepResults> expr)
+                        | _ ->
+                            failwith "Unexpected source lambda definition."
 
-                let (|CurrentResultsVarDef|_|) = function
-                    | v when v = currentResultsVarDef -> Some () | _ -> None
+                    let flattenedSourceBody =
+                        flattenSourceBody sourceBody
 
-                let (|FromVar|_|) = function
-                    | Patterns.Var FromVarDef -> Some () | _ -> None
+                    let (|FromVarDef|_|) = function
+                        | v when v = fromVarDef -> Some () | _ -> None
 
-                let (|PolicyRecordVar|_|) = function
-                    | Patterns.Var PolicyRecordVarDef -> Some () | _ -> None
+                    let (|PolicyRecordVarDef|_|) = function
+                        | v when v = policyRecordVarDef -> Some () | _ -> None
 
-                let (|PriorResultsVar|_|) = function
-                    | Patterns.Var PriorResultsVarDef -> Some () | _ -> None
+                    let (|PriorResultsVarDef|_|) = function
+                        | v when v = priorResultsVarDef -> Some () | _ -> None
 
-                let (|CurrentResultsVar|_|) = function
-                    | Patterns.Var CurrentResultsVarDef -> Some () | _ -> None
+                    let (|CurrentResultsVarDef|_|) = function
+                        | v when v = currentResultsVarDef -> Some () | _ -> None
 
-                let (|ApiCallMI|_|) =
-                    let callMI =
-                        sourceActionType
-                            .GetMethod(nameof (dummySourceAction.apiCall))
-                            // Unless we get the underlying generic definition, comparisons will always fail.
-                            .GetGenericMethodDefinition()
+                    let (|FromVar|_|) = function
+                        | Patterns.Var FromVarDef -> Some () | _ -> None
 
-                    fun (mi: MethodInfo) ->
-                        let mi' =
-                            mi.GetGenericMethodDefinition()
+                    let (|PolicyRecordVar|_|) = function
+                        | Patterns.Var PolicyRecordVarDef -> Some () | _ -> None
 
-                        // Make sure we're comparing generic vs generic MIs.
-                        if mi' = callMI then Some () else None
+                    let (|PriorResultsVar|_|) = function
+                        | Patterns.Var PriorResultsVarDef -> Some () | _ -> None
 
-                let (|ApiRequest|_|) = function
-                    | Patterns.Call (Some FromVar, ApiCallMI, [
-                        Patterns.Lambda (_,
-                            Patterns.PropertyGet (_, wrappedRequestPI, []))
-                        Patterns.Lambda (_,
-                            Patterns.PropertyGet (_, selectorPI, []))
-                        ]) ->
-                            Some (wrappedRequestPI, selectorPI) 
-                    | _ ->
-                        None
+                    let (|CurrentResultsVar|_|) = function
+                        | Patterns.Var CurrentResultsVarDef -> Some () | _ -> None
 
-                let (|UsePrior|_|) = function
-                    | Patterns.PropertyGet (Some PriorResultsVar, elementPI, []) ->
-                        Some elementPI
-                    | _ ->
-                        None
+                    let (|ApiCallMI|_|) =
+                        let callMI =
+                            sourceActionType
+                                .GetMethod(nameof (dummySourceAction.apiCall))
+                                // Unless we get the underlying generic definition, comparisons will always fail.
+                                .GetGenericMethodDefinition()
 
-                let processElementCalculation calcDefn: SourceElementDefinition<'TPolicyRecord> =
-                    // Why use mutable state via a closure when you can use a state monad?!
-                    // It's obvious... Right???
-                    let rec inner = function
-                        | Patterns.Lambda _ ->
-                            failwith "Cannot define lambdas within a source element."
+                        fun (mi: MethodInfo) ->
+                            let mi' =
+                                mi.GetGenericMethodDefinition()
 
-                        | Patterns.ValueWithName (_, _, name) ->
-                            failwithf "Cannot use closures [%s] within a source element." name
+                            // Make sure we're comparing generic vs generic MIs.
+                            if mi' = callMI then Some () else None
 
-                        | PriorResultsVar ->
-                            failwith "Cannot use the prior result in a calculation (ambiguous intent)."
+                    let (|ApiRequest|_|) = function
+                        | Patterns.Call (Some FromVar, ApiCallMI, [
+                            Patterns.Lambda (_,
+                                Patterns.PropertyGet (_, wrappedRequestPI, []))
+                            Patterns.Lambda (_,
+                                Patterns.PropertyGet (_, selectorPI, []))
+                            ]) ->
+                                Some (wrappedRequestPI, selectorPI) 
+                        | _ ->
+                            None
 
-                        | PolicyRecordVar ->
-                            // Allows us to standardise the policy record variable across all sources.
-                            State.returnM (Expr.Var newPolicyRecordVarDef)
+                    let (|UsePrior|_|) = function
+                        | Patterns.PropertyGet (Some PriorResultsVar, elementPI, []) ->
+                            Some elementPI
+                        | _ ->
+                            None
 
-                        | ApiRequest (requestPI, selectorPI) ->
-                            state {
-                                let apiRequest =
-                                    requestPI.GetValue apiCollection
-                                    :?> IApiRequestor<'TPolicyRecord>
+                    let processElementCalculation (elementPI: PropertyInfo, calcDefn) =
+                        state {
+                            // Why use mutable state via a closure when you can use a state monad?!
+                            let rec inner = function
+                                | Patterns.Lambda _ ->
+                                    failwith "Cannot define lambdas within a source element."
 
-                                let! varDef =
-                                    SourceElementDependencies.addApiCall (apiRequest, selectorPI)                        
+                                | Patterns.ValueWithName (_, _, name) ->
+                                    failwithf "Cannot use closures [%s] within a source element." name
 
-                                return Expr.Var varDef
-                            }                                    
+                                | PriorResultsVar ->
+                                    failwith "Cannot use the prior result in a calculation (ambiguous intent)."
+
+                                | PolicyRecordVar ->
+                                    // Allows us to standardise the policy record variable across all sources.
+                                    State.returnM (Expr.Var newPolicyRecordVarDef)
+
+                                | ApiRequest (requestPI, selectorPI) ->
+                                    state {
+                                        let (apiRequest: IApiRequestor<'TPolicyRecord>) =
+                                            downcast requestPI.GetValue apiCollection                                           
+
+                                        let! varDef =
+                                            SourceElementDependencies.registerApiCall (apiRequest, selectorPI)                        
+
+                                        return Expr.Var varDef
+                                    }                                    
                 
-                        | Patterns.PropertyGet (Some CurrentResultsVar, pi, []) ->
-                            state {
-                                let! varDef =
-                                    SourceElementDependencies.addCurrentResult pi
+                                | Patterns.PropertyGet (Some CurrentResultsVar, pi, []) ->
+                                    state {
+                                        do! SourceElementDependencies.registerCurrentResult pi.Name
 
-                                return Expr.Var varDef
+                                        return Expr.Var (Map.find pi.Name currentResultsVarDefMapping)
+                                    }
+
+                                // DD - Previously we were using ExprShape.ShapeCombination.
+                                // ...However, this was leading to unanticipated items being returned
+                                // within 'exprs'. Have decided to use specific patterns instead
+                                // so as to better control what expression elements can get used.
+                                | Patterns.Call (Some obj, mi, exprs) ->                            
+                                    state {
+                                        let! newExprs =
+                                            List.mapStateM inner exprs
+
+                                        return Expr.Call (obj, mi, newExprs)
+                                    }
+
+                                | Patterns.Call (None, mi, exprs) ->                            
+                                    state {
+                                        let! newExprs =
+                                            List.mapStateM inner exprs
+
+                                        return Expr.Call (mi, newExprs)
+                                    }
+
+                                | Patterns.Value _ as valueExpr ->
+                                    State.returnM valueExpr
+
+                                | expr ->
+                                    failwithf "Unsupported expression: %A" expr                            
+
+                            let! apiCallVarMapping' =
+                                State.get
+                            
+                            let newCalcBody, (newApiCallVarMapping, elementDependencies) =
+                                State.run
+                                    (apiCallVarMapping', SourceElementDependencies.empty)
+                                    (inner calcDefn)
+
+                            do! State.put newApiCallVarMapping
+
+                            let invokerDetails =
+                                elementInvokerFactory
+                                    (newApiCallVarMapping, elementPI, newCalcBody, elementDependencies)
+
+                            return {
+                                Dependencies            = elementDependencies
+                                OriginalExprBody        = calcDefn
+                                RebuiltExprBody         = newCalcBody
+                                ApiCallsTupleType       = invokerDetails.ApiCallsTupleType
+                                CurrentResultsTupleType = invokerDetails.CurrentResultsTupleType                                
+                                WrappedInvoker          = invokerDetails.WrappedInvoker
                             }
+                        }                        
 
-                        // DD - Previously we were using ExprShape.ShapeCombination.
-                        // ...However, this was leading to unanticipated items being returned
-                        // within 'exprs'. Have decided to use specific patterns instead
-                        // so as to better control what expression elements can get used.
-                        | Patterns.Call (Some obj, mi, exprs) ->                            
-                            state {
-                                let! newExprs =
-                                    List.mapStateM inner exprs
+                    let specifiedElementExprs =
+                        flattenedSourceBody
+                        |> Map.toSeq
+                        |> Seq.filter (function
+                            // Remove those elements which simply refer to that same element
+                            // from the previous step.
+                            | name, UsePrior elementPI' -> stepResultMembers[name] <> elementPI'
+                            | _ -> true)
+                        |> Seq.toList
 
-                                return Expr.Call (obj, mi, newExprs)
-                            }
+                    let (specifiedElements, newApiCallVarMapping) =
+                        specifiedElementExprs
+                        |> List.mapStateM (fun (name, expr) ->
+                            processElementCalculation (stepResultMembers[name], expr)
+                            |> State.mapM (fun defn -> name, defn))
+                        |> State.mapM Map.ofList
+                        |> State.run apiCallVarDefMapping                    
+                        
+                    let combinedElements =
+                        Map.merge accruedElements specifiedElements
 
-                        | Patterns.Call (None, mi, exprs) ->                            
-                            state {
-                                let! newExprs =
-                                    List.mapStateM inner exprs
-
-                                return Expr.Call (mi, newExprs)
-                            }
-
-                        | Patterns.Value _ as valueExpr ->
-                            State.returnM valueExpr
-
-                        | expr ->
-                            failwithf "Unsupported expression: %A" expr
-
-                    let newCalcDefn, dependencies =
-                        State.run SourceElementDependencies.empty (inner calcDefn)
-
-                    {
-                        Dependencies    = dependencies
-                        //Original        = calcDefn
-                        Rebuilt         = newCalcDefn
-                    }
-
-                let processElement elementPI = function
-                    | UsePrior elementPI' when elementPI = elementPI' ->
-                        None
-
-                    | calcDefn ->
-                        Some (processElementCalculation calcDefn)
-
-                let definedElements =
-                    flattenedSourceBody
-                    |> Map.toSeq
-                    |> Seq.map (fun (name, defn) ->
-                        name, processElement stepResultMembers[name] defn)
-                    |> Seq.choose (function
-                        | name, Some element -> Some (name, element)
-                        | _ -> None)
-                    |> Map.ofSeq
-
-                let combinedElements =
-                    Map.merge priorElementDefns definedElements
-
-                let combinedElementNames =
-                    combinedElements
-                    |> Map.keys
-                    |> Set
-
-                // Provided the first post-opening step has been defined correctly,
-                // we shouldn't have any issues thereafter.
-                if combinedElementNames <> stepResultMemberNames then
-                    failwith "Not all step result members have been defined."
-
-                // Here we're identifying dependencies between elements of the
-                // current step.
-                let withinStepDependencies =
-                    combinedElements
-                    |> Map.map (fun _ { Dependencies = deps } ->
-                        deps.CurrentResults
+                    let combinedElementNames =
+                        combinedElements
                         |> Map.keys
-                        |> Seq.map _.ElementProperty.Name
-                        |> Set)
+                        |> Set
 
-                let dependencySorter ordered =
-                    // Not the most efficient way of doing things.
-                    // However, a set doesn't maintain insertion order.
-                    // And, frankly, far from being a performance bottleneck.
-                    let orderedSet =
-                        Set ordered
+                    // Provided the first post-opening step has been defined correctly,
+                    // we shouldn't have any issues thereafter.
+                    if combinedElementNames <> stepResultMemberNamesSet then
+                        failwith "Not all step result members have been defined."
 
-                    let remaining =
-                        Set.difference stepResultMemberNames orderedSet
+                    // Update our state tracking both API dependencies and
+                    // the accrued set of element definitions.
+                    do! State.put (newApiCallVarMapping, combinedElements)
 
-                    if remaining.IsEmpty then
-                        // Nothing else left to sort!
-                        None
+                    // Here we're identifying dependencies between elements of the
+                    // current step.
+                    let withinStepDependencies =
+                        combinedElements
+                        |> Map.map (fun _ { Dependencies = deps } ->
+                            deps.CurrentResults)  
+                        
+                    let dependencySorter' =
+                        dependencySorter (stepResultMemberNamesSet, withinStepDependencies)
 
-                    else
-                        let next =
-                            remaining
-                            |> Seq.tryFind (fun elementName ->
-                                let dependsOn =
-                                    withinStepDependencies[elementName]
-                                Set.isSubset dependsOn orderedSet)
-                            |> Option.defaultWith (fun _ ->
-                                failwith "Circular dependency detected.")
-
-                        let newOrdered =
-                            // DD - Would be better to prepend and then reverse.
-                            ordered @ [next]
-
-                        Some (next, newOrdered)
-
-                let memberOrdering =
-                    List.unfold dependencySorter List.empty     
+                    let elementOrdering =
+                        List.unfold dependencySorter' List.empty     
                     
-                let combinedApiCalls =
-                    combinedElements
-                    |> Map.values
-                    |> Seq.map _.Dependencies.ApiCalls
-                    |> Seq.collect Map.keys
-                    |> Set
+                    let invokerDetails =
+                        sourceInvokerFactory (newApiCallVarMapping, combinedElements, elementOrdering)
 
-                {
-                    ElementDefinitions  = combinedElements
-                    ApiCalls            = combinedApiCalls
-                    Ordering            = memberOrdering
+                    return {
+                        ElementDefinitions  = combinedElements
+                        ApiCallsTupleType   = invokerDetails.ApiCallsTupleType
+                        ApiCalls            = invokerDetails.CombinedApiCalls
+                        RebuiltSourceExpr   = invokerDetails.RebuiltSourceExpr
+                        WrappedInvoker      = invokerDetails.WrappedInvoker
+                    }
                 }
                             

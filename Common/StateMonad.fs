@@ -32,6 +32,28 @@ module State =
     let inline put state =
         State (fun _ -> (), state)
 
+    let inline transform f: State<_, unit> =
+        State (fun state ->
+            let newState =
+                f state
+
+            (), newState
+        )
+
+    let inline withState onEnter (State transformer) onExit =
+        State (fun state ->
+            let enteringState =
+                onEnter state
+
+            let value, newState =
+                transformer enteringState
+
+            let exitingState =
+                onExit state newState
+
+            value, exitingState
+        )
+
     let inline run state (State transformer) =
         transformer state
 
@@ -85,4 +107,3 @@ module List =
             State.bindM (f x) (fun x' ->
                 State.bindM (mapStateM f xs) (fun xs' ->
                     State.returnM (x' :: xs')))  
-            

@@ -24,7 +24,6 @@ module Runner =
         | DEBUG     = 4
         
 
-
     let logger (logLevel: LogLevel) =
         {
             new ILogger with
@@ -117,9 +116,37 @@ module Runner =
             do printf "\n\nParsing walk... "
 
             let parsedWalk =
-                WalkParser.execute walk.ApiCollection walk
+                WalkParser.execute walk.ApiCollection walk            
 
             do printfn "Done."
+
+            let hdr, parsedStep =
+                parsedWalk.RemainingRecordOpeningDataStage.WithinStageSteps.Head
+
+            let uas =
+                parsedStep.ElementDefinitions["UnsmoothedAssetShare"]
+
+            let polRecord: OBWholeOfLife.PolicyRecord =
+                {
+                    PolicyNumber        = "TEST"
+                    TableCode           = "T01"
+                    EntryDate           = new DateOnly (2000, 1, 1)
+                    NextPremiumDueDate  = new DateOnly (2024, 1, 1)
+                    PolicyStatus =
+                        OBWholeOfLife.PolicyStatus.PremiumPaying
+                    LivesBasis =
+                        OBWholeOfLife.LivesBasis.SingleLife {
+                            EntryAge = 20
+                            Gender = OBWholeOfLife.Gender.Male
+                        }
+                    PaymentTerm         = 20
+                    SumAssured          = 1000.0
+                }
+
+            let res =
+                uas.WrappedInvoker (polRecord, [|1.0|], [||])
+
+            do printfn "Result: %A" res
 
             return 0
         }

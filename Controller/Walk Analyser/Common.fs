@@ -1,4 +1,6 @@
 ﻿
+// This contains types used throughout the walk analysis logic.
+
 namespace AnalysisOfChangeEngine.Controller.WalkAnalyser
 
 open System
@@ -90,20 +92,20 @@ type SourceElementResultDependency<'TPolicyRecord when 'TPolicyRecord :> IPolicy
 [<NoEquality; NoComparison>]
 type SourceElementDependencies<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
     {
-        ApiCalls                : Map<SourceElementApiCallDependency<'TPolicyRecord>, Var>
-        CurrentResults          : Map<SourceElementResultDependency<'TPolicyRecord>, Var>
+        ApiCalls                : Set<SourceElementApiCallDependency<'TPolicyRecord>>
+        CurrentResults          : Set<string>
     }
 
-module SourceElementDependencies =
+module internal SourceElementDependencies =
     let empty =
         {
-            ApiCalls = Map.empty
-            CurrentResults = Map.empty
+            ApiCalls = Set.empty
+            CurrentResults = Set.empty
         }
 
-    let addApiCall (requestor, outputProperty) =
+    let registerApiCall (requestor, outputProperty) =
         state {
-            let! currentDependencies =
+            let! (apiCallVarDefs, elementDependencies) =
                 State.get
 
             let dependency =
@@ -112,100 +114,113 @@ module SourceElementDependencies =
                     OutputProperty  = outputProperty
                 }
 
-            let varDef, newDependencies =
-                currentDependencies
-                |> _.ApiCalls
+            let foundVarDef =
+                apiCallVarDefs
                 |> Map.tryFind dependency
-                |> function
-                    | Some varDef ->
-                        varDef, currentDependencies
 
-                    | None ->
-                        let newVarName =
-                            "Api Call <" + requestor.Name + ">.<" + outputProperty.Name + ">"
+            let isElementDependency =
+                elementDependencies.ApiCalls
+                |> Set.contains dependency
 
-                        let newVarDef =
-                            Var (newVarName, outputProperty.PropertyType)
+            let newApiCallVarDefs, newElementDependencies, varDef =
+                match foundVarDef, isElementDependency with
+                | None, true ->
+                    failwith "Unexpected error; inconsistent dependency."
+            
+                | None, false ->
+                    let newVarName =
+                        "Api Call <" + requestor.Name + ">.<" + outputProperty.Name + ">"
 
-                        let newDependencies =
-                            {
-                                currentDependencies with
-                                    ApiCalls =
-                                        currentDependencies.ApiCalls.Add (dependency, newVarDef)
-                            }
+                    let newVarDef =
+                        Var (newVarName, outputProperty.PropertyType)
 
-                        newVarDef, newDependencies
+                    let newElementDependencies' = {
+                        elementDependencies with
+                            ApiCalls =
+                                elementDependencies.ApiCalls
+                                |> Set.add dependency
+                        }
+
+                    let newApiCallVarDefs' =
+                        apiCallVarDefs
+                        |> Map.add dependency newVarDef 
+
+                    newApiCallVarDefs', newElementDependencies', newVarDef
+
+                | Some varDef, true ->
+                    apiCallVarDefs, elementDependencies, varDef
+
+                | Some varDef, false ->
+                    let newElementDependencies' = {
+                        elementDependencies with
+                            ApiCalls =
+                                elementDependencies.ApiCalls
+                                |> Set.add dependency
+                        }
+
+                    apiCallVarDefs, newElementDependencies', varDef
 
             // Potentially we're just re-adding the same set of dependencies.
-            do! State.put newDependencies
+            do! State.put (newApiCallVarDefs, newElementDependencies)
 
             return varDef
         }
 
-    let addCurrentResult elementProperty =
+    let registerCurrentResult elementName =
         state {
-            let! currentDependencies =
+            let! (apiCallVarDefs, elementDependencies) =
                 State.get
 
-            let dependency =
+            let newElementDependencies =
                 {
-                    ElementProperty = elementProperty
+                    elementDependencies with
+                        CurrentResults =
+                            elementDependencies.CurrentResults
+                            |> Set.add elementName
                 }
 
-            let varDef, newDependencies =
-                currentDependencies
-                |> _.CurrentResults
-                |> Map.tryFind dependency
-                |> function
-                    | Some varDef ->
-                        varDef, currentDependencies
+            do! State.put (apiCallVarDefs, newElementDependencies)
 
-                    | None ->
-                        let newVarName =
-                            "Current Result <" + elementProperty.Name + ">"
-
-                        let newVarDef =
-                            Var (newVarName, elementProperty.PropertyType)
-
-                        let newDependencies =
-                            {
-                                currentDependencies with
-                                    CurrentResults =
-                                        currentDependencies.CurrentResults.Add (dependency, newVarDef)
-                            }
-
-                        newVarDef, newDependencies
-
-            do! State.put newDependencies
-
-            return varDef
+            return ()
         }
           
 
 [<NoEquality; NoComparison>]
 type SourceElementDefinition<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
     {
-        Dependencies        : SourceElementDependencies<'TPolicyRecord>
-        //Original            : Expr
-        Rebuilt             : Expr
+        Dependencies            : SourceElementDependencies<'TPolicyRecord>
+        OriginalExprBody        : Expr
+        // Wrapped as part of a lambda.
+        RebuiltExprBody         : Expr
+        // Only intended to be used for testing purposes. The first and
+        // second object arrays correspond to the API and current result
+        // tuples respectively.
+        ApiCallsTupleType       : Type
+        CurrentResultsTupleType : Type
+        WrappedInvoker          : ('TPolicyRecord * obj array * obj array) -> obj
     }
 
 [<NoEquality; NoComparison>]
 type ParsedSource<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
     {
         ElementDefinitions  : Map<string, SourceElementDefinition<'TPolicyRecord>>
-        // Collection of API calls across for the entire step (ie. across all elements).
+        // Collection of API calls across for the entire step (ie. across ALL source elements).
+        ApiCallsTupleType   : Type
         ApiCalls            : SourceElementApiCallDependency<'TPolicyRecord> Set
-        Ordering            : string list
+        RebuiltSourceExpr   : Expr
+        // The obj array corresponds to all API call results for the step.
+        WrappedInvoker      : ('TPolicyRecord * obj array) -> obj
     }
 
 [<NoEquality; NoComparison>]
 type OpeningDataStage<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
     {        
         OpeningStepHeader           : IStepHeader
-        // This does NOT include the data change step header above.
+        // This does NOT include the data change step header above NOR
+        // the remove exited records step itself.
         WithinStageSteps            : (IStepHeader * ParsedSource<'TPolicyRecord>) list
         // These are the API calls arising from steps within this data stage.
+        // This does not reflect the opening step itself which has no source (nor can it).
         WithinStageApiCalls         : SourceElementApiCallDependency<'TPolicyRecord> Set
     }
 
@@ -229,12 +244,12 @@ type PostOpeningDataStage<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
 [<NoEquality; NoComparison>]
 type ParsedWalk<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
     {
-        PolicyRecordVarDef                      : Var
+        PostOpeningParsedSteps                  : (IStepHeader * ParsedSource<'TPolicyRecord>) list
         // For exiting records, they only fall within the opening data stage.
         //ExitedRecordDataStage                   : OpeningDataStage<'TPolicyRecord>
         // For records that have remained in-force over the period, they have both
         // an opening data stage (which could include additional steps relative to
-        // an exited record) as well as all data stages afterwards, which would
+        // an exited record) as well as all data stages thereafter, which would
         // include the move to closing data as a minimum.
         RemainingRecordOpeningDataStage         : OpeningDataStage<'TPolicyRecord>
         RemainingRecordPostOpeningDataStages    : PostOpeningDataStage<'TPolicyRecord> list

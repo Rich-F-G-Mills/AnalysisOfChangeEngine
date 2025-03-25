@@ -5,42 +5,51 @@ namespace AnalysisOfChangeEngine.Controller.WalkAnalyser
 [<RequireQualifiedAccess>]
 module WalkParser =
 
+    open FSharp.Reflection
     open FSharp.Quotations
     open AnalysisOfChangeEngine
+    open AnalysisOfChangeEngine.StateMonad
 
     
     // DD - A seeming work-around from where the type inferencer was struggling!
     type private SourceParser<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
-        Map<string, SourceElementDefinition<'TPolicyRecord>> 
-            -> SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-            -> ParsedSource<'TPolicyRecord>
+        SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+            -> State<Map<SourceElementApiCallDependency<'TPolicyRecord>, Var> * Map<string, SourceElementDefinition<'TPolicyRecord>>, ParsedSource<'TPolicyRecord>>
 
 
     let private getParsedStepSources<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord>
         (stepsPostOpening: IStepHeader list, sourceParser: SourceParser<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
-            let firstParsedStep =
+            let sourceableStepHdrs =
                 stepsPostOpening
-                |> Seq.head
-                |> function
-                    | :? ISourcedStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> as step' ->
-                        sourceParser Map.empty step'.Source
+                |> List.choose (function
+                    | :? ISourcedStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> as step ->
+                        Some (step.Uid, step.Source)
                     | _ ->
-                        failwith "First step must be a sourceable step."
+                        None)
 
-            let sourceAccumulator priorParsedStep (stepHdr: IStepHeader) =
-                match stepHdr with
-                | :? ISourcedStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> as step' ->
-                    sourceParser priorParsedStep.ElementDefinitions step'.Source
+            let parsedSources, _ =
+                sourceableStepHdrs
+                |> List.map snd
+                |> List.mapStateM sourceParser
+                |> State.run (Map.empty, Map.empty)  
+                
+            let parsedStepMapping =
+                parsedSources
+                |> List.zip sourceableStepHdrs
+                |> List.map (fun ((uid, _), parsed) -> uid, parsed)
+                |> Map.ofList
 
-                | _ ->
-                    // If we don't have a sourceable step, we just pass the prior mappings along.
-                    priorParsedStep
+            let firstPostOpeningStepSource =
+                parsedSources
+                |> List.head
 
             let parsedStepSources =
-                // The opening step cannot have a source.
                 stepsPostOpening
                 |> List.tail
-                |> List.scan sourceAccumulator firstParsedStep
+                |> List.scan (fun prior step ->
+                    match parsedStepMapping.TryFind step.Uid with
+                    | Some source -> source
+                    | None -> prior) firstPostOpeningStepSource
 
             assert (stepsPostOpening.Length = parsedStepSources.Length)
 
@@ -129,6 +138,15 @@ module WalkParser =
 
     let execute<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord and 'TPolicyRecord : equality>
         (apiCollection: 'TApiCollection) (walk: AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
+            let currentResultsVarDefMapping =
+                FSharpType.GetRecordFields (typeof<'TStepResults>)
+                |> Seq.map (fun pi ->
+                    let varName =
+                        "CurrentResult.<" + pi.Name + ">"
+
+                    pi.Name, Var (varName, pi.PropertyType))
+                |> Map.ofSeq 
+            
             let allSteps =
                 walk.AllSteps
                 |> Seq.toList
@@ -143,7 +161,7 @@ module WalkParser =
 
             let sourceParser =
                 SourceParser.execute<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-                    (apiCollection, policyRecordVarDef)
+                    (apiCollection, policyRecordVarDef, currentResultsVarDefMapping)
 
             let parsedStepSources =
                 getParsedStepSources (stepsPostOpening, sourceParser)
@@ -186,8 +204,8 @@ module WalkParser =
 
             let parsedWalk =
                 {
-                    PolicyRecordVarDef =
-                        policyRecordVarDef
+                    PostOpeningParsedSteps =
+                        postOpeningDataStageTuples
                     RemainingRecordOpeningDataStage =
                         getOpeningDataStage (allSteps[0], openingDataStageTuples)
                     RemainingRecordPostOpeningDataStages =
