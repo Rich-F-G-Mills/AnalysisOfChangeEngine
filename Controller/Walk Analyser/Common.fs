@@ -104,9 +104,9 @@ module internal SourceElementDependencies =
         }
 
     let registerApiCall (requestor, outputProperty) =
-        state {
+        stateful {
             let! (apiCallVarDefs, elementDependencies) =
-                State.get
+                Stateful.get
 
             let dependency =
                 {
@@ -161,15 +161,15 @@ module internal SourceElementDependencies =
                     apiCallVarDefs, newElementDependencies', varDef
 
             // Potentially we're just re-adding the same set of dependencies.
-            do! State.put (newApiCallVarDefs, newElementDependencies)
+            do! Stateful.put (newApiCallVarDefs, newElementDependencies)
 
             return varDef
         }
 
     let registerCurrentResult elementName =
-        state {
+        stateful {
             let! (apiCallVarDefs, elementDependencies) =
-                State.get
+                Stateful.get
 
             let newElementDependencies =
                 {
@@ -179,7 +179,7 @@ module internal SourceElementDependencies =
                             |> Set.add elementName
                 }
 
-            do! State.put (apiCallVarDefs, newElementDependencies)
+            do! Stateful.put (apiCallVarDefs, newElementDependencies)
 
             return ()
         }

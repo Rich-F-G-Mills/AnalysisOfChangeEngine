@@ -132,9 +132,9 @@ module SourceParser =
             // element definitions from the previous step. As sight, we need
             // to see what they were so we can merge with the current step's source.
             fun (source: SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection>) ->
-                state {
+                stateful {
                     let! (apiCallVarDefMapping, accruedElements) =
-                        State.get
+                        Stateful.get
 
                     let fromVarDef, policyRecordVarDef, priorResultsVarDef, currentResultsVarDef, sourceBody =
                         match source with
@@ -202,7 +202,7 @@ module SourceParser =
                             None
 
                     let processElementCalculation (elementPI: PropertyInfo, calcDefn) =
-                        state {
+                        stateful {
                             // Why use mutable state via a closure when you can use a state monad?!
                             let rec inner = function
                                 | Patterns.Lambda _ ->
@@ -216,10 +216,10 @@ module SourceParser =
 
                                 | PolicyRecordVar ->
                                     // Allows us to standardise the policy record variable across all sources.
-                                    State.returnM (Expr.Var newPolicyRecordVarDef)
+                                    Stateful.returnM (Expr.Var newPolicyRecordVarDef)
 
                                 | ApiRequest (requestPI, selectorPI) ->
-                                    state {
+                                    stateful {
                                         let (apiRequest: IApiRequestor<'TPolicyRecord>) =
                                             downcast requestPI.GetValue apiCollection                                           
 
@@ -230,7 +230,7 @@ module SourceParser =
                                     }                                    
                 
                                 | Patterns.PropertyGet (Some CurrentResultsVar, pi, []) ->
-                                    state {
+                                    stateful {
                                         do! SourceElementDependencies.registerCurrentResult pi.Name
 
                                         return Expr.Var (Map.find pi.Name currentResultsVarDefMapping)
@@ -241,7 +241,7 @@ module SourceParser =
                                 // within 'exprs'. Have decided to use specific patterns instead
                                 // so as to better control what expression elements can get used.
                                 | Patterns.Call (Some obj, mi, exprs) ->                            
-                                    state {
+                                    stateful {
                                         let! newExprs =
                                             List.mapStateM inner exprs
 
@@ -249,7 +249,7 @@ module SourceParser =
                                     }
 
                                 | Patterns.Call (None, mi, exprs) ->                            
-                                    state {
+                                    stateful {
                                         let! newExprs =
                                             List.mapStateM inner exprs
 
@@ -257,20 +257,20 @@ module SourceParser =
                                     }
 
                                 | Patterns.Value _ as valueExpr ->
-                                    State.returnM valueExpr
+                                    Stateful.returnM valueExpr
 
                                 | expr ->
                                     failwithf "Unsupported expression: %A" expr                            
 
                             let! apiCallVarMapping' =
-                                State.get
+                                Stateful.get
                             
                             let newCalcBody, (newApiCallVarMapping, elementDependencies) =
-                                State.run
+                                Stateful.run
                                     (apiCallVarMapping', SourceElementDependencies.empty)
                                     (inner calcDefn)
 
-                            do! State.put newApiCallVarMapping
+                            do! Stateful.put newApiCallVarMapping
 
                             let invokerDetails =
                                 elementInvokerFactory
@@ -300,9 +300,9 @@ module SourceParser =
                         specifiedElementExprs
                         |> List.mapStateM (fun (name, expr) ->
                             processElementCalculation (stepResultMembers[name], expr)
-                            |> State.mapM (fun defn -> name, defn))
-                        |> State.mapM Map.ofList
-                        |> State.run apiCallVarDefMapping                    
+                            |> Stateful.mapM (fun defn -> name, defn))
+                        |> Stateful.mapM Map.ofList
+                        |> Stateful.run apiCallVarDefMapping                    
                         
                     let combinedElements =
                         Map.merge accruedElements specifiedElements
@@ -319,7 +319,7 @@ module SourceParser =
 
                     // Update our state tracking both API dependencies and
                     // the accrued set of element definitions.
-                    do! State.put (newApiCallVarMapping, combinedElements)
+                    do! Stateful.put (newApiCallVarMapping, combinedElements)
 
                     // Here we're identifying dependencies between elements of the
                     // current step.

@@ -1,15 +1,5 @@
 ﻿
-// The purpose of the logic here is to take the rebuilt definition
-// of a source element and convert it to a lambda with signature:
-//    Policy Record
-//      -> (Api Call 1, Api Call 2, ...) 
-//      -> (Current Result 1, Current Result 2, ...)
-//      -> obj
-//
-// If an element does not depend on any API calls, the relevant bit of the
-// signature will be of type Unit rather than a tuple.
-// A similar situation applies to the bit concerning dependencies to other
-// elements in the current step.
+
 
 
 namespace AnalysisOfChangeEngine.Controller.WalkAnalyser

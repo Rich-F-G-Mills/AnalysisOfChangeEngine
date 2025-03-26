@@ -1,99 +1,99 @@
 ﻿
 namespace AnalysisOfChangeEngine.StateMonad
 
-type State<'TState, 'TValue> =
-    State of ('TState -> 'TValue * 'TState)
+type Stateful<'TState, 'TValue> =
+    Stateful of ('TState -> 'TValue * 'TState)
 
-module State =
+module Stateful =
 
-    let inline bindM (State transformer) binder =
-        State (fun state ->
+    let inline bindM (Stateful transformer) binder =
+        Stateful (fun state ->
             let value, newState =
                 transformer state
 
-            let (State newTransformer) =
+            let (Stateful newTransformer) =
                 binder value
 
             newTransformer newState)
 
     let inline returnM value =
-        State (fun state -> value, state)
+        Stateful (fun state -> value, state)
 
-    let inline mapM f (State transformer) =
-        State (fun state ->
+    let inline mapM f (Stateful transformer) =
+        Stateful (fun state ->
             let value, newState =
                 transformer state
 
             f value, newState)
 
     let get =
-        State (fun state -> state, state)
+        Stateful (fun state -> state, state)
 
     let inline put state =
-        State (fun _ -> (), state)
+        Stateful (fun _ -> (), state)
 
-    let inline transform f: State<_, unit> =
-        State (fun state ->
+    let inline transform f: Stateful<_, unit> =
+        Stateful (fun state ->
             let newState =
                 f state
 
             (), newState
         )
 
-    let inline withState onEnter (State transformer) onExit =
-        State (fun state ->
-            let enteringState =
-                onEnter state
+    let inline withState onEnter (Stateful transformer) onExit =
+        Stateful (fun enteringState ->
+            let newEnteringState =
+                onEnter enteringState
 
             let value, newState =
-                transformer enteringState
+                transformer newEnteringState
 
             let exitingState =
-                onExit state newState
+                onExit enteringState newState
 
             value, exitingState
         )
 
-    let inline run state (State transformer) =
+    let inline run state (Stateful transformer) =
         transformer state
 
 
 [<Sealed>]
-type StateBuilder internal () =
+type StatefulBuilder internal () =
     member _.Zero () =
-        State.returnM ()
+        Stateful.returnM ()
 
     member _.Return (x) =
-        State.returnM x
+        Stateful.returnM x
 
     member _.Bind (x, binder) =
-        State.bindM x binder
+        Stateful.bindM x binder
 
-    member _.ReturnFrom (x: State<_, _>) = 
+    member _.ReturnFrom (x: Stateful<_, _>) = 
         x
 
-    member _.Delay (x: unit -> State<_, _>) =
+    member _.Delay (x: unit -> Stateful<_, _>) =
         x
 
     // Needed to combine Zero above... Particularly when raising an exception.
-    member _.Combine (State transformer, delayed) =
-        State (fun state ->
+    member _.Combine (Stateful transformer, delayed) =
+        Stateful (fun state ->
             let _, newState =
                 transformer state
 
-            let (State delayedTransformer) =
+            let (Stateful delayedTransformer) =
                 delayed ()
 
             delayedTransformer newState)
 
-    member _.Run (delayed) =
+    member _.Run (delayed: unit -> Stateful<_, _>) =
         delayed ()
                 
 
 [<AutoOpen>]
-module StateBuilder =
-    let state =
-        StateBuilder ()
+module StatefulBuilder =
+    let stateful =
+        StatefulBuilder ()
 
 
 [<RequireQualifiedAccess>]
@@ -102,8 +102,8 @@ module List =
     // TODO - Could this be made tail-recursive?
     let rec mapStateM f = function
         | [] ->
-            State.returnM List.empty
+            Stateful.returnM List.empty
         | x :: xs ->
-            State.bindM (f x) (fun x' ->
-                State.bindM (mapStateM f xs) (fun xs' ->
-                    State.returnM (x' :: xs')))  
+            Stateful.bindM (f x) (fun x' ->
+                Stateful.bindM (mapStateM f xs) (fun xs' ->
+                    Stateful.returnM (x' :: xs')))  

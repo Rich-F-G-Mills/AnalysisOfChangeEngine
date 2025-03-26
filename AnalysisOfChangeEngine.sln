@@ -13,7 +13,11 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Common", "Common\Common.fsp
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "DataStore.Postgres", "DataStore.Postgres\DataStore.Postgres.fsproj", "{4782845B-7866-48DA-B5A0-810B1D41D336}"
 EndProject
-
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{F4F36248-665E-46D3-9ED5-C7678D258CF0}"
+	ProjectSection(SolutionItems) = preProject
+		README.md = README.md
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -40,10 +44,6 @@ Global
 		{4782845B-7866-48DA-B5A0-810B1D41D336}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4782845B-7866-48DA-B5A0-810B1D41D336}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4782845B-7866-48DA-B5A0-810B1D41D336}.Release|Any CPU.Build.0 = Release|Any CPU
-		{5E6D1267-8DA3-4BF6-B20C-0770FFA48870}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{5E6D1267-8DA3-4BF6-B20C-0770FFA48870}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{5E6D1267-8DA3-4BF6-B20C-0770FFA48870}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{5E6D1267-8DA3-4BF6-B20C-0770FFA48870}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
