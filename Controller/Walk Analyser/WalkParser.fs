@@ -183,6 +183,13 @@ module WalkParser =
                 walk.AllSteps
                 |> Seq.toList
 
+            let uniqueStepUids =
+                allSteps
+                |> Seq.map _.Uid
+                |> Set
+
+            assert (allSteps.Length = uniqueStepUids.Count)
+
             let stepsPostOpening =
                 allSteps
                 // We don't care about the opening step here.
