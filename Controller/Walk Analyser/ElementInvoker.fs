@@ -17,7 +17,11 @@ module ElementInvoker =
     let private unitObj =
         () :> obj
 
-    let internal create<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord>
+    let internal create<'TPolicyRecord>
+        (* Design Decision:
+            We expect that the first set of tupled arguments will be applied first (and once).
+            The remaining parameters will then be supplied for each element in all steps.
+        *)
         (policyRecordVarDef: Var, currentResultsVarDefMapping: Map<_, Var>)
         (apiCallVarDefMapping, elementPI: PropertyInfo, newCalcBody: Expr, dependencies: SourceElementDependencies<'TPolicyRecord>) =
             let policyRecordType =
@@ -43,6 +47,7 @@ module ElementInvoker =
             let apiCallsVarDefs =
                 dependencies.ApiCalls
                 |> Seq.map (fun apiCall ->
+                    // There's no tryFind here. Failure is NOT an option.
                     Map.find apiCall apiCallVarDefMapping)
                 |> Seq.indexed
 
@@ -98,8 +103,7 @@ module ElementInvoker =
                     )
 
             let fsharpFunc =
-                // Converts our compiled lambda into an FSharpFunc that
-                // we can 'fast' invoke.
+                // Converts our compiled lambda into an FSharpFunc that we can 'fast' invoke.
                 fsharpFuncType.GetMethod("Adapt").Invoke(null, [|invoker|])
 
             let invokerArgTypes =

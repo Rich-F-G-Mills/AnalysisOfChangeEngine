@@ -11,7 +11,7 @@ open AnalysisOfChangeEngine.StateMonad
 
 
 [<CustomEquality; CustomComparison>]
-type SourceElementApiCallDependency<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+type SourceElementApiCallDependency<'TPolicyRecord> =
     {
         Requestor       : IApiRequestor<'TPolicyRecord>
         OutputProperty  : PropertyInfo
@@ -35,7 +35,7 @@ type SourceElementApiCallDependency<'TPolicyRecord when 'TPolicyRecord :> IPolic
 
     interface IEquatable<SourceElementApiCallDependency<'TPolicyRecord>> with
         member this.Equals (other) =
-            this.Requestor = other.Requestor
+            this.Requestor.Name = other.Requestor.Name
                 && this.OutputProperty = other.OutputProperty
 
     interface IComparable<SourceElementApiCallDependency<'TPolicyRecord>> with
@@ -56,7 +56,7 @@ type SourceElementApiCallDependency<'TPolicyRecord when 'TPolicyRecord :> IPolic
 
 // Used to track dependencies between members of the current step results.
 [<CustomEquality; CustomComparison>]
-type SourceElementResultDependency<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+type SourceElementResultDependency<'TPolicyRecord> =
     {
         ElementProperty: PropertyInfo
     }
@@ -90,7 +90,7 @@ type SourceElementResultDependency<'TPolicyRecord when 'TPolicyRecord :> IPolicy
 
 // Used to track all of the dependencies for a given step element.
 [<NoEquality; NoComparison>]
-type SourceElementDependencies<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+type SourceElementDependencies<'TPolicyRecord> =
     {
         ApiCalls                : Set<SourceElementApiCallDependency<'TPolicyRecord>>
         CurrentResults          : Set<string>
@@ -103,14 +103,14 @@ module internal SourceElementDependencies =
             CurrentResults = Set.empty
         }
 
-    let registerApiCall (requestor, outputProperty) =
+    let registerApiCall (endpoint, outputProperty) =
         stateful {
             let! (apiCallVarDefs, elementDependencies) =
                 Stateful.get
 
             let dependency =
                 {
-                    Requestor       = requestor
+                    Requestor        = endpoint
                     OutputProperty  = outputProperty
                 }
 
@@ -129,7 +129,7 @@ module internal SourceElementDependencies =
             
                 | None, false ->
                     let newVarName =
-                        "Api Call <" + requestor.Name + ">.<" + outputProperty.Name + ">"
+                        "Api Call <" + endpoint.Name + ">.<" + outputProperty.Name + ">"
 
                     let newVarDef =
                         Var (newVarName, outputProperty.PropertyType)
@@ -147,10 +147,10 @@ module internal SourceElementDependencies =
 
                     newApiCallVarDefs', newElementDependencies', newVarDef
 
-                | Some varDef, true ->
-                    apiCallVarDefs, elementDependencies, varDef
+                | Some varDef', true ->
+                    apiCallVarDefs, elementDependencies, varDef'
 
-                | Some varDef, false ->
+                | Some varDef', false ->
                     let newElementDependencies' = {
                         elementDependencies with
                             ApiCalls =
@@ -158,7 +158,7 @@ module internal SourceElementDependencies =
                                 |> Set.add dependency
                         }
 
-                    apiCallVarDefs, newElementDependencies', varDef
+                    apiCallVarDefs, newElementDependencies', varDef'
 
             // Potentially we're just re-adding the same set of dependencies.
             do! Stateful.put (newApiCallVarDefs, newElementDependencies)
@@ -186,11 +186,10 @@ module internal SourceElementDependencies =
           
 
 [<NoEquality; NoComparison>]
-type SourceElementDefinition<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+type SourceElementDefinition<'TPolicyRecord> =
     {
         Dependencies            : SourceElementDependencies<'TPolicyRecord>
         OriginalExprBody        : Expr
-        // Wrapped as part of a lambda.
         RebuiltExprBody         : Expr
         // Only intended to be used for testing purposes. The first and
         // second object arrays correspond to the API and current result
@@ -201,33 +200,30 @@ type SourceElementDefinition<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord
     }
 
 [<NoEquality; NoComparison>]
-type ParsedSource<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+type ParsedSource<'TPolicyRecord> =
     {
         ElementDefinitions  : Map<string, SourceElementDefinition<'TPolicyRecord>>
-        // Collection of API calls across for the entire step (ie. across ALL source elements).
         ApiCallsTupleType   : Type
         ApiCalls            : SourceElementApiCallDependency<'TPolicyRecord> Set
         RebuiltSourceExpr   : Expr
-        // The obj array corresponds to all API call results for the step.
         WrappedInvoker      : ('TPolicyRecord * obj array) -> obj
     }
 
 [<NoEquality; NoComparison>]
-type OpeningDataStage<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+type OpeningDataStage<'TPolicyRecord> =
     {        
         OpeningStepHeader           : IStepHeader
-        // This does NOT include the data change step header above NOR
-        // the remove exited records step itself.
+        // This does NOT include the data change step header above.
+        // However, it DOES include the exited records step.
         WithinStageSteps            : (IStepHeader * ParsedSource<'TPolicyRecord>) list
-        // These are the API calls arising from steps within this data stage.
-        // This does not reflect the opening step itself which has no source (nor can it).
+        // These are the API calls arising from the within stage steps above.
         WithinStageApiCalls         : SourceElementApiCallDependency<'TPolicyRecord> Set
     }
 
 [<NoEquality; NoComparison>]
-type PostOpeningDataStage<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+type PostOpeningDataStage<'TPolicyRecord> =
     {
-        // Note that not all data changes occur at a DataChangeStep!
+        // Note that NOT all data changes occur at a DataChangeStep!
         // Data changes can also ocurr at the penultimate step.
         DataChangeStep              : IDataChangeStep<'TPolicyRecord>
         // Although a data change step has no source, it inherits that
@@ -242,17 +238,9 @@ type PostOpeningDataStage<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
     }
 
 [<NoEquality; NoComparison>]
-type ParsedWalk<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+type ParsedWalk<'TPolicyRecord> =
     {
-        PostOpeningParsedSteps                  : (IStepHeader * ParsedSource<'TPolicyRecord>) list
-        // For exiting records, they only fall within the opening data stage.
-        //ExitedRecordDataStage                   : OpeningDataStage<'TPolicyRecord>
-        // For records that have remained in-force over the period, they have both
-        // an opening data stage (which could include additional steps relative to
-        // an exited record) as well as all data stages thereafter, which would
-        // include the move to closing data as a minimum.
-        RemainingRecordOpeningDataStage         : OpeningDataStage<'TPolicyRecord>
-        RemainingRecordPostOpeningDataStages    : PostOpeningDataStage<'TPolicyRecord> list
-        // New records just need to know the source used for the prior step.
-        //NewRecordSource                         : ParsedSource<'TPolicyRecord>
+        PostOpeningParsedSteps      : (IStepHeader * ParsedSource<'TPolicyRecord>) list
+        OpeningDataStage            : OpeningDataStage<'TPolicyRecord>
+        PostOpeningDataStages       : PostOpeningDataStage<'TPolicyRecord> list
     }

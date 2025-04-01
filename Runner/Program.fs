@@ -121,7 +121,7 @@ module Runner =
             do printfn "Done."
 
             let hdr, parsedStep =
-                parsedWalk.RemainingRecordOpeningDataStage.WithinStageSteps.Head
+                parsedWalk.OpeningDataStage.WithinStageSteps.Head
 
             let uas =
                 parsedStep.ElementDefinitions["UnsmoothedAssetShare"]

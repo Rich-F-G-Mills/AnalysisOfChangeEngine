@@ -11,41 +11,40 @@ module WalkParser =
     open AnalysisOfChangeEngine.StateMonad
 
 
-    type private WalkState<'TPolicyRecord when 'TPolicyRecord :> IPolicyRecord> =
+    type private WalkState<'TPolicyRecord> =
         Map<SourceElementApiCallDependency<'TPolicyRecord>, Var> * Map<string, SourceElementDefinition<'TPolicyRecord>>
     
-    type private SourceParser<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord> =
+    type private SourceParser<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
         SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             -> Stateful<WalkState<'TPolicyRecord>, ParsedSource<'TPolicyRecord>>
 
 
-    let private getParsedStepSources<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord>
-        (stepsPostOpening: IStepHeader list, sourceParser: SourceParser<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
-            // DD - We Process each sourceable step in turn. This includes processing the underlying source expression,
-            // and switching out any references to API calls and/or results from the current step with variables.
-            // We ensure a one-to-one mapping between each API call and current result reference to a corresponding
-            // variable (as mentioned above). The stateful nature of this process allows any such mappings created
-            // when processing a given step to be re-used for later steps. This could have been done by passing
-            // in a mutable collection. However, this is far from idiomatic and makes such state changes far less
-            // explicit.
+    (*
+    Design Decision:
+        We Process each sourceable step in turn. This includes processing the underlying source expression,
+        and switching out any references to API calls and/or results from the current step with variables.
+        When we process each sourceable step (and the step result elements within), we track (via a state monad)
+        an accumulated view of elements defined from previous steps. That is, before processing a given step, we know
+        the latest definition of each element.
+    *)
 
-            // DD - Before we starting using the state monad, we could get away with simpler constructs such as folds.
-            // However, the need to be able to re-use the prior step's source for a non-sourceable step
-            // means the process of determining a source for each and every step is a tad more cumbersome.
+    let private getParsedStepSources<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        (stepsPostOpening: IStepHeader list, sourceParser: SourceParser<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
+            // First of all, lets figure out which steps are sourceable.
             let sourceableStepHdrs =
                 stepsPostOpening
                 |> List.choose (function
-                    | :? ISourcedStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> as step ->
+                    | :? SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> as step ->
                         Some (step.Uid, step.Source)
                     | _ ->
                         None)
 
-            // We don't care about the closing state once we've processed all the steps.
+            // We don't care about the state returned from the run below.
             let parsedSources, _ =
                 sourceableStepHdrs
                 |> List.map snd
                 |> List.mapStateM sourceParser
-                |> Stateful.run (Map.empty, Map.empty)  
+                |> Stateful.run (Map.empty, Map.empty)
                 
             // For those sourceable steps, create a mapping between the source step UIDs and the
             // corresponding source.
@@ -55,21 +54,24 @@ module WalkParser =
                 |> List.map (fun ((uid, _), parsed) -> uid, parsed)
                 |> Map.ofList
 
+            // This ensures that the first post-opening (ie. second) step is always sourceable.
             let firstPostOpeningStepUid =
                 stepsPostOpening
                 |> List.head
-                :?> ISourcedStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+                :?> SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
                 |> _.Uid
 
-            // DD - Doing it this way ensures that the first post-opening step
-            // if sourceable!
+            // It would be very (!) unexpected if this fails given the above.
             let firstPostOpeningParsedStepSource =
                 parsedStepMapping[firstPostOpeningStepUid]
 
+            // Now we bring together a list of parsed sources for all post-opening steps.
+            // If a step is non-sourceable, we just carry forward that from the previous step.
             let parsedStepSources =
                 stepsPostOpening
                 // Ignore the first post-opening step as we've already determined
-                // the corresponding parsed source above.
+                // the corresponding parsed source above. Note that scan returns
+                // the initial state as part of the resulting collection.
                 |> List.tail
                 |> List.scan (fun prior step ->
                     match parsedStepMapping.TryFind step.Uid with
@@ -82,90 +84,89 @@ module WalkParser =
             parsedStepSources
 
 
-    [<RequireQualifiedAccess>]
-    module private RemainingBusiness =
+    let private getOpeningDataStage (openingStep, openingDataStageTuples) =
+        {
+            OpeningStepHeader =
+                openingStep
+            WithinStageSteps =
+                openingDataStageTuples
+            WithinStageApiCalls =
+                openingDataStageTuples
+                |> List.map snd
+                |> List.map _.ApiCalls
+                |> Set.unionMany
+        }
 
-        // Used for remaining in-force business.
-        let getOpeningDataStage (openingStep, openingDataStageTuples) =
-            {
-                OpeningStepHeader =
-                    openingStep
-                WithinStageSteps =
-                    openingDataStageTuples
-                WithinStageApiCalls =
-                    openingDataStageTuples
+    let private getPostOpeningDataStages (postOpeningDataStageTuples: (IStepHeader * _) list) =
+        let firstPostOpeningDataChangeStepHeader =
+            postOpeningDataStageTuples
+            |> List.head
+            |> fst
+            // If this fails, something has gone very (!) wrong within the caller.
+            :?> IDataChangeStep<'TPolicyRecord>
+
+        let dataStageAccumulator accumStage (step: IStepHeader) =
+            match step with
+            | :? IDataChangeStep<'TPolicyRecord> as step' ->
+                step'
+            | _ ->
+                // If we aren't a data change step, we must be within the same data-stage.
+                accumStage
+
+        let postOpeningDataStagesByStep =
+            postOpeningDataStageTuples
+            // Skip the first one as we're passing it in as the initial scan state.
+            |> List.tail
+            |> List.map fst
+            |> List.scan dataStageAccumulator firstPostOpeningDataChangeStepHeader
+
+        assert (postOpeningDataStagesByStep.Length = postOpeningDataStageTuples.Length)
+
+        let stepsGroupedByDataStage =
+            postOpeningDataStageTuples
+            // Not clear whether groupBy preserves ordering. Easier just to maintain
+            // it ourselves.
+            |> List.indexed
+            |> List.zip postOpeningDataStagesByStep
+            |> List.groupBy fst
+            |> List.map (fun (stage, details) ->
+                let details' =
+                    details
                     |> List.map snd
-                    |> List.map _.ApiCalls
+                    |> List.sortBy fst
+                    |> List.map snd
+
+                stage, details')
+
+        // Note that withinStageTuples will also include the data change step itself.
+        // Design Decision: Could be moved out of this definition? However, not seeing any benefit.
+        let toDataStage (dataChangeStepHdr: IDataChangeStep<_>, withinStageTuples) =
+            {
+                DataChangeStep =
+                    dataChangeStepHdr
+                DataChangeStepParsedSource =
+                    withinStageTuples
+                    |> List.head
+                    |> snd
+                WithinStageSteps =
+                    // We don't want the data change step itself.
+                    withinStageTuples
+                    |> List.tail                                    
+                WithinStageApiCalls =
+                    // Remember that the data change step inherits the source
+                    // from the previous step. As such, we need to include any API
+                    // calls relevant for the data change step itself.
+                    withinStageTuples
+                    |> List.map snd
+                    |> Seq.map _.ApiCalls
                     |> Set.unionMany
             }
-    
-        // Used for remaining in-force business.
-        let getPostOpeningDataStages (postOpeningDataStageTuples: (IStepHeader * _) list) =
-            let firstPostOpeningDataChangeStepHeader =
-                postOpeningDataStageTuples
-                |> List.head
-                |> fst
-                :?> IDataChangeStep<'TPolicyRecord>
 
-            let dataStageAccumulator accumStage (step: IStepHeader) =
-                match step with
-                | :? IDataChangeStep<'TPolicyRecord> as step' ->
-                    step'
-                | _ ->
-                    accumStage
+        let postOpeningDataStages =
+            stepsGroupedByDataStage
+            |> List.map toDataStage
 
-            let postOpeningDataStagesByStep =
-                postOpeningDataStageTuples
-                // Skip the first one as we're passing it in as the initial scan state.
-                |> List.tail
-                |> List.map fst
-                |> List.scan dataStageAccumulator firstPostOpeningDataChangeStepHeader
-
-            assert (postOpeningDataStagesByStep.Length = postOpeningDataStageTuples.Length)
-
-            let stepsGroupedByDataStage =
-                postOpeningDataStageTuples
-                // We need to make sure step ordering is maintained.
-                |> List.indexed
-                |> List.zip postOpeningDataStagesByStep
-                |> List.groupBy fst
-                |> List.map (fun (stage, details) ->
-                    let details' =
-                        details
-                        |> List.map snd
-                        |> List.sortBy fst
-                        |> List.map snd
-
-                    stage, details')
-
-            // Note that withinStageTuples will also include the data change step itself.
-            let toDataStage (dataChangeStepHdr: IDataChangeStep<_>, withinStageTuples) =
-                {
-                    DataChangeStep =
-                        dataChangeStepHdr
-                    DataChangeStepParsedSource =
-                        withinStageTuples
-                        |> List.head
-                        |> snd
-                    WithinStageSteps =
-                        // We don't want the data change step itself.
-                        withinStageTuples
-                        |> List.tail                                    
-                    WithinStageApiCalls =
-                        // Remember that the data change step inherits the source
-                        // from the previous step. As such, we need to be mindful of any
-                        // API calls that it makes using that inherited source.
-                        withinStageTuples
-                        |> List.map snd
-                        |> Seq.map _.ApiCalls
-                        |> Set.unionMany
-                }
-
-            let postOpeningDataStages =
-                stepsGroupedByDataStage
-                |> List.map toDataStage
-
-            postOpeningDataStages
+        postOpeningDataStages
         
 
     let execute<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord and 'TPolicyRecord : equality>
@@ -206,6 +207,7 @@ module WalkParser =
                 getParsedStepSources (stepsPostOpening, sourceParser)
 
             // It's more convenient to keep the step and parsed source together in this way.
+            /// Does not include the opening step.
             let parsedStepTuples =
                 parsedStepSources
                 |> List.zip stepsPostOpening
@@ -245,16 +247,16 @@ module WalkParser =
                 {
                     PostOpeningParsedSteps =
                         postOpeningDataStageTuples
-                    RemainingRecordOpeningDataStage =
-                        RemainingBusiness.getOpeningDataStage (allSteps[0], openingDataStageTuples)
-                    RemainingRecordPostOpeningDataStages =
-                        RemainingBusiness.getPostOpeningDataStages postOpeningDataStageTuples
+                    OpeningDataStage =
+                        getOpeningDataStage (allSteps[0], openingDataStageTuples)
+                    PostOpeningDataStages =
+                        getPostOpeningDataStages postOpeningDataStageTuples
                 }
 
             let impliedCountSteps =
-                1 + parsedWalk.RemainingRecordOpeningDataStage.WithinStageSteps.Length
-                  + parsedWalk.RemainingRecordPostOpeningDataStages.Length
-                  + (parsedWalk.RemainingRecordPostOpeningDataStages |> List.sumBy _.WithinStageSteps.Length)
+                1 + parsedWalk.OpeningDataStage.WithinStageSteps.Length
+                  + parsedWalk.PostOpeningDataStages.Length
+                  + (parsedWalk.PostOpeningDataStages |> List.sumBy _.WithinStageSteps.Length)
 
             assert (impliedCountSteps = allSteps.Length)
 

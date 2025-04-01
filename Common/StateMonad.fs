@@ -40,20 +40,6 @@ module Stateful =
             (), newState
         )
 
-    let inline withState onEnter (Stateful transformer) onExit =
-        Stateful (fun enteringState ->
-            let newEnteringState =
-                onEnter enteringState
-
-            let value, newState =
-                transformer newEnteringState
-
-            let exitingState =
-                onExit enteringState newState
-
-            value, exitingState
-        )
-
     let inline run state (Stateful transformer) =
         transformer state
 

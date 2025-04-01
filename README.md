@@ -29,59 +29,32 @@ Depending on the set-up used, these values could be obtained (for example) from 
 
 ### What are we trying to achieve here?
 
-The purpose of this project is to provide a framework that allows for walks, such as that summarised above, to be coded in such a way as to be both transparent and also benefit from the advantages provided (e.g. type-safety) by a language such as F#.
+The purpose of this repository, and the various projects within, is to provide a framework that allows for walks (such as that summarised above) to be coded in such a way as to be both transparent and also benefit from the advantages provided (e.g. type-safety) by a language such as F#.
 
-Ultimately, user's should only care about **what** each step in the walk is doing.
+Ideally:
 
-The benefits offered include:
+* Users should only care about how each step in the walk is defined, and **not** how the machinery makes it happen.
+* There should be a transparent way of specifying the logic of each step through a combination of user defined functions and code quotations.
+* The number of API calls should be kept to a minimum. Either by re-using already provided values or by requesting as many outputs as needed in each request.
 
-* Elegant way of specifying the logic of each step through a combination of user defined functions and code quotations.
-* Making the minimum number of required calls to specified APIs. Either by re-using already provided values or by requesting as many outputs as possible in each request.
+### So... What is provided?
 
-### So... How is a walk specified?
+The following projects are **core** to what we are trying to achieve here:
 
-Each walk is tightly coupled with the following structures:
+* [**`Common`**](/Common/README.md) - Provides definitions of common types used throughout the solution. It is not expected that users will need to directly reference this project.
+* **`Controller`** - Provides logic needed to convert a use supplied walk into actionable code and carry out selected walks.
 
-* Results tracked for each step in the walk (**step results**). For example, asset share, total premiums paid, claims values, etc...
-* Policy records. For example, policy number, entry date, etc...
-* Menu of API calls available.
+The following projects are specific to the walks (and hence likely the coresponding portfolio of business) that need to be run and the mechanisms needed to make that happen:
 
-All of these aspects must be strongly-typed and hence known at compile time.
+* **`Implementations`** - Definitions of the various user supplied walks, including the building blocks that made that happen.
+* **`DataStore.Postgres`** - Provides an interface to an underlying data-store hosted on a Postgres database.
+* **`Runner`** - A user supplied executable that, by bringing together the various aspects above, will phyically run the walk.
 
-```mermaid
----
-config:
-  theme: mc
-  look: classic
-  layout: dagre
----
-flowchart TD
-    A["User Specified Walk<br>(Class)"] --> B["<tt>AbstractWalk</tt><br>(Abstract Class)"]
-    C["Policy Record Structure<br>(Type Parameter)"] --> F["<tt>IPolicyRecord</tt><br>(Interface)"]
-    B --> C & D["Step Results Structure<br>(Type Parameter)"]
-    B --> E["API Sources<br>(Type Parameter)"]
-    A@{ shape: rounded}
-    B@{ shape: rounded}
-    C@{ shape: rounded}
-    F@{ shape: rounded}
-    D@{ shape: rounded}
-    E@{ shape: rounded}
-```
+### Next steps...
 
-Walks are defined within the context of a .NET class. In all cases, such classes must inherit from the `AbstractWalk` class which enforces the presence of certain steps along with the ability to "register" user supplied steps over and above those required below. This inheritance also notifies the machinery of:
 
-The first three steps of a walk **must** be:
 
-* Opening position.
-* Opening re-run.
-* Remove exited business.
 
-The last two steps of a walk **must** be:
-
-* Move to closing details for each record; specifically, those records in-force at **both** the opening **and** closing positions.
-* Allow for new/reinstated business; also the closing step in the walk.
-
-The user is free to supply as many additional (i.e. **interior**) steps between those above as needed; this is discussed further in the following section.
 
 
 ### What about the steps themselves?

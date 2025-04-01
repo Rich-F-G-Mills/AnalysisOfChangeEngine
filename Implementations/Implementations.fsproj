@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="README.md" />
     <Compile Include="Common\PxApi.fs" />
     <Compile Include="Common\Steps.fs" />
     <Compile Include="OB Whole Of Life\PolicyRecord.fs" />

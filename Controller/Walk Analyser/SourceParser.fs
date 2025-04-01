@@ -29,13 +29,15 @@ module SourceParser =
         | _ ->
             None
 
-    // When constructing a record via a code quotation, if the elements are not supplied in
-    // the exact same order as the original record type definition, the compiler uses (nested)
-    // let bindings which are then passed into the new record expression.
-    // This is (likely) just in case the member definitions have side-effects which can then
-    // be executed in the same order as the member name-value pairings as supplied.
-    // Given there are no side-effects to worry about here, we can collapse everything down
-    // into the correctly ordered new record expression.
+    (*
+        When constructing a record via a code quotation, if the elements are not supplied in
+        the exact same order as the original record type definition, the compiler uses (nested)
+        let bindings which are then passed into the new record expression.
+        This is (likely) just in case the member definitions have side-effects which can then
+        be executed in the same order in which the member name-value pairings are supplied.
+        Given there are no side-effects to worry about here, we can collapse everything down
+        into the correctly ordered new record expression.
+    *)
     let private flattenSourceBody (sourceBody: Expr<'TStepResults>) =
         let stepResultMembers =
             FSharpType.GetRecordFields (typeof<'TStepResults>)
@@ -82,6 +84,7 @@ module SourceParser =
         else
             let next =
                 remaining
+                // Only using tryFind so we can return a (marginally) more helpful error.
                 |> Seq.tryFind (fun elementName ->
                     let dependsOn =
                         withinStepDependencies[elementName]
@@ -90,13 +93,14 @@ module SourceParser =
                     failwith "Circular dependency detected.")
 
             let newOrdered =
-                // DD - Would be better to prepend and then reverse.
+                // Would be better to prepend and then reverse. However, not going
+                // to be an issue given the list sizes here.
                 ordered @ [next]
 
             Some (next, newOrdered)
 
 
-    let internal execute<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord>
+    let internal execute<'TPolicyRecord, 'TStepResults, 'TApiCollection>
         (apiCollection: 'TApiCollection, newPolicyRecordVarDef, currentResultsVarDefMapping) = 
             let sourceActionType =
                 typeof<SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection>>
@@ -129,8 +133,10 @@ module SourceParser =
                     (newPolicyRecordVarDef, currentResultsVarDefMapping)
 
             // When specificying the source for a given step, we can inherite
-            // element definitions from the previous step. As sight, we need
+            // element definitions from the previous step. As such, we need
             // to see what they were so we can merge with the current step's source.
+            // Given we're inheriting prior elements, we also need to maintain
+            // mappings for all API calls that we've encountered.
             fun (source: SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection>) ->
                 stateful {
                     let! (apiCallVarDefMapping, accruedElements) =
@@ -138,13 +144,10 @@ module SourceParser =
 
                     let fromVarDef, policyRecordVarDef, priorResultsVarDef, currentResultsVarDef, sourceBody =
                         match source with
-                        | SourceLambda (from, policyRecord, priorResults, currentResults, expr) ->
-                            (from, policyRecord, priorResults, currentResults, Expr.Cast<'TStepResults> expr)
+                        | SourceLambda (fromVarDef', policyRecordVarDef', priorResultsVarDef', currentResultsVarDef', sourceBody') ->
+                            (fromVarDef', policyRecordVarDef', priorResultsVarDef', currentResultsVarDef', Expr.Cast<'TStepResults> sourceBody')
                         | _ ->
                             failwith "Unexpected source lambda definition."
-
-                    let flattenedSourceBody =
-                        flattenSourceBody sourceBody
 
                     let (|FromVarDef|_|) = function
                         | v when v = fromVarDef -> Some () | _ -> None
@@ -257,24 +260,27 @@ module SourceParser =
                                     }
 
                                 | Patterns.Value _ as valueExpr ->
-                                    Stateful.returnM valueExpr
+                                    // I know, I know... Could just use Stateful.returnM!
+                                    stateful {
+                                        return valueExpr
+                                    }
 
                                 | expr ->
                                     failwithf "Unsupported expression: %A" expr                            
 
-                            let! apiCallVarMapping' =
+                            let! apiCallVarDefMapping' =
                                 Stateful.get
                             
-                            let newCalcBody, (newApiCallVarMapping, elementDependencies) =
+                            let newCalcBody, (newApiCallVarDefMapping, elementDependencies) =
                                 Stateful.run
-                                    (apiCallVarMapping', SourceElementDependencies.empty)
+                                    (apiCallVarDefMapping', SourceElementDependencies.empty)
                                     (inner calcDefn)
 
-                            do! Stateful.put newApiCallVarMapping
+                            do! Stateful.put newApiCallVarDefMapping
 
                             let invokerDetails =
                                 elementInvokerFactory
-                                    (newApiCallVarMapping, elementPI, newCalcBody, elementDependencies)
+                                    (newApiCallVarDefMapping, elementPI, newCalcBody, elementDependencies)
 
                             return {
                                 Dependencies            = elementDependencies
@@ -287,7 +293,8 @@ module SourceParser =
                         }                        
 
                     let specifiedElementExprs =
-                        flattenedSourceBody
+                        sourceBody
+                        |> flattenSourceBody 
                         |> Map.toSeq
                         |> Seq.filter (function
                             // Remove those elements which simply refer to that same element
@@ -296,37 +303,37 @@ module SourceParser =
                             | _ -> true)
                         |> Seq.toList
 
-                    let (specifiedElements, newApiCallVarMapping) =
+                    let (specifiedElements, newApiCallVarDefMapping) =
                         specifiedElementExprs
                         |> List.mapStateM (fun (name, expr) ->
                             processElementCalculation (stepResultMembers[name], expr)
                             |> Stateful.mapM (fun defn -> name, defn))
                         |> Stateful.mapM Map.ofList
-                        |> Stateful.run apiCallVarDefMapping                    
+                        |> Stateful.run apiCallVarDefMapping                  
                         
                     let combinedElements =
                         Map.merge accruedElements specifiedElements
 
-                    let combinedElementNames =
+                    let combinedElementNamesSet =
                         combinedElements
                         |> Map.keys
                         |> Set
 
                     // Provided the first post-opening step has been defined correctly,
                     // we shouldn't have any issues thereafter.
-                    if combinedElementNames <> stepResultMemberNamesSet then
+                    if combinedElementNamesSet <> stepResultMemberNamesSet then
                         failwith "Not all step result members have been defined."
 
                     // Update our state tracking both API dependencies and
                     // the accrued set of element definitions.
-                    do! Stateful.put (newApiCallVarMapping, combinedElements)
+                    do! Stateful.put (newApiCallVarDefMapping, combinedElements)
 
                     // Here we're identifying dependencies between elements of the
                     // current step.
                     let withinStepDependencies =
                         combinedElements
-                        |> Map.map (fun _ { Dependencies = deps } ->
-                            deps.CurrentResults)  
+                        |> Map.map (fun _ ->
+                            _.Dependencies.CurrentResults) 
                         
                     let dependencySorter' =
                         dependencySorter (stepResultMemberNamesSet, withinStepDependencies)
@@ -335,7 +342,7 @@ module SourceParser =
                         List.unfold dependencySorter' List.empty     
                     
                     let invokerDetails =
-                        sourceInvokerFactory (newApiCallVarMapping, combinedElements, elementOrdering)
+                        sourceInvokerFactory (newApiCallVarDefMapping, combinedElements, elementOrdering)
 
                     return {
                         ElementDefinitions  = combinedElements

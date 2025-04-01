@@ -13,7 +13,7 @@ module SourceInvoker =
     let private unitObj =
         () :> obj
 
-    let internal create<'TPolicyRecord, 'TStepResults when 'TPolicyRecord :> IPolicyRecord>
+    let internal create<'TPolicyRecord, 'TStepResults>
         (policyRecordVarDef: Var, currentResultsVarDefMapping: Map<_, Var>) =
             let policyRecordType =
                 typeof<'TPolicyRecord>
@@ -41,7 +41,7 @@ module SourceInvoker =
                     |> Seq.toList
                 )
 
-            fun (apiCallVarDefMapping, combinedElements: Map<string, SourceElementDefinition<'TPolicyRecord>>, elementOrdering) ->         
+            fun (apiCallVarDefMapping, combinedElements: Map<_, SourceElementDefinition<'TPolicyRecord>>, elementOrdering) ->         
                 assert (policyRecordType = policyRecordVarDef.Type)
 
                 let combinedApiCalls =
@@ -79,7 +79,7 @@ module SourceInvoker =
                             inner
                         )) elementOrdering newRecordExpr
 
-                let apiCallAssignments =
+                let rebuiltSourceExprBody =
                     apiCallsVarDefs
                     |> List.fold (fun inner (idx, var) ->
                         Expr.Let (var, Expr.TupleGet (apiCallsTupleVar, idx), inner)) elementAssignments
@@ -87,13 +87,13 @@ module SourceInvoker =
                 let rebuiltSourceExpr =
                     Expr.Lambda(policyRecordVarDef,
                         Expr.Lambda (apiCallsTupleVarDef,
-                            apiCallAssignments))
+                            rebuiltSourceExprBody))
 
                 let invoker =
                     LeafExpressionConverter.EvaluateQuotation rebuiltSourceExpr
 
-                // We now have some ceremony where we're trying to create
-                // a wrapper by which to invoke our compiled lambda above.
+                // Similar situation as for the element invoker where we are trying
+                // to get a callable to access our compiled logic above.
                 let fsharpFuncType =
                     typedefof<OptimizedClosures.FSharpFunc<_, _, _>>
                         .MakeGenericType(
@@ -103,8 +103,6 @@ module SourceInvoker =
                         )
 
                 let fsharpFunc =
-                    // Converts our compiled lambda into an FSharpFunc that
-                    // we can 'fast' invoke.
                     fsharpFuncType.GetMethod("Adapt").Invoke(null, [|invoker|])
 
                 let invokerArgTypes =
@@ -113,8 +111,9 @@ module SourceInvoker =
                 let invokerMI =                
                     fsharpFuncType.GetMethod("Invoke", invokerArgTypes)
 
-                // Provider a wrapped invoker of our element calculation logic.
-                // Only intended that this will be used for testing purposes.
+                // Whereas, for the element invoker, this was only expected to be used
+                // for testing purposes. That is NOT the case here. The resulting invoker
+                // will be called in order to populate the step result for a given record.
                 let wrappedInvoker (policyRecord: 'TPolicyRecord, apiCallResults) =
                     let apiCallResults' =
                         if apiCallsTupleType = typeof<unit> then
