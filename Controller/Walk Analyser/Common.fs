@@ -232,7 +232,7 @@ type PostOpeningDataStage<'TPolicyRecord> =
         // This does NOT include the data change step header above.
         WithinStageSteps            : (IStepHeader * ParsedSource<'TPolicyRecord>) list
         // These are the API calls arising from steps within this data stage.
-        // This will include those arising from the data change step itself
+        // This will INCLUDE those arising from the data change step itself
         // which will have inherited the source from the previous step.
         WithinStageApiCalls         : SourceElementApiCallDependency<'TPolicyRecord> Set
     }

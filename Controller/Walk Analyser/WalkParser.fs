@@ -26,6 +26,15 @@ module WalkParser =
         When we process each sourceable step (and the step result elements within), we track (via a state monad)
         an accumulated view of elements defined from previous steps. That is, before processing a given step, we know
         the latest definition of each element.
+
+        Furthermore, within each step at least, we need a way to map each API call to a corresponding variable
+        definition (in a 1-2-1 manner). The current source parsing logic only does this mapping for those
+        elements which are explicitly defined for a given step. It does NOT consider those parsed elements
+        inherited from previous steps.
+
+        Rather than re-parse inherited element definitions, it seemed cleaner to track all API calls encountered
+        across all steps encountered thus far, each associated with a corresponding variable. This is why, via
+        the state monad below, we also track an accumulated view for API call/variable mappings as well.
     *)
 
     let private getParsedStepSources<'TPolicyRecord, 'TStepResults, 'TApiCollection>
@@ -98,6 +107,9 @@ module WalkParser =
         }
 
     let private getPostOpeningDataStages (postOpeningDataStageTuples: (IStepHeader * _) list) =
+        // If nothing else, we would have encountered the move to closing existing data step!
+        assert (postOpeningDataStageTuples.Length > 0)
+
         let firstPostOpeningDataChangeStepHeader =
             postOpeningDataStageTuples
             |> List.head
@@ -241,6 +253,9 @@ module WalkParser =
 
                         opening', postOpening'
 
+            // The move to closing existing data stage will ensure this cannot be empty.
+            assert (postOpeningDataStageTuples.Length > 0)
+
             assert (stepsPostOpening.Length = openingDataStageTuples.Length + postOpeningDataStageTuples.Length)
 
             let parsedWalk =
@@ -256,7 +271,7 @@ module WalkParser =
             let impliedCountSteps =
                 1 + parsedWalk.OpeningDataStage.WithinStageSteps.Length
                   + parsedWalk.PostOpeningDataStages.Length
-                  + (parsedWalk.PostOpeningDataStages |> List.sumBy _.WithinStageSteps.Length)
+                  + (List.sumBy _.WithinStageSteps.Length parsedWalk.PostOpeningDataStages)
 
             assert (impliedCountSteps = allSteps.Length)
 

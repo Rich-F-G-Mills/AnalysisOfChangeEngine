@@ -9,11 +9,11 @@ This project provides both:
 
 ### So... How is a walk specified?
 
-Each walk is tightly coupled with the following:
+Each walk is tightly coupled with the following (as defined in the top-level `README`)
 
-* **Step results structure** - The metrics tracked for each step in the walk. For example, asset share, total premiums paid, claims values, etc...
-* **Policy record structure** - The underlying properties for each policy record processed. For example, policy number and entry date.
-* **API collection** - Represents a collection of the API end-points required for the walk.
+* **Step results structure**
+* **Policy record structure**
+* **API collection**
 
 The walk is made aware of the above via generic type parameters (which must therefore be known at compile-time).
 

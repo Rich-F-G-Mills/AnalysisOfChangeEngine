@@ -35,7 +35,7 @@ Ideally:
 
 * Users should only care about how each step in the walk is defined, and **not** how the machinery makes it happen.
 * There should be a transparent way of specifying the logic of each step through a combination of user defined functions and code quotations.
-* The number of API calls should be kept to a minimum. Either by re-using already provided values or by requesting as many outputs as needed in each request.
+* The number of API calls should be kept to a minimum. Either by re-using already provided values and/or by grouping requests together where possible.
 
 ### So... What is provided?
 
@@ -50,47 +50,26 @@ The following projects are specific to the walks (and hence likely the corespond
 * **`DataStore.Postgres`** - Provides an interface to an underlying data-store hosted on a Postgres database.
 * **`Runner`** - A user supplied executable that, by bringing together the various aspects above, will phyically run the walk.
 
-### Next steps...
+A visual depiction of this can be found below:
 
+![](Documentation/overall.png)
 
+### What 'mental model' should I be using here?
 
+A **Policy record** represents the information tracked for a given policy such as entry date, life characteristics, etc...
 
+A **walk**, which could be applicable to one or more products within a portfolio, represents an ordered  collection of **steps**. By executing the steps within, it can breakdown the movements of policy related metrics over a specified reporting period.
 
+A **step result metric** represents a piece of information tracked for each policy and step. For a given policy, how these metrics change across consecutive steps is (usually!) of interest.
 
-### What about the steps themselves?
+A **step** might be required as part of the 'contract' needed to specify a valid walk or optionally supplied by the user. A given step might change the machinery's 'view' of a given policy, change how values are calculated for each step result metric, or change which policies are included/excluded entirely.
 
-Although there is no limit to the number of steps in the walk, there _is_ a finite number of step **types** that can appear. Some of these can only be used at specific points (eg. the 'Remove exited business' step seen below). It is these step types that indicate to the machinery what type of action needs to be taken.
+### What terms do I need to know?
 
-All steps implement the `IStepHeader` interface which requires the following information to be made available:
+Below are words/phrases that regularly appear throughout this repository:
 
-| **Member Name** | **.NET Type** | Comments |
-| :-------------: | :-----------: | :------- |
-| `Uid` | `System.Guid` | Duplicate `Uid`s within a walk a not permitted. |
-| `Title` | `System.String` | |
-| `Description` | `System.String` | |
+* **API collection** - Represents a collection of the API requestors as used throughout a given walk.
+* **API requestor** - Represents a request to an specific API-endpoint. Multiple
+* **Policy record structure** - The underlying properties for each policy record processed. For example, policy number and entry date.
+* **Step results structure** - The metrics tracked for each step in the walk. For example, asset share, total premiums paid, claims values, etc...
 
-Outside of this, different step types require different information in order to function, as we will see below.
-
-For the **required** steps, we have:
-
-| **Step** | **`AbstractWalk` Member** | **.NET Type** | **Information Required** |
-| :------: | :-----------------------: | :-----------: | :----------------------- |
-| Opening | `Opening` | `OpeningStep` | None. |
-| Opening re-run | `OpeningRegression` | `SourceChangeStep` | See 'Source Steps' below. |
-| Remove exited business | `RemoveExitedRecords` | `RemoveExitedRecordsStep` | None. |
-| Move to closing existing data | `MoveToClosingExistingData` | `ClosingExistingDataStep` | Optional validation logic. |
-| Add new records | `AddNewRecords` | `AddNewRecordsStep` | Optional validation logic. |
-
-For user supplied interior steps, the only choices are:
-
-| **.NET Type** | **Information Required** |
-| :-----------: | :----------------------- |
-| `SourceChangeStep` | See 'Source Steps' below. |
-| `DataChangeStep` | See 'Data Change Steps' below. |
-
-Ultimately, each step/step type indicates one of the following:
-
-* The opening step in the walk.
-* Change to the current policy record being processed.
-* Change in how the step result metrics are calculated.
-  * This could include changes in metrics 
