@@ -42,11 +42,11 @@ The visual below shows how reporting periods are 'stitched' together:
 
 ![](Documentation/policyflow.png)
 
-By executing the various steps within a walk, in the correct order, we can analyse the main drivers behind how metrics have changed between the opening and closing positions of a given reporting period.
+By executing the various steps within a walk, in the correct order, we can analyse the main drivers behind how metrics have changed between the opening and closing positions for a given reporting period.
 
 ### What are we trying to achieve here?
 
-The purpose of this repository, including the various projects within, is to provide a framework that allows for walks (such as that summarised above) to be coded and run in such a way as to be both transparent and also benefit from the advantages provided funcitonal by a language such as F#.
+The purpose of this repository, including the various projects within, is to provide a framework that allows for walks (such as that summarised above) to be coded and run in such a way as to be both transparent and also benefit from the advantages provided by a funcitonal language such as F#.
 
 Ideally:
 
@@ -60,12 +60,12 @@ Ideally:
 
 The following projects are **core** to what we are trying to achieve here:
 
-* [**`Common`**](Common/README.md) - Provides definitions of common types used throughout the solution. It is not expected that users will need to directly reference this project.
-* **`Controller`** - Provides logic needed to convert a use supplied walk into actionable code and carry out selected walks.
+* [**`Common`**](/Common/README.md) - Provides definitions of common types used throughout the solution. It is not expected that users will need to directly reference this project.
+* **`Controller`** - Provides logic needed to convert a user supplied walk into actionable code (via runtime compilation) and execute it.
 
 The following projects are specific to the walks (and hence likely the coresponding portfolio of business) that need to be run and the mechanisms needed to make that happen:
 
-* [**`Implementations`**](Implementations/README.md) - Definitions of the various user supplied walks, including the building blocks that made that happen.
+* [**`Implementations`**](/Implementations/README.md) - Definitions of the various user supplied walks, including the building blocks that made that happen.
 * **`DataStore.Postgres`** - Provides an interface to an underlying data-store hosted on a Postgres database.
 * **`Runner`** - A user supplied executable that, by bringing together the various aspects above, will phyically run the walk.
 
