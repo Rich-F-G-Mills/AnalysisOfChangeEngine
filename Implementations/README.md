@@ -7,15 +7,15 @@ This project provides both:
 * User implementations of specific walks.
 
 
-### So... How is a walk specified?
+### A light introduction...
 
-Each walk is tightly coupled with the following (as defined in the top-level `README`)
+Each walk is tightly coupled with the following aspects; corresponding type parameters are shown within (`brackets`).
 
-* **Step results structure**
-* **Policy record structure**
-* **API collection**
+* **Policy record type** (`'TPolicyRecord`)
+* **Step results type** (`'TStepResults`)
+* **API collection type** (`'TApiCollection`)
 
-The walk is made aware of the above via generic type parameters (which must therefore be known at compile-time).
+This is shown visually below:
 
 ![](/Documentation/classlayout.png)
 
@@ -32,8 +32,25 @@ The last two steps of a walk **must** be:
 * Move to closing details for each record; specifically, those records in-force at **both** the opening **and** closing positions (`ClosingExistingDataStep`).
 * Allow for new/reinstated business; also the closing step in the walk (`AddNewRecordsStep`).
 
-The user is free to supply as many additional (ie. **interior**) steps between those above as needed; this is discussed further in the following section.
+The user is free to supply as many additional (ie. **interior**) steps between those above as needed; however, note that only `SourceChangeStep` and `DataChangeStep` types are permitted for these.
 
+Below we see a visual representation of an hypothetical walk:
+
+* We can see the 3x required steps at the start and the 2x required steps at the end.
+* Between those, we can see the chosen interior steps.
+* Steps have been grouped into **data stages**.
+  - All steps within a given stage are run using the same policy data.
+  - The presence of a data stage does not indicate that the policy data must change, only that it can change should the user logic require it.
+  - Each interior data stage can contain zero or more `SourceChangeStep` definitions.
+  - As a minimum, there will always be an opening and closing data stage.
+
+![](/Documentation/examplewalk1.png)
+
+Below we see a much simpler walk with only a single interior step:
+
+![](/Documentation/examplewalk2.png)
+
+### `SourceChangeSteps`
 
  similar to that shown below. Note the use of a lambda definition within a code quotation.
   - The table below shows the arguments that will be supplied to (and hence expected of) the quoted lambda. Unused parameters can be replaced with a `_` discarding placeholder. 

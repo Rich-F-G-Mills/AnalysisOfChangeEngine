@@ -3,7 +3,7 @@
 
 This project exposes a number of types (including interfaces) used throughout the framework.
 
-Note that code comments can be found throughout the [`Types.fs`](/Common/Types.fs) source file.
+Note that (hopefully useful) code comments can be found throughout the [`Types.fs`](/Common/Types.fs) source file.
 
 It is not expected the users will need to directly access types and logic exposed via the other source files within this project.
 

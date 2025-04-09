@@ -60,12 +60,12 @@ Ideally:
 
 The following projects are **core** to what we are trying to achieve here:
 
-* [**`Common`**](/Common/README.md) - Provides definitions of common types used throughout the solution. It is not expected that users will need to directly reference this project.
+* [**`Common`**](/Common) - Provides definitions of common types used throughout the solution. It is not expected that users will need to directly reference this project.
 * **`Controller`** - Provides logic needed to convert a user supplied walk into actionable code (via runtime compilation) and execute it.
 
 The following projects are specific to the walks (and hence likely the coresponding portfolio of business) that need to be run and the mechanisms needed to make that happen:
 
-* [**`Implementations`**](/Implementations/README.md) - Definitions of the various user supplied walks, including the building blocks that made that happen.
+* [**`Implementations`**](/Implementations) - Definitions of the various user supplied walks, including the building blocks that made that happen.
 * **`DataStore.Postgres`** - Provides an interface to an underlying data-store hosted on a Postgres database.
 * **`Runner`** - A user supplied executable that, by bringing together the various aspects above, will phyically run the walk.
 
