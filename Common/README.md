@@ -45,7 +45,7 @@ Before we list the various step types available, please note the following short
       | `OpeningStep` | C | C | `OpeningStepValidator` |
       | `DataChangeStep` | P & C | P & C | `DataChangeStepValidator` |
       | `SourceChangeStep` | C | P & C | `SourceChangeStepValidator` |
-      | `ClosingExistingDataStep` | P & C | P & C | `DataChangeStepValidator` |
+      | `MoveToClosingDataStep` | P & C | P & C | `DataChangeStepValidator` |
       | `AddNewRecordsStep` | C | C | `AddNewRecordsStepValidator` |
 
   - This will be discussed further as part of the [`Implementations`](/Implementations/README.md) project.
@@ -63,6 +63,6 @@ As for the types used to represent the steps themselves:
 | `SourceChangeStep` | `V` `S` | Required type for the second step in any walk. Can optionally be used for one or more interior steps. |
 | `RemoveExitedRecordsStep` | | Required type for the third step in any walk. |
 | `DataChangeStep` | `V` | Can optionally be used for one or more interior steps. |
-| `ClosingExistingDataStep` | `V` | Required type for the penultimate step in any walk. |
+| `MoveToClosingDataStep` | `V` | Required type for the penultimate step in any walk. |
 | `AddNewRecordsStep` | `V` | Required type for the final step in any walk. |
 

@@ -43,7 +43,7 @@ module WalkParser =
             let sourceableStepHdrs =
                 stepsPostOpening
                 |> List.choose (function
-                    | :? SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> as step ->
+                    | :? ISourceableStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> as step ->
                         Some (step.Uid, step.Source)
                     | _ ->
                         None)
@@ -63,11 +63,9 @@ module WalkParser =
                 |> List.map (fun ((uid, _), parsed) -> uid, parsed)
                 |> Map.ofList
 
-            // This ensures that the first post-opening (ie. second) step is always sourceable.
             let firstPostOpeningStepUid =
                 stepsPostOpening
                 |> List.head
-                :?> SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
                 |> _.Uid
 
             // It would be very (!) unexpected if this fails given the above.
@@ -207,11 +205,11 @@ module WalkParser =
             // There is the risk that the required steps under the abstract walk are changed
             // and not correctly reflected here.
             assert checkStepType<OpeningStep<'TPolicyRecord, 'TStepResults>> allSteps[0]
-            assert checkStepType<SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>> allSteps[1]
+            assert checkStepType<OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>> allSteps[1]
             assert checkStepType<RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults>> allSteps[2]
 
             // TODO - Use 'from-end' indexing?            
-            assert checkStepType<ClosingExistingDataStep<'TPolicyRecord, 'TStepResults>> allStepsRev[1]
+            assert checkStepType<MoveToClosingDataStep<'TPolicyRecord, 'TStepResults>> allStepsRev[1]
             assert checkStepType<AddNewRecordsStep<'TPolicyRecord, 'TStepResults>> allStepsRev[0]
 
 
@@ -281,16 +279,16 @@ module WalkParser =
                 {
                     PostOpeningParsedSteps =
                         postOpeningDataStageTuples
-                    RemainingRecordsOpeningDataStage =
+                    OpeningDataStage =
                         getOpeningDataStage (allSteps[0], openingDataStageTuples)
-                    RemainingRecordsPostOpeningDataStages =
+                    PostOpeningDataStages =
                         getPostOpeningDataStages postOpeningDataStageTuples
                 }
 
             let impliedCountSteps =
-                1 + parsedWalk.RemainingRecordsOpeningDataStage.WithinStageSteps.Length
-                  + parsedWalk.RemainingRecordsPostOpeningDataStages.Length
-                  + (List.sumBy _.WithinStageSteps.Length parsedWalk.RemainingRecordsPostOpeningDataStages)
+                1 + parsedWalk.OpeningDataStage.WithinStageSteps.Length
+                  + parsedWalk.PostOpeningDataStages.Length
+                  + (List.sumBy _.WithinStageSteps.Length parsedWalk.PostOpeningDataStages)
 
             assert (impliedCountSteps = allSteps.Length)
 

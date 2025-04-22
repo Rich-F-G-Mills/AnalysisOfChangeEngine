@@ -9,7 +9,7 @@ This project provides both:
 
 ### A light introduction...
 
-Each walk is tightly coupled with the following aspects; corresponding type parameters are shown within (`brackets`).
+Each walk is tightly coupled with the following aspects; corresponding type parameters are shown within (`brackets`). You _may_ have already encountered these within the `Common` project documentation.
 
 * **Policy record type** (`'TPolicyRecord`)
 * **Step results type** (`'TStepResults`)
@@ -29,10 +29,10 @@ The first three steps of a walk **must** be:
 
 The last two steps of a walk **must** be:
 
-* Move to closing details for each record; specifically, those records in-force at **both** the opening **and** closing positions (`ClosingExistingDataStep`).
+* Move to closing details for each record; specifically, those records in-force at **both** the opening **and** closing positions (`MoveToClosingDataStep`).
 * Allow for new/reinstated business; also the closing step in the walk (`AddNewRecordsStep`).
 
-The user is free to supply as many additional (ie. **interior**) steps between those above as needed; however, note that only `SourceChangeStep` and `DataChangeStep` types are permitted for these.
+The user is free to supply as many additional (ie. so-called **interior**) steps between those above as needed; however, note that only `SourceChangeStep` and `DataChangeStep` types are permitted for these.
 
 Below we see a visual representation of an hypothetical walk:
 

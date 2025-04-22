@@ -255,7 +255,7 @@ Design decision:
 [<NoEquality; NoComparison>]
 type ParsedWalk<'TPolicyRecord> =
     {
-        PostOpeningParsedSteps                  : (IStepHeader * ParsedSource<'TPolicyRecord>) list
-        RemainingRecordsOpeningDataStage        : OpeningDataStage<'TPolicyRecord>
-        RemainingRecordsPostOpeningDataStages   : PostOpeningDataStage<'TPolicyRecord> list
+        PostOpeningParsedSteps  : (IStepHeader * ParsedSource<'TPolicyRecord>) list
+        OpeningDataStage        : OpeningDataStage<'TPolicyRecord>
+        PostOpeningDataStages   : PostOpeningDataStage<'TPolicyRecord> list
     }

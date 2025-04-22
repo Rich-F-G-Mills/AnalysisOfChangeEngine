@@ -72,13 +72,13 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         : PolicyRecordChanger<PolicyRecord> =
             fun (opening, _, closing) ->
                 let restatedStatus =
-                    match opening.PolicyStatus, closing.PolicyStatus with
+                    match opening.Status, closing.Status with
                     | PolicyStatus.PremiumPaying, PolicyStatus.PaidUp ->
                         // Don't transition to PUP at this time.
                         PolicyStatus.PremiumPaying
                     | _ ->
                         // It doesn't matter whether we pick that from the opening or closing!
-                        closing.PolicyStatus                        
+                        closing.Status
 
                 let restated =
                     {
@@ -86,9 +86,9 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
                             TableCode = closing.TableCode
                             EntryDate = closing.EntryDate
                             SumAssured = closing.SumAssured
-                            LivesBasis = closing.LivesBasis
-                            PaymentTerm = closing.PaymentTerm
-                            PolicyStatus = restatedStatus
+                            Lives = closing.Lives
+                            LimitedPaymentTerm = closing.LimitedPaymentTerm
+                            Status = restatedStatus
                             // We intentionally don't change the NPDD at this time.
                     }
 
@@ -100,7 +100,7 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         : PolicyRecordChanger<PolicyRecord> =
             fun (_, prior, closing) ->
                 let updatedStatus, updatedNPDD =
-                    match prior.PolicyStatus, closing.PolicyStatus with
+                    match prior.Status, closing.Status with
                     | PolicyStatus.PremiumPaying, PolicyStatus.PaidUp ->
                         let rollForwardNPDD =
                             // Ensure that we at least roll it forward to the closing date.
@@ -111,12 +111,12 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
 
                     | _ ->
                         // It doesn't matter whether we pick that from the opening or closing!
-                        closing.PolicyStatus, closing.NextPremiumDueDate                       
+                        closing.Status, closing.NextPremiumDueDate                       
 
                 let updated =
                     {
                         prior with
-                            PolicyStatus = updatedStatus
+                            Status = updatedStatus
                             NextPremiumDueDate = updatedNPDD
                     }
 
@@ -126,16 +126,16 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         : PolicyRecordChanger<PolicyRecord> =
             fun (_, prior, closing) ->
                 let updatedStatus, updatedNPDD =
-                    match prior.PolicyStatus, closing.PolicyStatus with
+                    match prior.Status, closing.Status with
                     | PolicyStatus.PremiumPaying, PolicyStatus.PaidUp ->
                         PolicyStatus.PaidUp, closing.NextPremiumDueDate
                     | _ ->
-                        prior.PolicyStatus, prior.NextPremiumDueDate
+                        prior.Status, prior.NextPremiumDueDate
 
                 let updated =
                     {
                         prior with
-                            PolicyStatus = updatedStatus
+                            Status = updatedStatus
                             NextPremiumDueDate = updatedNPDD
                     }
 
@@ -177,11 +177,11 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
         createStep.opening  {
             Validator = noValidator
         }
-
-    override val OpeningRegression =
-        createStep.openingRegression {
+         
+    override val OpeningReRun =
+        createStep.openingReRun {
             Source = <@
-                fun from _ _ _ ->
+                fun from _ _ ->
                     {                    
                         UnsmoothedAssetShare =
                             from.apiCall (_.px_OpeningRegression, _.UnsmoothedAssetShare)
@@ -475,8 +475,8 @@ type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfigur
 
     // --- REQUIRED STEPS ---
 
-    override val MoveToClosingExistingData =
-        createStep.moveToClosingExistingData {            
+    override val MoveToClosingData =
+        createStep.moveToClosingData {            
             Validator =
                 noValidator
         }

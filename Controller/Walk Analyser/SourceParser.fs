@@ -18,17 +18,6 @@ module SourceParser =
     open AnalysisOfChangeEngine
     open AnalysisOfChangeEngine.StateMonad
 
-
-    // Used to break apart a source definition.
-    let private (|SourceLambda|_|) = function
-        | Patterns.Lambda (from,
-            Patterns.Lambda (policyRecord,
-                Patterns.Lambda (priorResults,
-                    Patterns.Lambda (currentResults, sourceBody)))) ->
-                        Some (from, policyRecord, priorResults, currentResults, sourceBody)
-        | _ ->
-            None
-
     (*
         When constructing a record via a code quotation, if the elements are not supplied in
         the exact same order as the original record type definition, the compiler uses (nested)
@@ -144,7 +133,7 @@ module SourceParser =
 
                     let fromVarDef, policyRecordVarDef, priorResultsVarDef, currentResultsVarDef, sourceBody =
                         match source with
-                        | SourceLambda (fromVarDef', policyRecordVarDef', priorResultsVarDef', currentResultsVarDef', sourceBody') ->
+                        | SourceExpr.Definition (fromVarDef', policyRecordVarDef', priorResultsVarDef', currentResultsVarDef', sourceBody') ->
                             (fromVarDef', policyRecordVarDef', priorResultsVarDef', currentResultsVarDef', Expr.Cast<'TStepResults> sourceBody')
                         | _ ->
                             failwith "Unexpected source lambda definition."
@@ -319,8 +308,8 @@ module SourceParser =
                         |> Map.keys
                         |> Set
 
-                    // Provided the first post-opening step has been defined correctly,
-                    // we shouldn't have any issues thereafter.
+                    // In theory, given the first sourceable step (ie. opening re-run) does not
+                    // allow the user to inherit prior elements, this should never happen!
                     if combinedElementNamesSet <> stepResultMemberNamesSet then
                         failwith "Not all step result members have been defined."
 

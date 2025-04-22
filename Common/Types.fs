@@ -96,23 +96,47 @@ module Types =
 
 
     /// Required type of all source definitions.
-    type SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
+    type OpeningReRunSourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
         Expr<SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             -> 'TPolicyRecord   // Current policy record.
-            -> 'TStepResults    // Prior results.
             -> 'TStepResults    // Current results.
             -> 'TStepResults>   // Constructed results for current step.
 
+    [<RequireQualifiedAccess>]
+    module OpeningReRunSourceExpr =
+        // Used to break apart a source definition.
+        let (|Definition|_|) = function
+            | Patterns.Lambda (from,
+                Patterns.Lambda (policyRecord,
+                        Patterns.Lambda (currentResults, sourceBody))) ->
+                            Some (from, policyRecord, currentResults, sourceBody)
+            | _ ->
+                None
+
+
+    /// Required type of all source definitions.
+    type SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
+        Expr<SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+            -> 'TPolicyRecord   // Current policy record.
+            -> 'TStepResults    // Prior source definition.
+            -> 'TStepResults    // Current source definition.
+            -> 'TStepResults>   // Constructed results for current step.
+
+    [<RequireQualifiedAccess>]
     module SourceExpr =
-        let castExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection> expr
+        // Used to break apart a source definition.
+        let (|Definition|_|) = function
+            | Patterns.Lambda (from,
+                Patterns.Lambda (policyRecord,
+                    Patterns.Lambda (priorResults,
+                        Patterns.Lambda (currentResults, sourceBody)))) ->
+                            Some (from, policyRecord, priorResults, currentResults, sourceBody)
+            | _ ->
+                None
+
+        let cast<'TPolicyRecord, 'TStepResults, 'TApiCollection> expr
             : SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
                 Expr.Cast<_> expr
-
-        /// Helper function to simply re-use the prior source definition; likely only useful
-        /// when creating a 'null' step (ie. a step that doesn't do anything useful).
-        let usePrior<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-            : SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
-                <@ fun _ _ prior _ -> prior @>
 
 
     /// Step validator that receives the opening policy record and corresponding step results.
@@ -156,6 +180,14 @@ module Types =
         end
 
 
+    /// Required interface for any step that has a source definition.
+    type ISourceableStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
+        interface
+            inherit IStepHeader
+            abstract member Source: SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        end
+
+
     /// Required interface for steps that can modify policy records. This does NOT
     /// relate to steps which change whether a policy record is included (or not).
     type IDataChangeStep<'TPolicyRecord> =
@@ -187,6 +219,40 @@ module Types =
             member this.Description = this.Description
 
 
+    /// Required first step (usually considered step #0).
+    [<NoEquality; NoComparison>]
+    type OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
+        {
+            Uid             : Guid
+            Title           : string
+            Description     : string
+            Source          : OpeningReRunSourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+            Validator       : SourceChangeStepValidator<'TPolicyRecord, 'TStepResults>
+        }
+
+        interface IStepHeader with
+            member this.Uid = this.Uid
+            member this.Title = this.Title
+            member this.Description = this.Description
+
+        interface ISourceableStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> with
+            member this.Source =
+                match this.Source with
+                | OpeningReRunSourceExpr.Definition
+                    (from, policyRecord, currentResults, sourceBody) ->
+                        let untypedExpr =
+                            Expr.Lambda (from,
+                                Expr.Lambda (policyRecord,
+                                    // This is solely to make sure our lambda has the correct signature.
+                                    Expr.Lambda (Var ("priorResults", typeof<'TStepResults>),
+                                        Expr.Lambda (currentResults, sourceBody))))
+
+                        SourceExpr.cast<_, _, _> untypedExpr
+
+                | _ ->
+                    failwith "Invalid source defintion."
+
+
     /// Indicates a step where the source can be specified.
     [<NoEquality; NoComparison>]
     type SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
@@ -202,6 +268,10 @@ module Types =
             member this.Uid = this.Uid
             member this.Title = this.Title
             member this.Description = this.Description    
+
+        interface ISourceableStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> with
+            member this.Source =
+                this.Source
                 
 
     /// Indicates a step where the current policy record can be changed in a specified way.
@@ -244,7 +314,7 @@ module Types =
     /// Underlying type of the penultimate (and required) step in the walk.
     /// Indicates a move to the closing data for a given policy record.
     [<NoEquality; NoComparison>]
-    type ClosingExistingDataStep<'TPolicyRecord, 'TStepResults> =
+    type MoveToClosingDataStep<'TPolicyRecord, 'TStepResults when 'TPolicyRecord: equality> =
         {
             Uid             : Guid
             Title           : string
@@ -259,8 +329,11 @@ module Types =
 
         interface IDataChangeStep<'TPolicyRecord> with
             member _.DataChanger =
-                fun (_, _, closing) ->
-                    Some closing
+                fun (_, prior, closing) ->
+                    if prior = closing then
+                        None
+                    else
+                        Some closing
 
 
     /// Underlying type of the final (and required) step where policies only
@@ -298,23 +371,21 @@ module Types =
                 OpeningStep<'TPolicyRecord, 'TStepResults> with get
 
             /// Required step.
-            abstract member OpeningRegression :
-                SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> with get
+            abstract member OpeningReRun :
+                OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> with get
 
             /// Required step.
             abstract member RemoveExitedRecords :
                 RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> with get 
 
-
             
             /// Required step.
-            abstract member MoveToClosingExistingData :
-                ClosingExistingDataStep<'TPolicyRecord, 'TStepResults> with get
+            abstract member MoveToClosingData :
+                MoveToClosingDataStep<'TPolicyRecord, 'TStepResults> with get
 
             /// Required step.
             abstract member AddNewRecords :
                 AddNewRecordsStep<'TPolicyRecord, 'TStepResults> with get
-
 
 
             member private _._registerInteriorStep (step: IStepHeader) =
@@ -324,8 +395,8 @@ module Types =
 
             (*
             Design Decision:
-                Using multiple dispatch, we can control the permitted step types of interior
-                (ie. user defined) steps that can be provided.
+                Using multiple dispatch, we can control the permitted types used for interior
+                (ie. user defined) steps.
             *)
             /// Register an interior source change step.
             member this.registerInteriorStep (step: SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
@@ -344,9 +415,9 @@ module Types =
                 // members before they've been defined.
                 seq {
                     yield this.Opening :> IStepHeader
-                    yield this.OpeningRegression :> IStepHeader
+                    yield this.OpeningReRun :> IStepHeader
                     yield this.RemoveExitedRecords :> IStepHeader
                     yield! this.InteriorSteps
-                    yield this.MoveToClosingExistingData :> IStepHeader
+                    yield this.MoveToClosingData :> IStepHeader
                     yield this.AddNewRecords :> IStepHeader
                 }

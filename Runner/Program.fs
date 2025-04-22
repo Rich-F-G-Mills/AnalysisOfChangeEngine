@@ -106,11 +106,17 @@ module Runner =
                     match step with
                     | :? IDataChangeStep<OBWholeOfLife.PolicyRecord> -> true
                     | _ -> false
+
+                let isSourceChange =
+                    match step with
+                    | :? ISourceableStep<OBWholeOfLife.PolicyRecord, OBWholeOfLife.StepResults, OBWholeOfLife.ApiCollection> -> true
+                    | _ -> false
                     
-                do printfn "%2i -  %s %s: %s"
+                do printfn "%2i -  %s %s %s: %s"
                     idx
                     (step.Title.PadRight 35)
-                    (if isDataChange then "X" else " ")
+                    (if isDataChange then "D" else " ")
+                    (if isSourceChange then "S" else " ")
                     step.Description
             
             do printf "\n\nParsing walk... "
@@ -121,7 +127,7 @@ module Runner =
             do printfn "Done."
 
             let hdr, parsedStep =
-                parsedWalk.RemainingRecordsOpeningDataStage.WithinStageSteps.Head
+                parsedWalk.OpeningDataStage.WithinStageSteps.Head
 
             let uas =
                 parsedStep.ElementDefinitions["UnsmoothedAssetShare"]
@@ -132,14 +138,14 @@ module Runner =
                     TableCode           = "T01"
                     EntryDate           = new DateOnly (2000, 1, 1)
                     NextPremiumDueDate  = new DateOnly (2024, 1, 1)
-                    PolicyStatus =
+                    Status =
                         OBWholeOfLife.PolicyStatus.PremiumPaying
-                    LivesBasis =
+                    Lives =
                         OBWholeOfLife.LivesBasis.SingleLife {
                             EntryAge = 20
                             Gender = OBWholeOfLife.Gender.Male
                         }
-                    PaymentTerm         = 20
+                    LimitedPaymentTerm  = 20
                     SumAssured          = 1000.0
                 }
 

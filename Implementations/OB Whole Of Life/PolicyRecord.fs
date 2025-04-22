@@ -87,10 +87,11 @@ type PolicyRecord =
         TableCode           : string
         EntryDate           : DateOnly
         NextPremiumDueDate  : DateOnly
-        PolicyStatus        : PolicyStatus
-        LivesBasis          : LivesBasis
-        PaymentTerm         : int
+        Status              : PolicyStatus
+        Lives               : LivesBasis
+        LimitedPaymentTerm  : int
         SumAssured          : double
+        Taxable             : bool
     }
 
     interface IPolicyRecord with
@@ -107,19 +108,19 @@ module PolicyRecord =
             if r.NextPremiumDueDate < r.EntryDate then
                 yield "NPDD cannot be before entry date."
 
-            if r.PaymentTerm < 0 then
+            if r.LimitedPaymentTerm < 0 then
                 yield "Payment term must be positive." 
 
-            if r.LivesBasis.EntryAgeLife1 < 0 then
+            if r.Lives.EntryAgeLife1 < 0 then
                 yield "Life 1 entry age must be non-negative."
 
-            match r.LivesBasis.EntryAgeLife2 with
+            match r.Lives.EntryAgeLife2 with
             | Some age when age < 0 ->
                 yield "Life 2 entry age must be non-negative."
             | _ ->
                 do ()
 
-            match r.LivesBasis.JointValuationAge with
+            match r.Lives.JointValuationAge with
             | Some jva when jva < 0 ->
                 yield "Joint-valuation age must be non-negative."
             | _ ->

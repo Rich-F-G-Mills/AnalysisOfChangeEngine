@@ -1,7 +1,6 @@
 ﻿
 namespace AnalysisOfChangeEngine.Implementations.Steps
 
-open System   
 open AnalysisOfChangeEngine
 
 
@@ -9,6 +8,13 @@ open AnalysisOfChangeEngine
 type OpeningStepDetails<'TPolicyRecord, 'TStepResults> =
     {
         Validator: OpeningStepValidator<'TPolicyRecord, 'TStepResults>
+    }
+
+[<NoEquality; NoComparison>]
+type OpeningReRunStepDetails<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
+    {
+        Source: OpeningReRunSourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        Validator: SourceChangeStepValidator<'TPolicyRecord, 'TStepResults>
     }
 
 [<NoEquality; NoComparison>]
@@ -26,7 +32,7 @@ type DataChangeStepDetails<'TPolicyRecord, 'TStepResults> =
     }
 
 [<NoEquality; NoComparison>]
-type ClosingExistingDataStepDetails<'TPolicyRecord, 'TStepResults> =
+type MoveToClosingDataStepDetails<'TPolicyRecord, 'TStepResults> =
     {
         Validator: DataChangeStepValidator<'TPolicyRecord, 'TStepResults>
     }
@@ -45,7 +51,6 @@ open AnalysisOfChangeEngine
 open AnalysisOfChangeEngine.Implementations.Steps
 
 
-// We could 
 type StepFactory (uidResolver: Guid -> string * string) as this =
     let uidResolver' uid =
         let title, description =
@@ -102,9 +107,19 @@ type StepFactory (uidResolver: Guid -> string * string) as this =
                 Validator = details.Validator
             }
 
-    member _.openingRegression<'TPolicyRecord, 'TStepResults, 'TApiCollection> details =
-        this.makeSourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-            (Guid ("f198c564-7f6b-46a7-af3c-bd9b4ef6bc1b")) details
+    member _.openingReRun<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        (details: OpeningReRunStepDetails<'TPolicyRecord, 'TStepResults, 'TApiCollection>)
+        : OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
+            let header =
+                uidResolver' (Guid ("f198c564-7f6b-46a7-af3c-bd9b4ef6bc1b"))
+
+            {
+                Uid = header.Uid
+                Title = header.Title
+                Description = header.Description
+                Source = details.Source
+                Validator = details.Validator
+            }
 
     member _.restatedOpeningData<'TPolicyRecord, 'TStepResults> details =
         this.makeDataChangeStep<'TPolicyRecord, 'TStepResults>
@@ -185,9 +200,9 @@ type StepFactory (uidResolver: Guid -> string * string) as this =
         this.makeDataChangeStep<'TPolicyRecord, 'TStepResults>
             (Guid ("b5c1db87-1bdd-4574-ad7a-86e4122c4799")) details
 
-    member _.moveToClosingExistingData<'TPolicyRecord, 'TStepResults>
-        (details: ClosingExistingDataStepDetails<_, _>)
-        : ClosingExistingDataStep<'TPolicyRecord, 'TStepResults> =
+    member _.moveToClosingData<'TPolicyRecord, 'TStepResults when 'TPolicyRecord: equality>
+        (details: MoveToClosingDataStepDetails<_, _>)
+        : MoveToClosingDataStep<'TPolicyRecord, 'TStepResults> =
             let header =
                 uidResolver' (Guid ("ba0238f1-df2b-43c7-95b2-557d846a81f8"))
 
