@@ -157,8 +157,12 @@ policyDetails <-
           NA_integer_
         ),
       
-      OPENING_SQL =
-        glue::glue("('{openingExtractionDate}', '{openingExtractionUid}')")
+      JVA =
+        dplyr::if_else(
+          IS_JOINT_LIFE,
+          as.integer(2.0 + (ENTRY_AGE_1 + ENTRY_AGE_2) / 2),
+          NA_integer_
+        )
     ) |>
     dplyr::select(
       -ALL_PAID_DATE,
@@ -179,4 +183,126 @@ policyDetails |>
     CLOSING_STATUS,
     name = 'COUNT'
   )
+
+
+generatedSql <-
+  with(
+    params,
+    policyDetails |>
+    dplyr::transmute(
+      POLICY_ID,
+      POLICY_FATE,
+      OPENING_SQL =
+        glue::glue(
+          .na = 'NULL',
+          "(
+              '{openingExtractionDate}',
+              '{openingExtractionUid}',
+              '{POLICY_ID}',
+              '{OPENING_STATUS}',
+              {SUM_ASSURED},
+              '{ENTRY_DATE}',
+              '{OPENING_NPDD}',
+              {LTD_PAYMENT_TERM},
+              {ENTRY_AGE_1},
+              '{GENDER_1}',
+              {ENTRY_AGE_2},
+              '{GENDER_2}',
+              {JVA}
+            )"
+        ) |>
+        stringr::str_remove_all(
+          pattern = '[\n\r]'
+        ) |>
+        stringr::str_replace_all(
+          pattern =
+            stringr::fixed("'NULL'"),
+          replacement = 
+            'NULL'
+        ),
+      
+      CLOSING_SQL =
+        glue::glue(
+          .na = 'NULL',
+          "(
+              '{closingExtractionDate}',
+              '{closingExtractionUid}',
+              '{POLICY_ID}',
+              '{CLOSING_STATUS}',
+              {SUM_ASSURED},
+              '{ENTRY_DATE}',
+              '{CLOSING_NPDD}',
+              {LTD_PAYMENT_TERM},
+              {ENTRY_AGE_1},
+              '{GENDER_1}',
+              {ENTRY_AGE_2},
+              '{GENDER_2}',
+              {JVA}
+            )"
+        ) |>
+        stringr::str_remove_all(
+          pattern = '[\n\r]'
+        ) |>
+        stringr::str_replace_all(
+          pattern =
+            stringr::fixed("'NULL'"),
+          replacement = 
+            'NULL'
+        )
+    )
+  ) |>
+  tidyr::pivot_longer(
+    cols =
+      tidyselect::ends_with('SQL'),
+    names_to =
+      'EXTRACT_STAGE',
+    names_pattern =
+      '(OPENING|CLOSING)',
+    values_to =
+      'SQL'
+  ) |>
+  dplyr::semi_join(
+    tibble::tribble(
+      ~POLICY_FATE, ~EXTRACT_STAGE,
+      'EXIT', 'OPENING',
+      'REINSTATE', 'CLOSING',
+      'REMAIN', 'OPENING',
+      'REMAIN', 'CLOSING'
+    ),
+    by =
+      c('POLICY_FATE', 'EXTRACT_STAGE')
+  ) |>
+  dplyr::summarise(
+    SQL =
+      paste0(SQL, collapse = ',\n')
+  ) |>
+  dplyr::mutate(
+    SQL =
+      glue::glue(
+        "INSERT INTO public.ob_wol_policy_data(
+          extraction_date,
+          extraction_uid,
+          policy_id,
+          status,
+          sum_assured,
+          entry_date,
+          npdd,
+          ltd_payment_term,
+          entry_age_1,
+          gender_1,
+          entry_age_2,
+          gender_2,
+          joint_val_age
+        ) VALUES
+          {SQL};"
+      )
+  ) |>
+  dplyr::pull(SQL)
+
+clipr::write_clip(
+  content =
+    generatedSql,
+  type =
+    'character'
+)
   
