@@ -139,10 +139,6 @@ module Types =
                 Expr.Cast<_> expr
 
 
-    /// Step validator that receives the opening policy record and corresponding step results.
-    type OpeningStepValidator<'TPolicyRecord, 'TStepResults> =
-        'TPolicyRecord * 'TStepResults -> StepValidationIssue list
-
     /// Step validator that receives the prior policy record and step results,
     /// followed by those for the currene step.
     type DataChangeStepValidator<'TPolicyRecord, 'TStepResults> =
@@ -195,28 +191,6 @@ module Types =
             inherit IStepHeader
             abstract member DataChanger: PolicyRecordChanger<'TPolicyRecord> with get
         end
-
-
-    (*
-    Design Decision:
-        Arguably, this could be considered to be a data change step. However, given
-        it's the opening step, we can't change data that didn't actually exist
-        prior to this point.
-    *)
-    /// Required first step (usually considered step #0).
-    [<NoEquality; NoComparison>]
-    type OpeningStep<'TPolicyRecord, 'TStepResults> =
-        {
-            Uid             : Guid
-            Title           : string
-            Description     : string
-            Validator       : OpeningStepValidator<'TPolicyRecord, 'TStepResults>
-        }
-
-        interface IStepHeader with
-            member this.Uid = this.Uid
-            member this.Title = this.Title
-            member this.Description = this.Description
 
 
     /// Required first step (usually considered step #0).
@@ -366,10 +340,6 @@ module Types =
                 _interiorSteps.AsReadOnly ()            
 
 
-            /// Required step.            
-            abstract member Opening :
-                OpeningStep<'TPolicyRecord, 'TStepResults> with get
-
             /// Required step.
             abstract member OpeningReRun :
                 OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> with get
@@ -414,7 +384,6 @@ module Types =
                 // Must be a sequence or we get an error about using
                 // members before they've been defined.
                 seq {
-                    yield this.Opening :> IStepHeader
                     yield this.OpeningReRun :> IStepHeader
                     yield this.RemoveExitedRecords :> IStepHeader
                     yield! this.InteriorSteps

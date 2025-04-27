@@ -5,14 +5,16 @@ namespace AnalysisOfChangeEngine
 module Runner =
 
     open System
-    open FSharp.Quotations
     open FsToolkit.ErrorHandling
     open Npgsql
     open Npgsql.FSharp
     open AnalysisOfChangeEngine
     open AnalysisOfChangeEngine.Controller.WalkAnalyser
     open AnalysisOfChangeEngine.DataStore
-    open AnalysisOfChangeEngine.Implementations
+    open AnalysisOfChangeEngine.Walks.Common
+    open AnalysisOfChangeEngine.Walks  
+    open AnalysisOfChangeEngine.Structures.PolicyRecords
+    open AnalysisOfChangeEngine.Structures.StepResults
 
 
     [<RequireQualifiedAccess>]
@@ -80,7 +82,7 @@ module Runner =
                 new NpgsqlConnection (connStr)
 
             let dataStore =
-                new Postgres.DataStore (sessionContext, connection)
+                new Postgres.OBWholeOfLife.DataStore (sessionContext, connection)
 
             let stepUidResolver =
                 dataStore.CreateUidResolver ()
@@ -135,7 +137,8 @@ module Runner =
             let polRecord: OBWholeOfLife.PolicyRecord =
                 {
                     PolicyNumber        = "TEST"
-                    TableCode           = "T01"
+                    TableCode           = "A"
+                    Taxable             = true
                     EntryDate           = new DateOnly (2000, 1, 1)
                     NextPremiumDueDate  = new DateOnly (2024, 1, 1)
                     Status =

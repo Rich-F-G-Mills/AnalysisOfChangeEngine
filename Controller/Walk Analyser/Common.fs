@@ -212,9 +212,7 @@ type ParsedSource<'TPolicyRecord> =
 [<NoEquality; NoComparison>]
 type OpeningDataStage<'TPolicyRecord> =
     {        
-        OpeningStepHeader           : IStepHeader
-        // This does NOT include the opening step above.
-        // However, it DOES include the exited records step.
+        // This does include the exited records step.
         WithinStageSteps            : (IStepHeader * ParsedSource<'TPolicyRecord>) list
         // These are the API calls arising from the within stage steps above.
         WithinStageApiCalls         : SourceElementApiCallDependency<'TPolicyRecord> Set
@@ -243,7 +241,6 @@ Design decision:
     with those remaining in-force?
 
     For records which are exiting, the only steps of interest will be:
-        * The opening step; which has no source nor API dependencies.
         * The opening re-run (ie. regression) step.
 
     For new records, we only care about:
@@ -255,7 +252,7 @@ Design decision:
 [<NoEquality; NoComparison>]
 type ParsedWalk<'TPolicyRecord> =
     {
-        PostOpeningParsedSteps  : (IStepHeader * ParsedSource<'TPolicyRecord>) list
+        ParsedSteps             : (IStepHeader * ParsedSource<'TPolicyRecord>) list
         OpeningDataStage        : OpeningDataStage<'TPolicyRecord>
         PostOpeningDataStages   : PostOpeningDataStage<'TPolicyRecord> list
     }

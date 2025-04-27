@@ -1,13 +1,20 @@
 ﻿
-namespace AnalysisOfChangeEngine.Implementations.OBWholeOfLife
-
-open System
-
-open AnalysisOfChangeEngine
+namespace AnalysisOfChangeEngine.Walks
 
 
 [<RequireQualifiedAccess>]
 module PxApi =
+
+    open System
+    open AnalysisOfChangeEngine
+    open AnalysisOfChangeEngine.Structures.PolicyRecords
+    open AnalysisOfChangeEngine.Structures.StepResults
+
+
+    type private PolicyRecord = OBWholeOfLife.PolicyRecord
+    type private Gender = OBWholeOfLife.Gender
+    type private LivesBasis = OBWholeOfLife.LivesBasis
+
 
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
     type PxGender =
@@ -82,17 +89,17 @@ module PxApi =
             NextPremiumDueDate =
                 r.NextPremiumDueDate
             EntryAgeLife1 =
-                r.LivesBasis.EntryAgeLife1
+                r.Lives.EntryAgeLife1
             GenderLife1 =
-                match r.LivesBasis.GenderLife1 with
+                match r.Lives.GenderLife1 with
                 | Gender.Male   -> PxGender.M
                 | Gender.Female -> PxGender.F
             EntryAgeLife2 =
-                r.LivesBasis.EntryAgeLife2
+                r.Lives.EntryAgeLife2
             JointValuationAge =
-                r.LivesBasis.JointValuationAge
+                r.Lives.JointValuationAge
             SingleJointLife =
-                match r.LivesBasis with
+                match r.Lives with
                 | LivesBasis.SingleLife _ -> PxLivesBasis.S
                 | LivesBasis.JointLife _  -> PxLivesBasis.J  
         }

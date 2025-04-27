@@ -36,6 +36,13 @@ policyDetails <-
     dplyr::distinct() |>
     dplyr::slice_head(n = numPolicies) |>
     dplyr::mutate(
+      TABLE_CODE =
+        sample(
+          c('T65', 'T68', 'T70', 'T75'),
+          size = numPolicies,
+          replace = TRUE
+        ),
+      
       POLICY_FATE =
         sample(
           c('EXIT', 'REINSTATE', 'REMAIN'),
@@ -178,10 +185,8 @@ policyDetails <-
 
 
 policyDetails |>
-  dplyr::count(
-    OPENING_STATUS,
-    CLOSING_STATUS,
-    name = 'COUNT'
+  saveRDS(
+    file = 'OB_WOL_POLICY_DATA.RDS'
   )
 
 
@@ -196,9 +201,9 @@ generatedSql <-
         glue::glue(
           .na = 'NULL',
           "(
-              '{openingExtractionDate}',
               '{openingExtractionUid}',
               '{POLICY_ID}',
+              '{TABLE_CODE}',
               '{OPENING_STATUS}',
               {SUM_ASSURED},
               '{ENTRY_DATE}',
@@ -225,9 +230,9 @@ generatedSql <-
         glue::glue(
           .na = 'NULL',
           "(
-              '{closingExtractionDate}',
               '{closingExtractionUid}',
               '{POLICY_ID}',
+              '{TABLE_CODE}',
               '{CLOSING_STATUS}',
               {SUM_ASSURED},
               '{ENTRY_DATE}',
@@ -279,10 +284,13 @@ generatedSql <-
   dplyr::mutate(
     SQL =
       glue::glue(
-        "INSERT INTO public.ob_wol_policy_data(
-          extraction_date,
+        "DELETE FROM public.ob_wol_policy_data;
+        DELETE FROM public.ob_wol_extraction_headers;
+        
+        INSERT INTO public.ob_wol_policy_data(
           extraction_uid,
           policy_id,
+          table_code,
           status,
           sum_assured,
           entry_date,
@@ -294,7 +302,15 @@ generatedSql <-
           gender_2,
           joint_val_age
         ) VALUES
-          {SQL};"
+          {SQL};
+        
+        INSERT INTO public.ob_wol_extraction_headers(
+          extraction_uid,
+          extraction_date
+        ) VALUES
+          ('{openingExtractionUid}', '{openingExtractionDate}'),
+          ('{closingExtractionUid}', '{closingExtractionDate}');"
+        
       )
   ) |>
   dplyr::pull(SQL)

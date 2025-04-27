@@ -6,22 +6,18 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="PxApi.fs" />
+    <Compile Include="Walk.fs" />
     <None Include="README.md" />
-    <Compile Include="Common\PxApi.fs" />
-    <Compile Include="Common\Steps.fs" />
-    <Compile Include="OB Whole Of Life\PolicyRecord.fs" />
-    <Compile Include="OB Whole Of Life\PxApi.fs" />
-    <Compile Include="OB Whole Of Life\Walk.fs" />
   </ItemGroup>
-
-  <ItemGroup />
 
   <ItemGroup>
     <PackageReference Include="FsToolkit.ErrorHandling" Version="4.18.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Common\Common.fsproj" />
+    <ProjectReference Include="..\..\Structures\Structures.OBWholeOfLife\Structures.OBWholeOfLife.fsproj" />
+    <ProjectReference Include="..\Common\Walks.Common.fsproj" />
   </ItemGroup>
 
 </Project>

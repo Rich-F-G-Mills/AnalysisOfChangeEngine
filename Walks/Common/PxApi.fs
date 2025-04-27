@@ -1,5 +1,5 @@
 ﻿
-namespace AnalysisOfChangeEngine.Implementations
+namespace AnalysisOfChangeEngine.Walks.Common
 
 
 [<RequireQualifiedAccess>]

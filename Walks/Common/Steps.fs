@@ -1,14 +1,8 @@
 ﻿
-namespace AnalysisOfChangeEngine.Implementations.Steps
+namespace AnalysisOfChangeEngine.Walks.Common.Steps
 
 open AnalysisOfChangeEngine
 
-
-[<NoEquality; NoComparison>]
-type OpeningStepDetails<'TPolicyRecord, 'TStepResults> =
-    {
-        Validator: OpeningStepValidator<'TPolicyRecord, 'TStepResults>
-    }
 
 [<NoEquality; NoComparison>]
 type OpeningReRunStepDetails<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
@@ -44,11 +38,11 @@ type AddNewRecordsStepDetails<'TPolicyRecord, 'TStepResults> =
     }
 
 
-namespace AnalysisOfChangeEngine.Implementations
+namespace AnalysisOfChangeEngine.Walks.Common
 
 open System
 open AnalysisOfChangeEngine
-open AnalysisOfChangeEngine.Implementations.Steps
+open AnalysisOfChangeEngine.Walks.Common.Steps
 
 
 type StepFactory (uidResolver: Guid -> string * string) as this =
@@ -90,20 +84,6 @@ type StepFactory (uidResolver: Guid -> string * string) as this =
                 Title = header.Title
                 Description = header.Description
                 DataChanger = details.DataChanger
-                Validator = details.Validator
-            }
-
-
-    member _.opening<'TPolicyRecord, 'TStepResults>
-        (details: OpeningStepDetails<'TPolicyRecord, 'TStepResults>)
-        : OpeningStep<'TPolicyRecord, 'TStepResults> =
-            let header =
-                uidResolver' (Guid ("890c481d-bebe-44d4-8330-bccbaa584d4a"))
-
-            {
-                Uid = header.Uid
-                Title = header.Title
-                Description = header.Description
                 Validator = details.Validator
             }
 

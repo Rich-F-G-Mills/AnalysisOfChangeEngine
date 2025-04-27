@@ -2,14 +2,13 @@
 namespace AnalysisOfChangeEngine.DataStore
 
 
-open System
-open Npgsql
-open Npgsql.FSharp
-open AnalysisOfChangeEngine
-
-
 [<RequireQualifiedAccess>]
 module Postgres =
+
+    open System
+    open Npgsql
+    open Npgsql.FSharp
+
     
     [<NoEquality; NoComparison>]
     type SessionContext =
@@ -17,13 +16,11 @@ module Postgres =
             UserName    : string
         }
 
-
     [<NoEquality; NoComparison>]
-    type Product =
+    type ExtractionHeader =
         {
             Uid                         : Guid
-            Name                        : string
-            Description                 : string
+            ExtractionDate              : DateTime
         }
 
     [<NoEquality; NoComparison>]
@@ -47,17 +44,15 @@ module Postgres =
             Title                       : string
             Description                 : string    
         }
+        
 
-
-    let private parseProductRow (row: RowReader)
-        : Product =
+    let private parseExtractionHeaderRow (row: RowReader)
+        : ExtractionHeader =
             {
                 Uid =
                     row.uuid "uid"
-                Name =
-                    row.text "name"
-                Description =
-                    row.text "description"
+                ExtractionDate =
+                    row.dateTime "extraction_date"
             }
 
     let private parseRunHeaderRow (row: RowReader)
@@ -95,7 +90,27 @@ module Postgres =
             }
 
 
-    type DataStore (sessionContext: SessionContext, connection: NpgsqlConnection) =
+    [<AbstractClass>]
+    type AbstractDataStore (connection: NpgsqlConnection, schema: string) =
+
+        // --- HELPERS ---
+
+        let getAllFromTable tableName rowProcessor =
+            connection
+            |> Sql.existingConnection
+            |> Sql.query $"SELECT * FROM {schema}.{tableName}"
+            |> Sql.execute rowProcessor
+
+        let tryGetFromTable tableName uid rowProcessor =
+            connection
+            |> Sql.existingConnection
+            |> Sql.query $"SELECT * FROM {schema}.{tableName} WHERE uid = @uid"
+            |> Sql.parameters [ "uid", SqlValue.Uuid uid ]
+            |> Sql.execute rowProcessor
+            |> List.tryExactlyOne
+
+
+        // --- UID RESOLVER ---
 
         member this.CreateUidResolver () =
             let stepHeaders =
@@ -109,60 +124,29 @@ module Postgres =
 
                 stepHeader.Title, stepHeader.Description
 
-        member _.TryGetProduct (uid: Guid) =
-            connection
-            |> Sql.existingConnection
-            |> Sql.query "SELECT * FROM products WHERE uid = @uid"
-            |> Sql.parameters [ "uid", SqlValue.Uuid uid ]
-            |> Sql.execute parseProductRow
-            |> List.tryExactlyOne
 
-        member _.GetAllProducts () =
-            connection
-            |> Sql.existingConnection
-            |> Sql.query "SELECT * FROM products"
-            |> Sql.execute parseProductRow
+        // --- EXTRACTION HEADERS ---
+
+        member _.TryGetExtractionHeaders (uid: Guid) =
+            tryGetFromTable "extraction_headers" uid parseExtractionHeaderRow
+
+        member _.GetAllExtractionHeaders () =
+            getAllFromTable "extraction_headers" parseExtractionHeaderRow
+
+
+        // --- RUN HEADERS ---
 
         member _.TryGetRunHeader (uid: Guid) =
-            connection
-            |> Sql.existingConnection
-            |> Sql.query "SELECT * FROM run_headers WHERE uid = @uid"
-            |> Sql.parameters [ "uid", SqlValue.Uuid uid ] 
-            |> Sql.execute parseRunHeaderRow
-            |> List.tryExactlyOne
+            tryGetFromTable "run_headers" uid parseRunHeaderRow
 
         member _.GetAllRunHeaders () =
-            connection
-            |> Sql.existingConnection
-            |> Sql.query "SELECT * FROM run_headers"
-            |> Sql.execute parseRunHeaderRow
+            getAllFromTable "run_headers" parseRunHeaderRow
+
+
+        // --- STEP HEADERS ---
 
         member _.GetAllStepHeaders () =
             connection
             |> Sql.existingConnection
-            |> Sql.query "SELECT * FROM step_headers"
+            |> Sql.query $"SELECT * FROM common.step_headers"
             |> Sql.execute parseStepHeaderRow
-
-        member _.CreateProduct (name, description, ?uid) =
-            let newProduct: Product =
-                {
-                    Uid = defaultArg uid (Guid.NewGuid ())
-                    Name = name
-                    Description = description
-                }
-
-            connection
-            |> Sql.existingConnection
-            |> Sql.query 
-                "INSERT INTO products (uid, name, description)
-                 VALUES (@uid, @name, @description)"
-            |> Sql.parameters
-                [
-                    "uid", SqlValue.Uuid newProduct.Uid
-                    "name", SqlValue.String newProduct.Name
-                    "description", SqlValue.String newProduct.Description
-                ]
-            |> Sql.executeNonQuery
-            |> ignore
-
-            newProduct

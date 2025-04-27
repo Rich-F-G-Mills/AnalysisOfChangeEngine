@@ -38,10 +38,10 @@ module WalkParser =
     *)
 
     let private getParsedStepSources<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-        (stepsPostOpening: IStepHeader list, sourceParser: SourceParser<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
+        (steps: IStepHeader list, sourceParser: SourceParser<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
             // First of all, lets figure out which steps are sourceable.
             let sourceableStepHdrs =
-                stepsPostOpening
+                steps
                 |> List.choose (function
                     | :? ISourceableStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> as step ->
                         Some (step.Uid, step.Source)
@@ -63,19 +63,19 @@ module WalkParser =
                 |> List.map (fun ((uid, _), parsed) -> uid, parsed)
                 |> Map.ofList
 
-            let firstPostOpeningStepUid =
-                stepsPostOpening
+            let firstStepUid =
+                steps
                 |> List.head
                 |> _.Uid
 
             // It would be very (!) unexpected if this fails given the above.
-            let firstPostOpeningParsedStepSource =
-                parsedStepMapping[firstPostOpeningStepUid]
+            let firstParsedStepSource =
+                parsedStepMapping[firstStepUid]
 
             // Now we bring together a list of parsed sources for all post-opening steps.
             // If a step is non-sourceable, we just carry forward that from the previous step.
             let parsedStepSources =
-                stepsPostOpening
+                steps
                 // Ignore the first post-opening step as we've already determined
                 // the corresponding parsed source above. Note that scan returns
                 // the initial state as part of the resulting collection.
@@ -84,17 +84,15 @@ module WalkParser =
                     match parsedStepMapping.TryFind step.Uid with
                     | Some source -> source
                     // If we can't find a source for this uid, reuse the previous one.
-                    | None -> prior) firstPostOpeningParsedStepSource
+                    | None -> prior) firstParsedStepSource
 
-            assert (stepsPostOpening.Length = parsedStepSources.Length)
+            assert (steps.Length = parsedStepSources.Length)
 
             parsedStepSources
 
 
-    let private getOpeningDataStage (openingStep, openingDataStageTuples) =
+    let private getOpeningDataStage (openingDataStageTuples) =
         {
-            OpeningStepHeader =
-                openingStep
             WithinStageSteps =
                 openingDataStageTuples
             WithinStageApiCalls =
@@ -204,9 +202,8 @@ module WalkParser =
             // Let's make sure our view of how the walk is structured correctly!
             // There is the risk that the required steps under the abstract walk are changed
             // and not correctly reflected here.
-            assert checkStepType<OpeningStep<'TPolicyRecord, 'TStepResults>> allSteps[0]
-            assert checkStepType<OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>> allSteps[1]
-            assert checkStepType<RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults>> allSteps[2]
+            assert checkStepType<OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>> allSteps[0]
+            assert checkStepType<RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults>> allSteps[1]
 
             // TODO - Use 'from-end' indexing?            
             assert checkStepType<MoveToClosingDataStep<'TPolicyRecord, 'TStepResults>> allStepsRev[1]
@@ -220,11 +217,6 @@ module WalkParser =
 
             assert (allSteps.Length = uniqueStepUids.Count)
 
-            let stepsPostOpening =
-                allSteps
-                // We don't care about the opening step here.
-                |> List.tail
-
             let policyRecordVarDef =
                 Var ("policyRecord", typeof<'TPolicyRecord>)
 
@@ -233,18 +225,18 @@ module WalkParser =
                     (apiCollection, policyRecordVarDef, currentResultsVarDefMapping)
 
             let parsedStepSources =
-                getParsedStepSources (stepsPostOpening, sourceParser)
+                getParsedStepSources (allSteps, sourceParser)
 
             // It's more convenient to keep the step and parsed source together in this way.
             /// Does not include the opening step.
             let parsedStepTuples =
                 parsedStepSources
-                |> List.zip stepsPostOpening
+                |> List.zip allSteps
 
-            assert (stepsPostOpening.Length = parsedStepTuples.Length)
+            assert (allSteps.Length = parsedStepTuples.Length)
 
             let isOpeningDataStageIndicator =
-                stepsPostOpening
+                allSteps
                 |> List.scan (fun priorInd step ->
                     match priorInd, step with
                     // We're still in the opening data stage until we encounter
@@ -254,7 +246,7 @@ module WalkParser =
                 // Drop the indicator for the opening step.
                 |> List.tail
 
-            assert (stepsPostOpening.Length = isOpeningDataStageIndicator.Length)
+            assert (allSteps.Length = isOpeningDataStageIndicator.Length)
 
             let openingDataStageTuples, postOpeningDataStageTuples =
                 parsedStepTuples
@@ -272,23 +264,23 @@ module WalkParser =
 
             // The move to closing existing data stage will ensure this cannot be empty.
             assert (postOpeningDataStageTuples.Length > 0)
-            assert (stepsPostOpening.Length = openingDataStageTuples.Length + postOpeningDataStageTuples.Length)
+            assert (allSteps.Length = openingDataStageTuples.Length + postOpeningDataStageTuples.Length)
 
 
             let parsedWalk =
                 {
-                    PostOpeningParsedSteps =
-                        postOpeningDataStageTuples
+                    ParsedSteps =
+                        parsedStepTuples
                     OpeningDataStage =
-                        getOpeningDataStage (allSteps[0], openingDataStageTuples)
+                        getOpeningDataStage openingDataStageTuples
                     PostOpeningDataStages =
                         getPostOpeningDataStages postOpeningDataStageTuples
                 }
 
             let impliedCountSteps =
-                1 + parsedWalk.OpeningDataStage.WithinStageSteps.Length
-                  + parsedWalk.PostOpeningDataStages.Length
-                  + (List.sumBy _.WithinStageSteps.Length parsedWalk.PostOpeningDataStages)
+                + parsedWalk.OpeningDataStage.WithinStageSteps.Length
+                + parsedWalk.PostOpeningDataStages.Length
+                + (List.sumBy _.WithinStageSteps.Length parsedWalk.PostOpeningDataStages)
 
             assert (impliedCountSteps = allSteps.Length)
 
