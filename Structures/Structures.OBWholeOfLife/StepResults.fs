@@ -12,7 +12,7 @@ module OBWholeOfLife =
             UnsmoothedAssetShare    : double
             SmoothedAssetShare      : double
             GuaranteedDeathBenefit  : double
-            SurrenderValue          : double
+            SurrenderBenefit        : double
             DeathBenefit            : double
             ExitBonusRate           : double
             UnpaidPremiums          : double

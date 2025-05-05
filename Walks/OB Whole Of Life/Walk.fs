@@ -19,8 +19,9 @@ module OBWholeOfLife =
     [<NoEquality; NoComparison>]
     type WalkConfiguration =
         {        
-            StepFactory: StepFactory
-            PxDispatcher: Object
+            StepFactory                 : StepFactory
+            PxDispatcher                : obj
+            IgnoreOpeningMismatches     : bool
         }
 
     [<NoEquality; NoComparison>]
@@ -180,20 +181,31 @@ module OBWholeOfLife =
                                 from.apiCall (_.px_OpeningRegression, _.ExitBonusRate)
                             UnpaidPremiums =
                                 from.apiCall (_.px_OpeningRegression, _.UnpaidPremiums)
-                            SurrenderValue =
-                                from.apiCall (_.px_OpeningRegression, _.CashSurrenderValue)
+                            SurrenderBenefit =
+                                from.apiCall (_.px_OpeningRegression, _.CashSurrenderBenefit)
                             DeathUpliftFactor =
                                 from.apiCall (_.px_OpeningRegression, _.DeathUpliftFactor)
                             DeathBenefit =
                                 from.apiCall (_.px_OpeningRegression, _.DeathBenefit)
                         } : OBWholeOfLife.StepResults @>
 
-                Validator =
-                    fun (_, beforeResults, afterResults) ->
-                        if beforeResults = afterResults then
-                            List.empty
-                        else
-                            [ StepValidationIssue.Warning "Regression mis-match" ]
+                Validator = function
+                    | (_, Some _, _) when config.IgnoreOpeningMismatches ->
+                        StepValidationOutcome.Empty
+
+                    | (_, Some beforeResults, afterResults) when beforeResults = afterResults ->                        
+                        StepValidationOutcome.Empty
+
+                    | (_, Some _, _) ->                            
+                        StepValidationOutcome.Completed [
+                            StepValidationIssueClassification.Warning, "Regression mis-match."
+                        ]
+
+                    | (_, None, _) when config.IgnoreOpeningMismatches ->
+                        StepValidationOutcome.Empty
+
+                    | (_, None, _) ->
+                        StepValidationOutcome.Failed "No opening results for comparison."
             }    
 
         override val RemoveExitedRecords =
@@ -201,7 +213,7 @@ module OBWholeOfLife =
 
 
         // --- PRODUCT SPECIFIC STEPS ---
-        // We need to make sure that these are registered as well as defined!
+        // We need to make sure that these are registered in order to be discoverable.
 
         // We can only restate data which is still in-force!
         member val RestatedOpeningData =
@@ -210,6 +222,8 @@ module OBWholeOfLife =
                     DataChanger =
                         dataChanger_RestatedOpening
                     Validator =
+                        // No doubt we could do something convoluted here. However, given such
+                        // changes aren't (regularly) expected, would have minimal benefit.
                         noValidator            
                 }
             )
@@ -230,7 +244,7 @@ module OBWholeOfLife =
                                         from.apiCall (_.px_PostOpeningRegression, _.Step0_Opening_UAS)
                                     SmoothedAssetShare =
                                         from.apiCall (_.px_PostOpeningRegression, _.Step0_Opening_SAS)
-                                    SurrenderValue =
+                                    SurrenderBenefit =
                                         current.SmoothedAssetShare * (1.0 + current.ExitBonusRate)
                                             - current.UnpaidPremiums
                                     DeathBenefit =
@@ -240,8 +254,18 @@ module OBWholeOfLife =
                                         ) - current.UnpaidPremiums
                             } : OBWholeOfLife.StepResults @>
 
-                    Validator =
-                        noValidator
+                    Validator = function
+                        // TODO - May need to add some kind of tolerance here.
+                        | (_, Some beforeResults, afterResults) when beforeResults = afterResults ->                        
+                            StepValidationOutcome.Empty
+
+                        | (_, Some _, _) ->                            
+                            StepValidationOutcome.Completed [
+                                StepValidationIssueClassification.Warning, "Mismatch between opening position in AoC logic."
+                            ]
+
+                        | (_, None, _) ->
+                            StepValidationOutcome.Failed "No opening results for comparison."
                 }
             )          
 
@@ -437,8 +461,8 @@ module OBWholeOfLife =
                                     from.apiCall (_.px_PostOpeningRegression, _.ExitBonusRate)
                                 UnpaidPremiums =
                                     from.apiCall (_.px_PostOpeningRegression, _.UnpaidPremiums)
-                                SurrenderValue =
-                                    from.apiCall (_.px_PostOpeningRegression, _.CashSurrenderValue)
+                                SurrenderBenefit =
+                                    from.apiCall (_.px_PostOpeningRegression, _.CashSurrenderBenefit)
                                 DeathUpliftFactor =
                                     from.apiCall (_.px_PostOpeningRegression, _.DeathUpliftFactor)
                                 DeathBenefit =

@@ -8,7 +8,7 @@ open AnalysisOfChangeEngine
 type OpeningReRunStepDetails<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
     {
         Source: OpeningReRunSourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-        Validator: SourceChangeStepValidator<'TPolicyRecord, 'TStepResults>
+        Validator: OpeningReRunStepValidator<'TPolicyRecord, 'TStepResults>
     }
 
 [<NoEquality; NoComparison>]

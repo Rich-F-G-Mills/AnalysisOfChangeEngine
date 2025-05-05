@@ -1,6 +1,7 @@
 ﻿
 namespace AnalysisOfChangeEngine
 
+
 [<AutoOpen>]
 module TypeExtensions =
 
@@ -35,6 +36,11 @@ module TypeExtensions =
             | Error _ as value -> value
             | Ok value' as value when predicate value' -> value
             | Ok value' -> Error onFail
+
+        let inline requireSomeWith (error: unit -> 'error) (option: 'ok option) =
+            match option with
+            | Some x -> Ok x
+            | None -> Error (error ())
 
         let inline private wrapTryParser (parser: string -> (bool * 'T)) (str: string) =
             match parser str with
@@ -83,6 +89,13 @@ module TypeExtensions =
 
         let parseOptionalDMYDateOnly =
             makeOptionalParser parseDMYDateOnly
+
+
+    [<RequireQualifiedAccess>]
+    module Option =        
+        let requireTrue = function
+            | true -> Some ()
+            | false -> None
 
 
     type ResultBuilder with

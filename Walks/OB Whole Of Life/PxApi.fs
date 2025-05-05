@@ -50,7 +50,7 @@ module PxApi =
     [<NoEquality; NoComparison>]
     type OutputAttributes =
         {
-            CashSurrenderValue              : double
+            CashSurrenderBenefit              : double
             DeathBenefit                    : double
             UnsmoothedAssetShare            : double
             SmoothedAssetShare              : double

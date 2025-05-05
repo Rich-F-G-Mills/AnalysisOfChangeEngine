@@ -1,14 +1,30 @@
 ﻿
-namespace AnalysisOfChangeEngine.DataStore
+namespace AnalysisOfChangeEngine.DataStore.Postgres
 
 
 [<RequireQualifiedAccess>]
-module Postgres =
+module OBWholeOfLife =
 
-    [<RequireQualifiedAccess>]
-    module OBWholeOfLife =
+    open System
+    open Npgsql
+    open AnalysisOfChangeEngine.Structures.PolicyRecords
+    open AnalysisOfChangeEngine.Structures.StepResults
 
-        open Npgsql
 
-        type DataStore (sessionContext: Postgres.SessionContext, connection: NpgsqlConnection) =
-            inherit Postgres.AbstractDataStore (connection, "ob_wol")
+
+
+    type DataStore (sessionContext: SessionContext, connection: NpgsqlConnection) =
+        inherit AbstractDataStore<OBWholeOfLife.PolicyRecord, OBWholeOfLife.StepResults>
+            (sessionContext, connection, "ob_wol")
+
+        override _.parseStepResultsRow (row: RowReader) =
+            Ok {
+                UnsmoothedAssetShare    = row.double "unsmoothed_asset_share"
+                SmoothedAssetShare      = row.double "smoothed_asset_share"
+                GuaranteedDeathBenefit  = row.double "guaranteed_death_benefit"
+                SurrenderBenefit        = row.double "surrender_benefit"
+                DeathBenefit            = row.double "death_benefit"
+                ExitBonusRate           = row.double "exit_bonus_rate"
+                UnpaidPremiums          = row.double "unpaid_premiums"
+                DeathUpliftFactor       = row.double "death_uplift_factor"
+            }

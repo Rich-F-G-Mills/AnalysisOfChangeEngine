@@ -76,12 +76,6 @@ module Types =
         end
 
 
-    /// Possible issues identified when applying step validation logic.
-    [<RequireQualifiedAccess; NoEquality; NoComparison>]
-    type StepValidationIssue =
-        | Warning of string
-        | Error of string
-
 
     [<AbstractClass>]
     type SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection> private () =
@@ -139,24 +133,48 @@ module Types =
                 Expr.Cast<_> expr
 
 
-    /// Step validator that receives the prior policy record and step results,
-    /// followed by those for the currene step.
-    type DataChangeStepValidator<'TPolicyRecord, 'TStepResults> =
-        'TPolicyRecord * 'TStepResults * 'TPolicyRecord * 'TStepResults -> StepValidationIssue list
+    /// Possible issues identified when applying step validation logic.
+    [<RequireQualifiedAccess; NoEquality; NoComparison>]
+    type StepValidationIssueClassification =
+        /// Although an identified issue, it is tolerable.
+        | Warning
+        /// Indicates a (serious) issue has been identified.
+        | Error
+
+    [<RequireQualifiedAccess; NoEquality; NoComparison>]
+    type StepValidationOutcome =
+        /// Indicates that the validation logic was successfully applied, regardless of
+        /// whether this led to validation issues being recognised (or not).
+        | Completed of (StepValidationIssueClassification * string) list
+        /// Indicates that the validation logic was unable to run for a specified reason.
+        | Failed of string
+
+        /// Alias for a completed validation without any issues raised.
+        static member val Empty =
+            Completed []
 
     /// Step validator that receives the current policy record followed by
-    /// the prior and current step results.
+    /// the prior (where available) and current step results.
+    type OpeningReRunStepValidator<'TPolicyRecord, 'TStepResults> =
+        'TPolicyRecord * 'TStepResults option * 'TStepResults -> StepValidationOutcome
+
+    /// Step validator that receives the prior policy record and step results (where available),
+    /// followed by those for the currene step.
+    type DataChangeStepValidator<'TPolicyRecord, 'TStepResults> =
+        'TPolicyRecord * 'TStepResults option * 'TPolicyRecord * 'TStepResults -> StepValidationOutcome
+
+    /// Step validator that receives the current policy record followed by
+    /// the prior (where available) and current step results.
     type SourceChangeStepValidator<'TPolicyRecord, 'TStepResults> =
-        'TPolicyRecord * 'TStepResults * 'TStepResults -> StepValidationIssue list
+        'TPolicyRecord * 'TStepResults option * 'TStepResults -> StepValidationOutcome
 
     /// Step validator that receives the new policy record and corresponding step results.
     type AddNewRecordsStepValidator<'TPolicyRecord, 'TStepResults> =
-        'TPolicyRecord * 'TStepResults -> StepValidationIssue list
-
+        'TPolicyRecord * 'TStepResults -> StepValidationOutcome
 
     /// Helper function that provides no validation at all.
-    let noValidator _ : StepValidationIssue list =
-        List.empty
+    let noValidator _ : StepValidationOutcome=
+        StepValidationOutcome.Completed []
 
 
     /// Type definition for a data changer that takes the policy record as at the opening step,
@@ -201,7 +219,7 @@ module Types =
             Title           : string
             Description     : string
             Source          : OpeningReRunSourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-            Validator       : SourceChangeStepValidator<'TPolicyRecord, 'TStepResults>
+            Validator       : OpeningReRunStepValidator<'TPolicyRecord, 'TStepResults>
         }
 
         interface IStepHeader with
@@ -269,6 +287,13 @@ module Types =
             member this.DataChanger = this.DataChanger                
 
 
+    (*
+    Design decision:
+        Arguably, do we need to have a separate step for this? One alternative would be for
+        us to just "know" that exited policies are removed after the opening re-run step.
+        However, having a dedicated step for this makes it explicit.
+        We have a similar situation later with the add new records step.
+    *)
     /// Indicates that policies not present in the closing position are to be excluded
     /// from further processing.
     [<NoEquality; NoComparison>]
@@ -310,6 +335,14 @@ module Types =
                         Some closing
 
 
+    (*
+    Design Decision:
+        As with the remove exited records step, do we need a seperate step for this?
+        Could we not just have them "appear" as part of the move to closing data step?
+        Firstly, new records would have a different validation function signature compared
+        to existing records. Again, having a dedicated step makes it explicit; the user
+        doesn't need to remember that new records magically appear as part of a different step.
+    *)
     /// Underlying type of the final (and required) step where policies only
     /// present in the closing position are valued.
     [<NoEquality; NoComparison>]
