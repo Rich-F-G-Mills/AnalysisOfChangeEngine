@@ -70,3 +70,9 @@ module Types =
             Title                       : string
             Description                 : string    
         }
+
+
+    type PostgresEnumerationAttribute (typeName: string) =
+        inherit Attribute()
+
+        member val TypeName = typeName

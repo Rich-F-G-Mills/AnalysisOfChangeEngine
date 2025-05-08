@@ -70,7 +70,7 @@ module Runner =
                 RunUid (Guid "7526621f-74c3-4edf-8fe8-bebb20c36cd3")
 
             let closingRunUid =
-                Guid "7baaafdb-88f0-4d64-b8a6-99040e919307"
+                RunUid (Guid "7baaafdb-88f0-4d64-b8a6-99040e919307")
 
             let openingExtractionUid =
                 ExtractionUid (Guid "3f1a56c8-9d23-42d7-a5b1-874f01b87e1f")

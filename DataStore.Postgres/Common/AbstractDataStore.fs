@@ -6,6 +6,8 @@ namespace AnalysisOfChangeEngine.DataStore.Postgres
 module AbstractDataStore =
 
     open System
+    open System.Text
+    open Microsoft.Extensions.ObjectPool
     open Npgsql
     open Npgsql.FSharp
     open FsToolkit.ErrorHandling
@@ -56,8 +58,14 @@ module AbstractDataStore =
 
 
     [<AbstractClass>]
-    type AbstractDataStore<'TPolicyRecord, 'TStepResults>
+    type AbstractDataStore<'TPolicyRecord, 'TPolicyRecordDto, 'TStepResults, 'TStepResultsDto>
         (sessionContext: SessionContext, connection: NpgsqlConnection, schema: string) =
+
+        // Looking at https://github.com/dotnet/aspnetcore/blob/d12915f18974ae45826ac7475c5c87aaef218615/src/ObjectPool/src/StringBuilderPooledObjectPolicy.cs#L41...
+        // ...we can see that the string builder is cleared when it is returned to the pool.
+        static let stringBuilderPool =
+            (new DefaultObjectPoolProvider()).CreateStringBuilderPool()
+
 
         // --- HELPERS ---
 
@@ -127,6 +135,13 @@ module AbstractDataStore =
 
         member _.GetAllExtractionHeaders () =
             getAllFromTable "extraction_headers" parseExtractionHeaderRow
+
+
+        // --- POLICY DATA ---
+
+        abstract member dtoToPolicyRecord: 'TPolicyRecordDto -> Result<'TPolicyRecord, string>
+
+        abstract member policyRecordToDto: 'TPolicyRecord -> Result<'TPolicyRecordDto, string>
 
 
         // --- RUNS ---
@@ -212,6 +227,21 @@ module AbstractDataStore =
 
             newRow
 
+        member this.CreateStepResultsWriter (RunUid runUid' as runUid) =
+            result {
+                let! stepResultHeadersMap =
+                    this.TryGetStepHeadersForRun runUid
+                    |> Result.requireSome (sprintf "Unable to locate run header for UID %A." runUid')
+
+                return fun (results: Map<Guid, 'TStepResults>) ->
+                    let sb =
+                        stringBuilderPool.Get ()
+
+                    do sb.Append $"INSERT INTO {schema}.step_results ("
+
+                    do stringBuilderPool.Return sb
+            }
+
 
         // --- STEP HEADERS ---
 
@@ -250,7 +280,9 @@ module AbstractDataStore =
 
         // --- STEP RESULTS ---
 
-        abstract member parseStepResultsRow: RowReader -> Result<'TStepResults, string>
+        abstract member dtoToStepResults: 'TStepResultsDto -> Result<'TStepResults, string>
+
+        abstract member stepResultsToDto: 'TStepResults -> Result<'TStepResultsDto, string>
 
         /// Constructs a mapping between the step Uids of the supplied run and
         /// functions that, when supplied a policy Id, will fetch the results for that
@@ -258,9 +290,10 @@ module AbstractDataStore =
         /// means that None will be returned. If successful, the map returned will indicate
         /// for which steps a getter is available.
         member this.CreateStepResultGetters (RunUid runUid' as runUid) =
-            option {
+            result {
                 let! stepHeadersMapForRun =
                     this.TryGetStepHeadersForRun runUid
+                    |> Result.requireSome (sprintf "Unable to locate step headers for run UID %A." runUid')
 
                 let getter stepUid' policyId =
                     connection

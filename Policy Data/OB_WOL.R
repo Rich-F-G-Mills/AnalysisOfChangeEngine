@@ -4,6 +4,8 @@ library (lubridate)
 
 params <-
   list(
+    openingRunUid             = '7526621f-74c3-4edf-8fe8-bebb20c36cd3',
+    closingRunUid             = '7baaafdb-88f0-4d64-b8a6-99040e919307',
     openingExtractionDate     = lubridate::ymd('2025-01-01'),
     closingExtractionDate     = lubridate::ymd('2025-02-01'),
     openingExtractionUid      = '3f1a56c8-9d23-42d7-a5b1-874f01b87e1f',
@@ -254,66 +256,66 @@ generatedSql <-
           replacement = 
             'NULL'
         )
-    )
-  ) |>
-  tidyr::pivot_longer(
-    cols =
-      tidyselect::ends_with('SQL'),
-    names_to =
-      'EXTRACT_STAGE',
-    names_pattern =
-      '(OPENING|CLOSING)',
-    values_to =
-      'SQL'
-  ) |>
-  dplyr::semi_join(
-    tibble::tribble(
-      ~POLICY_FATE, ~EXTRACT_STAGE,
-      'EXIT', 'OPENING',
-      'REINSTATE', 'CLOSING',
-      'REMAIN', 'OPENING',
-      'REMAIN', 'CLOSING'
-    ),
-    by =
-      c('POLICY_FATE', 'EXTRACT_STAGE')
-  ) |>
-  dplyr::summarise(
-    SQL =
-      paste0(SQL, collapse = ',\n')
-  ) |>
-  dplyr::mutate(
-    SQL =
-      glue::glue(
-        "DELETE FROM public.ob_wol_policy_data;
-        DELETE FROM public.ob_wol_extraction_headers;
-        
-        INSERT INTO public.ob_wol_policy_data(
-          extraction_uid,
-          policy_id,
-          table_code,
-          status,
-          sum_assured,
-          entry_date,
-          npdd,
-          ltd_payment_term,
-          entry_age_1,
-          gender_1,
-          entry_age_2,
-          gender_2,
-          joint_val_age
-        ) VALUES
-          {SQL};
-        
-        INSERT INTO public.ob_wol_extraction_headers(
-          extraction_uid,
-          extraction_date
-        ) VALUES
-          ('{openingExtractionUid}', '{openingExtractionDate}'),
-          ('{closingExtractionUid}', '{closingExtractionDate}');"
-        
-      )
-  ) |>
-  dplyr::pull(SQL)
+    ) |>
+    tidyr::pivot_longer(
+      cols =
+        tidyselect::ends_with('SQL'),
+      names_to =
+        'EXTRACT_STAGE',
+      names_pattern =
+        '(OPENING|CLOSING)',
+      values_to =
+        'SQL'
+    ) |>
+    dplyr::semi_join(
+      tibble::tribble(
+        ~POLICY_FATE, ~EXTRACT_STAGE,
+        'EXIT', 'OPENING',
+        'REINSTATE', 'CLOSING',
+        'REMAIN', 'OPENING',
+        'REMAIN', 'CLOSING'
+      ),
+      by =
+        c('POLICY_FATE', 'EXTRACT_STAGE')
+    ) |>
+    dplyr::summarise(
+      SQL =
+        paste0(SQL, collapse = ',\n')
+    ) |>
+    dplyr::mutate(
+      SQL =
+        glue::glue(
+          "DELETE FROM public.ob_wol_policy_data;
+          DELETE FROM public.ob_wol_extraction_headers;
+          
+          INSERT INTO public.ob_wol_extraction_headers(
+            extraction_uid,
+            extraction_date
+          ) VALUES
+            ('{openingExtractionUid}', '{openingExtractionDate}'),
+            ('{closingExtractionUid}', '{closingExtractionDate}');
+          
+          INSERT INTO public.ob_wol_policy_data(
+            extraction_uid,
+            policy_id,
+            table_code,
+            status,
+            sum_assured,
+            entry_date,
+            npdd,
+            ltd_payment_term,
+            entry_age_1,
+            gender_1,
+            entry_age_2,
+            gender_2,
+            joint_val_age
+          ) VALUES
+            {SQL};"
+          
+        )
+    ) |>
+    dplyr::pull(SQL)
+  )
 
 clipr::write_clip(
   content =
