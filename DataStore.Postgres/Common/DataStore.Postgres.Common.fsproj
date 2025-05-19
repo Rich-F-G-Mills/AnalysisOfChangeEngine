@@ -8,12 +8,14 @@
   <ItemGroup>
     <Compile Include="Types.fs" />
     <Compile Include="TypeExtensions.fs" />
+    <Compile Include="Data Transfer Objects\TransferableType.fs" />
+    <Compile Include="Data Transfer Objects\Dispatcher.fs" />
+    <Compile Include="Data Transfer Objects\Structures.fs" />
     <Compile Include="AbstractDataStore.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="FsToolkit.ErrorHandling" Version="4.18.0" />
-    <PackageReference Include="Microsoft.Extensions.ObjectPool" Version="9.0.4" />
     <PackageReference Include="Npgsql.FSharp" Version="8.0.0" />
   </ItemGroup>
 

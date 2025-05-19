@@ -285,17 +285,18 @@ generatedSql <-
     dplyr::mutate(
       SQL =
         glue::glue(
-          "DELETE FROM public.ob_wol_policy_data;
-          DELETE FROM public.ob_wol_extraction_headers;
+          "
+          DELETE FROM ob_wol.policy_data;
+          DELETE FROM ob_wol.extraction_headers;
           
-          INSERT INTO public.ob_wol_extraction_headers(
-            extraction_uid,
+          INSERT INTO ob_wol.extraction_headers(
+            uid,
             extraction_date
           ) VALUES
             ('{openingExtractionUid}', '{openingExtractionDate}'),
             ('{closingExtractionUid}', '{closingExtractionDate}');
           
-          INSERT INTO public.ob_wol_policy_data(
+          INSERT INTO ob_wol.policy_data(
             extraction_uid,
             policy_id,
             table_code,

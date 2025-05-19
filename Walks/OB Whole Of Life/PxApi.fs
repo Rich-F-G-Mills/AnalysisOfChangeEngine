@@ -50,39 +50,39 @@ module PxApi =
     [<NoEquality; NoComparison>]
     type OutputAttributes =
         {
-            CashSurrenderBenefit              : double
-            DeathBenefit                    : double
-            UnsmoothedAssetShare            : double
-            SmoothedAssetShare              : double
-            ExitBonusRate                   : double
-            UnpaidPremiums                  : double
-            GuaranteedDeathBenefit          : double
-            DeathUpliftFactor               : double
+            CashSurrenderBenefit            : float32
+            DeathBenefit                    : float32
+            UnsmoothedAssetShare            : float32
+            SmoothedAssetShare              : float32
+            ExitBonusRate                   : float32
+            UnpaidPremiums                  : float32
+            GuaranteedDeathBenefit          : float32
+            DeathUpliftFactor               : float32
 
-            Step0_Opening_UAS               : double
-            Step0_Opening_SAS               : double
-            Step1_RestatedAdjustments_UAS   : double
-            Step1_RestatedAdjustments_SAS   : double
-            Step2_RestatedActuals_UAS       : double
-            Step2_RestatedActuals_SAS       : double
-            Step3_RestatedDeductions_UAS    : double
-            Step3_RestatedDeductions_SAS    : double
-            Step4_MoveToClosingDate_UAS     : double
-            Step4_MoveToClosingDate_SAS     : double
-            Step5_Adjustments_UAS           : double
-            Step5_Adjustments_SAS           : double
-            Step6_Premiums_UAS              : double
-            Step6_Premiums_SAS              : double
-            Step7_Deductions_UAS            : double
-            Step7_Deductions_SAS            : double
-            Step8_MortalityCharge_UAS       : double
-            Step8_MortalityCharge_SAS       : double
-            Step9_InvestmentReturn_UAS      : double
-            Step9_InvestmentReturn_SAS      : double
+            Step0_Opening_UAS               : float32
+            Step0_Opening_SAS               : float32
+            Step1_RestatedAdjustments_UAS   : float32
+            Step1_RestatedAdjustments_SAS   : float32
+            Step2_RestatedActuals_UAS       : float32
+            Step2_RestatedActuals_SAS       : float32
+            Step3_RestatedDeductions_UAS    : float32
+            Step3_RestatedDeductions_SAS    : float32
+            Step4_MoveToClosingDate_UAS     : float32
+            Step4_MoveToClosingDate_SAS     : float32
+            Step5_Adjustments_UAS           : float32
+            Step5_Adjustments_SAS           : float32
+            Step6_Premiums_UAS              : float32
+            Step6_Premiums_SAS              : float32
+            Step7_Deductions_UAS            : float32
+            Step7_Deductions_SAS            : float32
+            Step8_MortalityCharge_UAS       : float32
+            Step8_MortalityCharge_SAS       : float32
+            Step9_InvestmentReturn_UAS      : float32
+            Step9_InvestmentReturn_SAS      : float32
         }
 
 
-    let getPolicyRelatedAttributes (r: PolicyRecord) : PolicyRelatedAttributes =
+    let getPolicyRelatedAttributes (OBWholeOfLife.PolicyRecord r) : PolicyRelatedAttributes =
         {
             EntryDate =
                 r.EntryDate

@@ -12,15 +12,7 @@ module Types =
     open FSharp.Quotations
 
 
-    type PolicyID = string
     type Reason = string
-
-
-    /// Interface to be implemented for all user defined policy record types.
-    type IPolicyRecord =
-        interface
-            abstract member ID: PolicyID with get
-        end
 
 
     /// Details of the context within which the walk is to be run.
@@ -182,7 +174,7 @@ module Types =
     /// is returned, it is always assumed that a data change has occurred.
     type PolicyRecordChanger<'TPolicyRecord> =
         // Opening * Prior * Closing -> Optional Revised
-        'TPolicyRecord * 'TPolicyRecord * 'TPolicyRecord -> 'TPolicyRecord option
+        'TPolicyRecord * 'TPolicyRecord * 'TPolicyRecord -> Result<'TPolicyRecord option, string>
 
 
     /// Required interface for all step types.
@@ -330,9 +322,9 @@ module Types =
             member _.DataChanger =
                 fun (_, prior, closing) ->
                     if prior = closing then
-                        None
+                        Ok None
                     else
-                        Some closing
+                        Ok (Some closing)
 
 
     (*
@@ -363,7 +355,7 @@ module Types =
     /// Abstract base class for all user defined walks. Provides 'slots' for required steps
     /// and a mechanism by which additional (ie. user supplied) steps can be registered.
     [<AbstractClass>]
-    type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord and 'TPolicyRecord : equality>
+    type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord : equality>
         (logger: ILogger) as this =
 
             let _interiorSteps =

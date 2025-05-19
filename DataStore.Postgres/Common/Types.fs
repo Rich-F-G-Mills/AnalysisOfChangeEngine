@@ -14,6 +14,8 @@ module Types =
         Given that the Guid type is used throughout, it's not impossible that (for example) an
         extraction uid suddently finds itself being used a run uid. This should (!) reduce the
         chance of that happening.
+        Why not put these in Common? Because other implementations may not even use Guids to
+        locate items within a datastore.
     *)
     type RunUid =
         | RunUid of Guid
@@ -72,7 +74,16 @@ module Types =
         }
 
 
-    type PostgresEnumerationAttribute (typeName: string) =
+    [<Sealed>]
+    type PostgresProductSpecificEnumerationAttribute (typeName: string) =
         inherit Attribute()
 
-        member val TypeName = typeName
+        member val TypeName =
+            typeName
+
+    [<Sealed>]
+    type PostgresCommonEnumerationAttribute (typeName: string) =
+        inherit Attribute()
+
+        member val TypeName =
+            typeName

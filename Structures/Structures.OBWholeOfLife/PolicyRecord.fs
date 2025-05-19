@@ -84,21 +84,27 @@ module OBWholeOfLife =
     // This is independent of the underlyine source.
     // Wherever the data is sourced from, it MUST ultimately end up as the following.
     [<NoComparison>]
-    type PolicyRecord =
+    type RawPolicyRecord =
         {
-            PolicyNumber        : string
             TableCode           : string
             EntryDate           : DateOnly
             NextPremiumDueDate  : DateOnly
             Status              : PolicyStatus
             Lives               : LivesBasis
             LimitedPaymentTerm  : int
-            SumAssured          : double
+            SumAssured          : float32
             Taxable             : bool
         }
 
-        interface IPolicyRecord with
-            member this.ID = this.PolicyNumber
+
+    [<NoComparison>]
+    type PolicyRecord =
+        internal | PolicyRecord of RawPolicyRecord
+
+
+    // Allows the inner policy record to be accessed via pattern matching.
+    let (|PolicyRecord|) (PolicyRecord pr) =
+        pr
 
 
     [<RequireQualifiedAccess>]
@@ -106,27 +112,38 @@ module OBWholeOfLife =
 
         // This is intentionally independent of whatever mechanism actually created the
         // policy record to begin with.
-        let validate (r: PolicyRecord) =
-            [
-                if r.NextPremiumDueDate < r.EntryDate then
-                    yield "NPDD cannot be before entry date."
+        let validate (r: RawPolicyRecord) =
+            let validationFailures =
+                [
+                    if r.NextPremiumDueDate < r.EntryDate then
+                        yield " * NPDD cannot be before entry date."
 
-                if r.LimitedPaymentTerm < 0 then
-                    yield "Payment term must be positive." 
+                    if r.LimitedPaymentTerm < 0 then
+                        yield " * Payment term must be positive." 
 
-                if r.Lives.EntryAgeLife1 < 0 then
-                    yield "Life 1 entry age must be non-negative."
+                    if r.Lives.EntryAgeLife1 < 0 then
+                        yield " * Life 1 entry age must be non-negative."
 
-                match r.Lives.EntryAgeLife2 with
-                | Some age when age < 0 ->
-                    yield "Life 2 entry age must be non-negative."
-                | _ ->
-                    do ()
+                    match r.Lives.EntryAgeLife2 with
+                    | Some age when age < 0 ->
+                        yield " * Life 2 entry age must be non-negative."
+                    | _ ->
+                        do ()
 
-                match r.Lives.JointValuationAge with
-                | Some jva when jva < 0 ->
-                    yield "Joint-valuation age must be non-negative."
-                | _ ->
-                    do ()
-            ]
+                    match r.Lives.JointValuationAge with
+                    | Some jva when jva < 0 ->
+                        yield " * Joint-valuation age must be non-negative."
+                    | _ ->
+                        do ()
+                ]
+
+            match validationFailures with
+            | [] ->
+                Ok (PolicyRecord r)
+
+            | xs ->
+                let joinedReasons =
+                    String.Join (Environment.NewLine, validationFailures)
+
+                Error (sprintf "Invalid policy record due to the following reasons:%s%s" Environment.NewLine joinedReasons)
          

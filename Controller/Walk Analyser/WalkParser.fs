@@ -182,7 +182,7 @@ module WalkParser =
         | _ -> false
         
 
-    let execute<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord :> IPolicyRecord and 'TPolicyRecord : equality>
+    let execute<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord : equality>
         (apiCollection: 'TApiCollection) (walk: AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
             let currentResultsVarDefMapping =
                 FSharpType.GetRecordFields (typeof<'TStepResults>)

@@ -66,11 +66,11 @@ module Runner =
             let closingRunDate =
                 new DateOnly (today.Year, today.Month, 1)
 
-            let openingRunUid =
-                RunUid (Guid "7526621f-74c3-4edf-8fe8-bebb20c36cd3")
+            //let openingRunUid =
+            //    RunUid (Guid "7526621f-74c3-4edf-8fe8-bebb20c36cd3")
 
-            let closingRunUid =
-                RunUid (Guid "7baaafdb-88f0-4d64-b8a6-99040e919307")
+            //let closingRunUid =
+            //    RunUid (Guid "7baaafdb-88f0-4d64-b8a6-99040e919307")
 
             let openingExtractionUid =
                 ExtractionUid (Guid "3f1a56c8-9d23-42d7-a5b1-874f01b87e1f")
@@ -106,8 +106,8 @@ module Runner =
             let dataStore =
                 new Postgres.OBWholeOfLife.DataStore (sessionContext, connection)
 
-            let runHeader =
-                dataStore.TryGetRunHeader openingRunUid
+            //let runHeader =
+            //    dataStore.TryGetRunHeader openingRunUid
 
             let! exitedPolicyRecords, remainingPolicyRecords, newPolicyRecords =
                 dataStore.GetPolicyIdDifferences (openingExtractionUid, closingExtractionUid)
@@ -172,9 +172,8 @@ module Runner =
             let uas =
                 parsedStep.ElementDefinitions["UnsmoothedAssetShare"]
 
-            let polRecord: OBWholeOfLife.PolicyRecord =
+            let rawPolRecord: OBWholeOfLife.RawPolicyRecord =
                 {
-                    PolicyNumber        = "TEST"
                     TableCode           = "A"
                     Taxable             = true
                     EntryDate           = new DateOnly (2000, 1, 1)
@@ -187,11 +186,14 @@ module Runner =
                             Gender = OBWholeOfLife.Gender.Male
                         }
                     LimitedPaymentTerm  = 20
-                    SumAssured          = 1000.0
+                    SumAssured          = 1000.0f
                 }
 
+            let! polRecord =
+                OBWholeOfLife.PolicyRecord.validate rawPolRecord
+
             let res =
-                uas.WrappedInvoker (polRecord, [|1.0|], [||])
+                uas.WrappedInvoker (polRecord, [|1.0f|], [||])
 
             do printfn "Result: %A" res
 

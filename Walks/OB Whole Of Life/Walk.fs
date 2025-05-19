@@ -44,8 +44,8 @@ module OBWholeOfLife =
 
         // Short-hand way of changing our source for UAS and SAS (post-opening regression!)
         let useForAssetShares
-            (unsmoothedSelector: Expr<PxApi.OutputAttributes -> double>)
-            (smoothedSelector: Expr<PxApi.OutputAttributes -> double>)
+            (unsmoothedSelector: Expr<PxApi.OutputAttributes -> float32>)
+            (smoothedSelector: Expr<PxApi.OutputAttributes -> float32>)
             : SourceExpr<OBWholeOfLife.PolicyRecord, OBWholeOfLife.StepResults, _> =
                 <@
                     fun from _ prior _ ->
@@ -62,77 +62,104 @@ module OBWholeOfLife =
         // --- DATA CHANGERS ---
 
         let dataChanger_RestatedOpening
-            : PolicyRecordChanger<OBWholeOfLife.PolicyRecord> =
-                fun (opening, _, closing) ->
-                    let restatedStatus =
-                        match opening.Status, closing.Status with
-                        | OBWholeOfLife.PolicyStatus.PremiumPaying, OBWholeOfLife.PolicyStatus.PaidUp ->
-                            // Don't transition to PUP at this time.
-                            OBWholeOfLife.PolicyStatus.PremiumPaying
-                        | _ ->
-                            // It doesn't matter whether we pick that from the opening or closing!
-                            closing.Status
+            : PolicyRecordChanger<_> =
+                fun (OBWholeOfLife.PolicyRecord opening, _, OBWholeOfLife.PolicyRecord closing) ->
+                    result {
+                        let restatedStatus =
+                            match opening.Status, closing.Status with
+                            | OBWholeOfLife.PolicyStatus.PremiumPaying, OBWholeOfLife.PolicyStatus.PaidUp ->
+                                // Don't transition to PUP at this time.
+                                OBWholeOfLife.PolicyStatus.PremiumPaying
+                            | _ ->
+                                // It doesn't matter whether we pick that from the opening or closing!
+                                closing.Status
 
-                    let restated =
-                        {
-                            opening with
-                                TableCode = closing.TableCode
-                                EntryDate = closing.EntryDate
-                                SumAssured = closing.SumAssured
-                                Lives = closing.Lives
-                                LimitedPaymentTerm = closing.LimitedPaymentTerm
-                                Status = restatedStatus
-                                // We intentionally don't change the NPDD at this time.
-                        }
+                        let restated =
+                            {
+                                opening with
+                                    TableCode = closing.TableCode
+                                    EntryDate = closing.EntryDate
+                                    SumAssured = closing.SumAssured
+                                    Lives = closing.Lives
+                                    LimitedPaymentTerm = closing.LimitedPaymentTerm
+                                    Status = restatedStatus
+                                    // We intentionally don't change the NPDD at this time.
+                            }                        
 
-                    // If nothing has changed, return None as this will indicate to the
-                    // calling logic that nothing has changed for this record.
-                    if opening <> restated then Some restated else None
+                        // If nothing has changed, return None as this will indicate to the
+                        // calling logic that nothing has changed for this record.
+                        if opening <> restated then
+                            let! restated' =
+                                OBWholeOfLife.PolicyRecord.validate restated
+
+                            return Some restated'
+                        else
+                            return None
+                    }
+                    
             
         let dataChanger_RollForward
-            : PolicyRecordChanger<OBWholeOfLife.PolicyRecord> =
-                fun (_, prior, closing) ->
-                    let updatedStatus, updatedNPDD =
-                        match prior.Status, closing.Status with
-                        | OBWholeOfLife.PolicyStatus.PremiumPaying, OBWholeOfLife.PolicyStatus.PaidUp ->
-                            let rollForwardNPDD =
-                                // Ensure that we at least roll it forward to the closing date.
-                                DateOnly.Max (prior.NextPremiumDueDate, runContext.ClosingRunDate)
+            : PolicyRecordChanger<_> =
+                fun (_, OBWholeOfLife.PolicyRecord prior, OBWholeOfLife.PolicyRecord closing) ->
+                    result {
+                        let updatedStatus, updatedNPDD =
+                            match prior.Status, closing.Status with
+                            | OBWholeOfLife.PolicyStatus.PremiumPaying, OBWholeOfLife.PolicyStatus.PaidUp ->
+                                let rollForwardNPDD =
+                                    // Ensure that we at least roll it forward to the closing date.
+                                    DateOnly.Max (prior.NextPremiumDueDate, runContext.ClosingRunDate)
 
-                            // We roll-forward the NPDD assuming the premium had been paid.
-                            OBWholeOfLife.PolicyStatus.PremiumPaying, rollForwardNPDD
+                                // We roll-forward the NPDD assuming the premium had been paid.
+                                OBWholeOfLife.PolicyStatus.PremiumPaying, rollForwardNPDD
 
-                        | _ ->
-                            // It doesn't matter whether we pick that from the opening or closing!
-                            closing.Status, closing.NextPremiumDueDate                       
+                            | _ ->
+                                // It doesn't matter whether we pick that from the opening or closing!
+                                closing.Status, closing.NextPremiumDueDate                       
 
-                    let updated =
-                        {
-                            prior with
-                                Status = updatedStatus
-                                NextPremiumDueDate = updatedNPDD
-                        }
+                        let updated =
+                            {
+                                prior with
+                                    Status = updatedStatus
+                                    NextPremiumDueDate = updatedNPDD
+                            }                        
 
-                    if prior <> updated then Some updated else None
+                        if prior <> updated then
+                            let! updated' =
+                                OBWholeOfLife.PolicyRecord.validate updated
+
+                            return Some updated'
+                        else
+                            return None
+                    }
+                    
             
         let dataChanger_RecentPaidUps
-            : PolicyRecordChanger<OBWholeOfLife.PolicyRecord> =
-                fun (_, prior, closing) ->
-                    let updatedStatus, updatedNPDD =
-                        match prior.Status, closing.Status with
-                        | OBWholeOfLife.PolicyStatus.PremiumPaying, OBWholeOfLife.PolicyStatus.PaidUp ->
-                            OBWholeOfLife.PolicyStatus.PaidUp, closing.NextPremiumDueDate
-                        | _ ->
-                            prior.Status, prior.NextPremiumDueDate
+            : PolicyRecordChanger<_> =
+                fun (_, OBWholeOfLife.PolicyRecord prior, OBWholeOfLife.PolicyRecord closing) ->
+                    result {
+                        let updatedStatus, updatedNPDD =
+                            match prior.Status, closing.Status with
+                            | OBWholeOfLife.PolicyStatus.PremiumPaying, OBWholeOfLife.PolicyStatus.PaidUp ->
+                                OBWholeOfLife.PolicyStatus.PaidUp, closing.NextPremiumDueDate
+                            | _ ->
+                                prior.Status, prior.NextPremiumDueDate
 
-                    let updated =
-                        {
-                            prior with
-                                Status = updatedStatus
-                                NextPremiumDueDate = updatedNPDD
-                        }
+                        let updated =
+                            {
+                                prior with
+                                    Status = updatedStatus
+                                    NextPremiumDueDate = updatedNPDD
+                            }                        
 
-                    if prior <> updated then Some updated else None
+                        if prior <> updated then
+                            let! updated' =
+                                OBWholeOfLife.PolicyRecord.validate updated
+
+                            return Some updated'
+                        else
+                            return None
+                    }
+                    
 
 
         // --- CONTROL CREATION ---
@@ -245,11 +272,11 @@ module OBWholeOfLife =
                                     SmoothedAssetShare =
                                         from.apiCall (_.px_PostOpeningRegression, _.Step0_Opening_SAS)
                                     SurrenderBenefit =
-                                        current.SmoothedAssetShare * (1.0 + current.ExitBonusRate)
+                                        current.SmoothedAssetShare * (1.0f + current.ExitBonusRate)
                                             - current.UnpaidPremiums
                                     DeathBenefit =
                                         Math.Max(
-                                            current.SmoothedAssetShare * current.DeathUpliftFactor * (1.0 + current.ExitBonusRate),
+                                            current.SmoothedAssetShare * current.DeathUpliftFactor * (1.0f + current.ExitBonusRate),
                                             current.GuaranteedDeathBenefit
                                         ) - current.UnpaidPremiums
                             } : OBWholeOfLife.StepResults @>

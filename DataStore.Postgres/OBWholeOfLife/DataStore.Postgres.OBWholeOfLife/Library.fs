@@ -7,27 +7,60 @@ module OBWholeOfLife =
 
     open System
     open Npgsql
+    open FsToolkit.ErrorHandling
     open AnalysisOfChangeEngine.Structures.PolicyRecords
     open AnalysisOfChangeEngine.Structures.StepResults
 
 
-    [<NoComparison; NoEquality; PostgresEnumeration("policy_status")>]
+    let [<Literal>] private schema = "ob_wol"
+
+
+    [<RequireQualifiedAccess; NoComparison; NoEquality>]
+    [<PostgresProductSpecificEnumeration("policy_status")>]
     type PolicyStatusDTO =
         | PP
         | PUP
         | AP
 
+        static member ofPolicyStatus = function
+            | OBWholeOfLife.PolicyStatus.PremiumPaying ->
+                PP
+            | OBWholeOfLife.PolicyStatus.PaidUp ->
+                PUP
+            | OBWholeOfLife.PolicyStatus.AllPaid ->
+                AP
 
-    [<NoComparison; NoEquality; PostgresEnumeration("gender")>]
+        static member toPolicyStatus = function
+            | PP ->
+                OBWholeOfLife.PolicyStatus.PremiumPaying
+            | PUP ->
+                OBWholeOfLife.PolicyStatus.PaidUp
+            | AP ->
+                OBWholeOfLife.PolicyStatus.AllPaid
+
+
+    [<RequireQualifiedAccess; NoComparison; NoEquality>]
+    [<PostgresProductSpecificEnumeration("gender")>]
     type GenderDTO =
         | MALE
         | FEMALE
+
+        static member ofGender = function
+            | OBWholeOfLife.Gender.Male ->
+                MALE
+            | OBWholeOfLife.Gender.Female ->
+                FEMALE
+
+        static member toGender = function
+            | MALE ->
+                OBWholeOfLife.Gender.Male
+            | FEMALE ->
+                OBWholeOfLife.Gender.Female
 
 
     [<NoComparison; NoEquality>]
     type PolicyRecordDTO =
         {
-            policy_id           : string
             table_code          : string
             status              : PolicyStatusDTO
             sum_assured         : float32
@@ -56,34 +89,113 @@ module OBWholeOfLife =
         }
 
 
+    [<NoComparison; NoEquality>]
+    type private TableCodeDTO =
+        {
+            table_code                  : string
+            is_taxable                  : bool
+        }
+
+    [<RequireQualifiedAccess>]
+    module private TableCodeDTO =
+
+        type internal IDispatcher =
+            interface
+                abstract member SelectAll       : unit -> TableCodeDTO list
+            end
+
+        let internal buildDispatcher (connection: NpgsqlConnection) =
+            let dispatcher =
+                new DataTransferObjects.PostgresTableDispatcher<TableCodeDTO, unit>
+                    ("table_codes", schema, connection)
+
+            {
+                new IDispatcher with
+                    member _.SelectAll () =
+                        dispatcher.SelectAllBaseRecords ()
+            }
+
 
     type DataStore (sessionContext: SessionContext, connection: NpgsqlConnection) =
         inherit AbstractDataStore<OBWholeOfLife.PolicyRecord, PolicyRecordDTO, OBWholeOfLife.StepResults, StepResultsDTO>
             (sessionContext, connection, "ob_wol")
 
-        override _.policyRecordToDto policyRecord =
-            {
-                policy_id           = policyRecord.PolicyId
+        let tableCodeDispatcher =
+            TableCodeDTO.buildDispatcher connection
+
+        let tableCodes =
+            tableCodeDispatcher.SelectAll ()
+            |> Seq.map (fun tc -> tc.table_code, tc)
+            |> Map.ofSeq
+
+        override _.dtoToPolicyRecord policyRecord =
+            result {
+                let firstLife: OBWholeOfLife.LifeData =
+                    {
+                        EntryAge = int policyRecord.entry_age_1
+                        Gender = GenderDTO.toGender policyRecord.gender_1
+                    }
+
+                let! lives =
+                    match policyRecord.entry_age_2, policyRecord.gender_2, policyRecord.joint_val_age with
+                    | None, None, None ->
+                        Ok (OBWholeOfLife.LivesBasis.SingleLife firstLife)
+
+                    | Some entry_age_2', Some gender_2', Some joint_val_age' ->
+                        let secondLife: OBWholeOfLife.LifeData =
+                            {
+                                EntryAge = int entry_age_2'
+                                Gender = GenderDTO.toGender gender_2'
+                            }
+
+                        Ok (OBWholeOfLife.LivesBasis.JointLife (firstLife, secondLife, int joint_val_age'))
+
+                    | _ ->
+                        Error "Invalid combination of life data provided."
+
+                let! isTaxable =
+                    tableCodes
+                    |> Map.tryFind policyRecord.table_code
+                    |> Option.map _.is_taxable
+                    |> Result.requireSome
+                        (sprintf "Table code %s not found in table_codes." policyRecord.table_code)
+
+                let rawPolicyRecord: OBWholeOfLife.RawPolicyRecord =
+                    {                
+                        TableCode           = policyRecord.table_code
+                        Taxable             = isTaxable
+                        EntryDate           = policyRecord.entry_date
+                        NextPremiumDueDate  = policyRecord.npdd
+                        Status              = PolicyStatusDTO.toPolicyStatus policyRecord.status
+                        Lives               = lives
+                        SumAssured          = policyRecord.sum_assured
+                        LimitedPaymentTerm  = int policyRecord.ltd_payment_term
+                    }
+
+                return! OBWholeOfLife.PolicyRecord.validate rawPolicyRecord
+            }
+        
+        override _.policyRecordToDTO (OBWholeOfLife.PolicyRecord policyRecord) =
+            Ok {
                 table_code          = policyRecord.TableCode
                 status              =
-                    match policyRecord.Status with
-                    | OBWholeOfLife.PolicyStatus.PremiumPaying  -> PolicyStatusDTO.PP
-                    | OBWholeOfLife.PolicyStatus.PaidUp         -> PolicyStatusDTO.PUP
-                    | OBWholeOfLife.PolicyStatus.AllPaid        -> PolicyStatusDTO.AP
+                    PolicyStatusDTO.ofPolicyStatus policyRecord.Status
                 sum_assured         = policyRecord.SumAssured
                 entry_date          = policyRecord.EntryDate
                 npdd                = policyRecord.NextPremiumDueDate
-                ltd_payment_term    = policyRecord.LimitedPaymentTerm
-                entry_age_1         = Int16 policyRecord.Lives.EntryAgeLife1
+                ltd_payment_term    = int16 policyRecord.LimitedPaymentTerm
+                entry_age_1         = int16 policyRecord.Lives.EntryAgeLife1
                 entry_age_2         =
                     policyRecord.Lives.EntryAgeLife2
-                    |> Option.map Int16
+                    |> Option.map int16
                 gender_1            =
-                    match policyRecord.Lives.GenderLife1 with
-                    | OBWholeOfLife.Gender.Male     -> GenderDTO.MALE
-                    | OBWholeOfLife.Gender.Female   -> GenderDTO.FEMALE
-                gender_2
-            
+                    GenderDTO.ofGender policyRecord.Lives.GenderLife1
+                gender_2 =
+                    policyRecord.Lives.GenderLife2
+                    |> Option.map GenderDTO.ofGender
+                joint_val_age =
+                    policyRecord.Lives.JointValuationAge
+                    |> Option.map int16
             }
 
         override _.dtoToStepResults dto =
@@ -98,7 +210,7 @@ module OBWholeOfLife =
                 DeathUpliftFactor           = dto.death_uplift_factor
             }
 
-        override _.stepResultsToDto stepResults =
+        override _.stepResultsToDTO stepResults =
             Ok {
                 unsmoothed_asset_share      = stepResults.UnsmoothedAssetShare
                 smoothed_asset_share        = stepResults.SmoothedAssetShare
