@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Structures\Structures.OBWholeOfLife\Structures.OBWholeOfLife.fsproj" />
+    <ProjectReference Include="..\..\Structures\OB Whole-Of-Life\Structures.OBWholeOfLife.fsproj" />
     <ProjectReference Include="..\Common\Walks.Common.fsproj" />
   </ItemGroup>
 

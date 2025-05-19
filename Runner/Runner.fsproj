@@ -12,8 +12,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Common\Common.fsproj" />
     <ProjectReference Include="..\Controller\Controller.fsproj" />
-    <ProjectReference Include="..\DataStore.Postgres\OBWholeOfLife\DataStore.Postgres.OBWholeOfLife\DataStore.Postgres.OBWholeOfLife.fsproj" />
-    <ProjectReference Include="..\Walks\OB Whole Of Life\Walks.OBWholeOfLife.fsproj" />
+    <ProjectReference Include="..\DataStore.Postgres\OB Whole-Of-Life\DataStore.Postgres.OBWholeOfLife.fsproj" />
+    <ProjectReference Include="..\Walks\OB Whole-Of-Life\Walks.OBWholeOfLife.fsproj" />
   </ItemGroup>
 
 </Project>

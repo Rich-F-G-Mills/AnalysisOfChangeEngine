@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.12.35527.113
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Walks.OBWholeOfLife", "Walks\OB Whole Of Life\Walks.OBWholeOfLife.fsproj", "{1E1E4FAA-C1BB-4695-8B07-4C89764BD809}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Walks.OBWholeOfLife", "Walks\OB Whole-Of-Life\Walks.OBWholeOfLife.fsproj", "{1E1E4FAA-C1BB-4695-8B07-4C89764BD809}"
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Controller", "Controller\Controller.fsproj", "{0E1B1AE5-CCFD-48C9-9A32-E49D6E957C99}"
 EndProject
@@ -24,11 +24,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Walks", "Walks", "{DD055ECC
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Structures", "Structures", "{F2E2DD18-67D3-44C9-B74E-2A5DF5265DF1}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Structures.OBWholeOfLife", "Structures\Structures.OBWholeOfLife\Structures.OBWholeOfLife.fsproj", "{91CA7AAB-54D3-4465-BE3B-C8D10426BD80}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Structures.OBWholeOfLife", "Structures\OB Whole-Of-Life\Structures.OBWholeOfLife.fsproj", "{91CA7AAB-54D3-4465-BE3B-C8D10426BD80}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "DataStore.Postgres", "DataStore.Postgres", "{5C1363B6-D115-42DB-BA1F-0C2B95293113}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "DataStore.Postgres.OBWholeOfLife", "DataStore.Postgres\OBWholeOfLife\DataStore.Postgres.OBWholeOfLife\DataStore.Postgres.OBWholeOfLife.fsproj", "{28437AB5-B28C-4A31-8054-98A2B16C3821}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "DataStore.Postgres.OBWholeOfLife", "DataStore.Postgres\OB Whole-Of-Life\DataStore.Postgres.OBWholeOfLife.fsproj", "{28437AB5-B28C-4A31-8054-98A2B16C3821}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
