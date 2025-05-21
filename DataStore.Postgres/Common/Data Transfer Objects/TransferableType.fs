@@ -16,6 +16,7 @@ type internal ITransferableType =
         abstract member UnderlyingType      : Type with get
         abstract member ToSqlParamValueExpr : Expr with get
         abstract member ToSqlParamSite      : paramName: string -> string
+        abstract member ToSqlParamSiteExpr  : Expr<string -> string>
         abstract member ToSqlLiteralExpr    : Expr with get
         abstract member ToSqlSelector       : string -> string
         abstract member ReadSqlColumnExpr   : Expr<RowReader> * string -> Expr
@@ -43,12 +44,15 @@ Design Decision:
 type private TransferableTypeFactory private () =
     
     static member internal createFor<'TValue>
-        colSelector colReaderExpr toSqlParamValueExpr toSqlParamSite toSqlLiteralExpr
+        colSelector colReaderExpr toSqlParamValueExpr toSqlParamSiteExpr toSqlLiteralExpr
         : ITransferableType =
             // Prevents the user from having to supply both the Expr and non-Expr versions/
             // TODO - Could this be done using the ReflectedDefinition attribute?
             let toSqlParamValue: 'TValue -> SqlValue =
-                downcast LeafExpressionConverter.EvaluateQuotation toSqlParamValueExpr                    
+                downcast LeafExpressionConverter.EvaluateQuotation toSqlParamValueExpr  
+                
+            let toSqlParamSite: string -> string =
+                downcast LeafExpressionConverter.EvaluateQuotation toSqlParamSiteExpr
 
             let transferableType =
                 {
@@ -58,8 +62,9 @@ type private TransferableTypeFactory private () =
                         member _.ToSqlLiteralExpr with get()            = toSqlLiteralExpr                  
                         member _.ReadSqlColumnExpr (rrExpr, colName)    = colReaderExpr rrExpr colName                    
 
-                    interface ITransferableType with
+                    interface ITransferableType with                                            
                         member _.UnderlyingType                         = typeof<'TValue>
+                        member _.ToSqlParamSiteExpr with get()          = toSqlParamSiteExpr
                         member _.ToSqlParamSite paramName               = toSqlParamSite paramName
                         member _.ToSqlSelector colName                  = colSelector colName
                         member _.ToSqlParamValueExpr with get()         = toSqlParamValueExpr
@@ -141,8 +146,8 @@ type private TransferableTypeFactory private () =
             // no reason not to just use the %A formatter below.
             <@ Option.either (SqlValue.String << sprintf "%A") (fun _ -> SqlValue.Null) @>
                 
-        let toSqlParamSite paramName =
-            sprintf "%s::\"%s\".\"%s\"" paramName schema pgEnumName
+        let toSqlParamSite =
+            <@ fun paramName -> sprintf "%s::\"%s\".\"%s\"" paramName schema pgEnumName @>
 
         let toSqlLiteralExpr =
             // Same situation as for the parameter value logic above.
@@ -171,7 +176,7 @@ module internal TransferableType =
 
 
     let private makePrimitiveTransferType<'TValue> colReaderExpr toSqlParamValueExpr toSqlLiteralExpr =
-        TransferableTypeFactory.createFor<'TValue> id colReaderExpr toSqlParamValueExpr id toSqlLiteralExpr
+        TransferableTypeFactory.createFor<'TValue> id colReaderExpr toSqlParamValueExpr <@ id @> toSqlLiteralExpr
 
     let private primitiveTransferTypes =
         [

@@ -66,11 +66,11 @@ module Runner =
             let closingRunDate =
                 new DateOnly (today.Year, today.Month, 1)
 
-            //let openingRunUid =
-            //    RunUid (Guid "7526621f-74c3-4edf-8fe8-bebb20c36cd3")
+            let openingRunUid =
+                RunUid (Guid "2ba4d2d5-5c79-4e35-b435-fb8a54713fd1")
 
-            //let closingRunUid =
-            //    RunUid (Guid "7baaafdb-88f0-4d64-b8a6-99040e919307")
+            let closingRunUid =
+                RunUid (Guid "2c31b642-b0d5-450c-b44b-54ebf1790a85")
 
             let openingExtractionUid =
                 ExtractionUid (Guid "3f1a56c8-9d23-42d7-a5b1-874f01b87e1f")
@@ -115,7 +115,7 @@ module Runner =
             do printfn "Count exiting   : %i" exitedPolicyRecords.Count
             do printfn "Count remaining : %i" remainingPolicyRecords.Count
             do printfn "Count new       : %i" newPolicyRecords.Count
-            do printfn "\n\n\n"
+            do printfn "\n"
 
             let stepUidResolver =
                 dataStore.CreateStepUidResolver ()
@@ -133,15 +133,26 @@ module Runner =
             let! walk =
                 OBWholeOfLife.Walk.create (logger LogLevel.WARNING, runContext, walkConfig)
 
-            //let _ =
+            //let openingRun =
             //    dataStore.CreateRun ("Monthly MI", None, None, openingRunDate, openingExtractionUid, walk)
 
-            //let _ =
-            //    dataStore.CreateRun ("Monthly MI", None, Some openingRunUid, closingRunDate, closingExtractionUid, walk)
+            //let closingRun =
+            //    dataStore.CreateRun ("Monthly MI", None, Some openingRun.Uid, closingRunDate, closingExtractionUid, walk)
+
+            let! openingRun =
+                dataStore.TryGetRunHeader openingRunUid
+                |> Result.requireSome "Unable to locate opening run header."
+
+            let! closingRun =
+                dataStore.TryGetRunHeader closingRunUid
+                |> Result.requireSome "Unable to locate closing run header."
+
+            do printfn "Opening run UID: %O" openingRun.Uid.Value
+            do printfn "Closing run UID: %O\n\n" closingRun.Uid.Value
 
             do printfn "Steps: (%i found)" (walk.AllSteps |> Seq.length)
 
-            for (idx, step) in walk.AllSteps |> Seq.indexed do
+            for (idx, step) in Seq.indexed walk.AllSteps do
                 let isDataChange =
                     match step with
                     | :? IDataChangeStep<OBWholeOfLife.PolicyRecord> -> true

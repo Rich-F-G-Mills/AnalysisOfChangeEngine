@@ -68,7 +68,6 @@ module Types =
         end
 
 
-
     [<AbstractClass>]
     type SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection> private () =
         (*
@@ -133,13 +132,19 @@ module Types =
         /// Indicates a (serious) issue has been identified.
         | Error
 
+    (*
+    Design Decision:
+        Why not just use a Result type for this?
+        Although a fair question... What would 'Ok' mean specifically? Using this specific DU,
+        we make it clear that we care more about whether the validation completed or not.
+    *)
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
     type StepValidationOutcome =
         /// Indicates that the validation logic was successfully applied, regardless of
         /// whether this led to validation issues being recognised (or not).
         | Completed of (StepValidationIssueClassification * string) list
         /// Indicates that the validation logic was unable to run for a specified reason.
-        | Failed of string
+        | Failed of Reason: string
 
         /// Alias for a completed validation without any issues raised.
         static member val Empty =

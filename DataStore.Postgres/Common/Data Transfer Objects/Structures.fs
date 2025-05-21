@@ -50,7 +50,7 @@ module internal StepHeaderDTO =
                     match selectByUid stepUid' with
                     | []    -> None
                     | [x]   -> Some x
-                    | _     -> failwithf "Multiple step headers found with UID %O." stepUid'
+                    | _     -> failwith "Multiple step headers found."
         }
 
     let toUnderlying (hdr: StepHeaderDTO): StepHeader =
@@ -105,7 +105,7 @@ module internal ExtractionHeaderDTO =
                     match selectByUid extractionUid' with
                     | []    -> None
                     | [x]   -> Some x
-                    | _     -> failwithf "Multiple extraction headers found with UID %O." extractionUid'
+                    | _     -> failwith "Multiple extraction headers found."
 
                 member _.InsertRow row =
                     ignore <| rowInserter (row, ())
@@ -201,7 +201,7 @@ module internal RunHeaderDTO =
                     match selectByUid runUid' with
                     | []    -> None
                     | [x]   -> Some x
-                    | _     -> failwithf "Multiple run headers found with UID %O." runUid'
+                    | _     -> failwith "Multiple run headers found."
 
                 member _.InsertRow row =
                     ignore <| rowInserter (row, ())
@@ -269,20 +269,12 @@ module internal RunStepDTO =
         }
 
 
-[<RequireQualifiedAccess; NoComparison; NoEquality>]
-[<PostgresCommonEnumeration("validation_outcome")>]
-type internal ValidationOutcomeDTO =
-    | COMPLETED
-    | FAILED
-    | NOT_APPLICABLE
-
 [<NoEquality; NoComparison>]
 type internal StepResultsBaseDTO =
     {
         run_uid                 : Guid
-        step_idx                : Int16
+        step_uid                : Guid
         used_data_stage_uid     : Guid
-        validation_outcome      : ValidationOutcomeDTO
         run_when                : DateTime
         policy_id               : string
     }
@@ -293,7 +285,12 @@ module internal StepResultsDTO =
     type internal IDispatcher<'TAugRow> =
         interface
             // Having them curried in this way better reflects how this will be used.
-            abstract member TryGetStepResults   : runUid: Guid -> stepIdx: Int16 -> policyId: string -> 'TAugRow option
+            abstract member TryGetRows      : RunUid -> StepUid -> policyId: string -> 'TAugRow option
+            abstract member DeleteRows      : RunUid -> unit
+            // Cannot overload functions with curried arguments!
+            abstract member DeleteRows      : RunUid * policyIds: string Set -> unit
+            // We don't allow deleting results for a specific step/policy combination as all steps
+            // would need to be run regardless.
         end
 
     let buildDispatcher<'TAugRowDTO> (schema, connection) =
@@ -303,13 +300,79 @@ module internal StepResultsDTO =
                 ("step_results", schema, connection)
             
         let resultGetter =
-            dispatcher.MakeAugEquality3Selector (<@ _.run_uid @>, <@ _.step_idx @>, <@ _.policy_id @>)
+            dispatcher.MakeAugEquality3Selector (<@ _.run_uid @>, <@ _.step_uid @>, <@ _.policy_id @>)
+
+        let deleteRunResults =
+            dispatcher.MakeEquality1Remover <@ _.run_uid @>
+
+        let deleteRunResultsForPolcies =
+            dispatcher.MakeEquality1Multiple1Remover (<@ _.run_uid @>, <@ _.policy_id @>)
 
         {
             new IDispatcher<'TAugRowDTO> with                    
-                member _.TryGetStepResults runUid stepIdx policyId =
-                    match resultGetter runUid stepIdx policyId with
+                member _.TryGetRows (RunUid runUid') (StepUid stepUid') policyId =
+                    match resultGetter runUid' stepUid' policyId with
                     | []    -> None
                     | [x]   -> Some x
-                    | _     -> failwithf "Multiple step results found for step #%i and policy %s." stepIdx policyId
+                    | _     -> failwith "Multiple step results found for policy."
+
+                member _.DeleteRows (RunUid runUid') =
+                    ignore <| deleteRunResults runUid'
+
+                member _.DeleteRows (RunUid runUid', policyIds) =
+                    ignore <| deleteRunResultsForPolcies runUid' policyIds
+        }
+
+
+[<RequireQualifiedAccess; NoEquality; NoComparison>]
+[<PostgresCommonEnumeration("validation_issue_classification")>]
+type internal ValidationIssueClassification =
+    | WARNING
+    | ERROR
+
+[<NoEquality; NoComparison>]
+type internal StepValidationIssuesDTO =
+    {
+        run_uid                 : Guid
+        step_uid                : Guid
+        policy_id               : string
+        classification          : ValidationIssueClassification
+        message                 : string
+    }
+
+[<RequireQualifiedAccess>]
+module internal StepValidationIssuesDTO =
+
+    type internal IDispatcher =
+        interface
+            abstract member InsertRow       : StepValidationIssuesDTO -> unit
+            abstract member DeleteRows      : RunUid -> unit
+            abstract member DeleteRows      : RunUid * policyIds: string Set -> unit
+        end
+
+
+    let buildDispatcher (schema, connection) =
+        let dispatcher =
+            new PostgresTableDispatcher<StepValidationIssuesDTO, Unit>
+                ("step_validation_issues", schema, connection)
+
+        let rowInserter =
+            dispatcher.MakeRowInserter ()
+
+        let deleteValidationIssues =
+            dispatcher.MakeEquality1Remover <@ _.run_uid @>
+
+        let deleteValidationIssuesForPolicies =
+            dispatcher.MakeEquality1Multiple1Remover (<@ _.run_uid @>, <@ _.policy_id @>)
+
+        {
+            new IDispatcher with
+                member _.InsertRow row =
+                    ignore <| rowInserter (row, ())
+
+                member _.DeleteRows (RunUid runUid') = 
+                    ignore <| deleteValidationIssues runUid'
+
+                member _.DeleteRows (RunUid runUid', policyIds) = 
+                    ignore <| deleteValidationIssuesForPolicies runUid' policyIds
         }

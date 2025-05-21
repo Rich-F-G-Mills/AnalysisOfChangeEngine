@@ -10,6 +10,7 @@ module AbstractDataStore =
     open Npgsql.FSharp
     open FsToolkit.ErrorHandling
     open AnalysisOfChangeEngine
+    open AnalysisOfChangeEngine.DataStore.Postgres.DataTransferObjects
         
 
     [<AbstractClass>]
@@ -19,22 +20,25 @@ module AbstractDataStore =
         // --- DISPATCHERS ---
 
         let extractionHeaderDispatcher =
-            DataTransferObjects.ExtractionHeaderDTO.buildDispatcher (schema, connection)
+            ExtractionHeaderDTO.buildDispatcher (schema, connection)
 
         let policyDataDispatcher =
-            DataTransferObjects.PolicyDataDTO.builderDispatcher<'TPolicyRecordDTO> (schema, connection)
+            PolicyDataDTO.builderDispatcher<'TPolicyRecordDTO> (schema, connection)
 
         let runHeaderDispatcher =
-            DataTransferObjects.RunHeaderDTO.buildDispatcher (schema, connection)
+            RunHeaderDTO.buildDispatcher (schema, connection)
 
         let runStepDispatcher =
             DataTransferObjects.RunStepDTO.buildDispatcher (schema, connection)
 
         let stepHeaderDispatcher =
-            DataTransferObjects.StepHeaderDTO.buildDispatcher (connection)
+            StepHeaderDTO.buildDispatcher (connection)
 
         let stepResultsDispatcher =
-            DataTransferObjects.StepResultsDTO.buildDispatcher<'TStepResultsDTO> (schema, connection)
+            StepResultsDTO.buildDispatcher<'TStepResultsDTO> (schema, connection)
+
+        let stepValidationIssuesDispatcher =
+            StepValidationIssuesDTO.buildDispatcher (schema, connection)
 
 
 
@@ -43,6 +47,9 @@ module AbstractDataStore =
         member this.CreateStepUidResolver () =
             let stepHeaders =
                 this.GetAllStepHeaders ()
+                // Should this be a map using StepUid's as keys?
+                // Given that this is only going to be used by the backing machinery, it
+                // seems overly cautious.
                 |> Seq.map (fun sh -> sh.Uid.Value, sh)
                 |> Map.ofSeq
 
@@ -182,21 +189,39 @@ module AbstractDataStore =
         /// step (provided they exist!). Note that requesting results for a non-existent run
         /// means that None will be returned. If successful, the map returned will indicate
         /// for which steps a getter is available.
-        member this.CreateStepResultGetters (RunUid runUid' as runUid) =
+        member this.CreateStepResultGetters runUid =
             result {
                 let! stepHeadersForRun =
                     this.TryGetStepHeadersForRun runUid
-                    |> Result.requireSome (sprintf "Unable to locate step headers for run UID %A." runUid')
+                    |> Result.requireSome "Unable to locate step headers for run."
 
                 let getters =
                     stepHeadersForRun
-                    |> Seq.indexed
-                    |> Seq.map (fun (idx, hdr) ->
-                        hdr.Uid, stepResultsDispatcher.TryGetStepResults runUid' (int16 idx))
+                    |> Seq.map (fun hdr ->
+                        hdr.Uid, stepResultsDispatcher.TryGetRows runUid hdr.Uid)
                     |> Map.ofSeq
 
-                return getters                                 
-            }        
+                return getters
+            }
+            
+        member _.DeleteResultsForPolicy stepUid policyId =
+            0
+
+
+        // --- STEP VALIDATION ISSUES ---
+
+        member this.AddValidationIssues (RunUid runUid') (StepUid stepUid') policyId issues =
+            let newRows : StepValidationIssuesDTO =
+                issues
+                |> Seq.map
+                {
+                    run_uid = runUid'
+                    step_uid = stepUid'
+                    policy_id = policyId
+                    issues = issues
+                }
+                
+            stepValidationIssuesDispatcher.InsertRow newRowDTO
        
 
         // --- POLICY DATA ---
@@ -235,4 +260,4 @@ module AbstractDataStore =
 
                 return exitedPolicyIds, remainingPolicyIds, newPolicyIds
             }
-                  
+
