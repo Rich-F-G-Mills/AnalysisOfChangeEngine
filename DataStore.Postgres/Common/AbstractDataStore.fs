@@ -211,17 +211,18 @@ module AbstractDataStore =
         // --- STEP VALIDATION ISSUES ---
 
         member this.AddValidationIssues (RunUid runUid') (StepUid stepUid') policyId issues =
-            let newRows : StepValidationIssuesDTO =
+            let newRows =
                 issues
-                |> Seq.map
-                {
-                    run_uid = runUid'
-                    step_uid = stepUid'
-                    policy_id = policyId
-                    issues = issues
-                }
-                
-            stepValidationIssuesDispatcher.InsertRow newRowDTO
+                |> List.map (fun (classification, message) ->
+                    {
+                        run_uid         = runUid'
+                        step_uid        = stepUid'
+                        policy_id       = policyId
+                        classification  = classification
+                        message         = message
+                    })    
+                    
+            do stepValidationIssuesDispatcher.InsertRows newRows
        
 
         // --- POLICY DATA ---

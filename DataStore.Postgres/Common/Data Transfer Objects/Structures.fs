@@ -326,7 +326,7 @@ module internal StepResultsDTO =
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
 [<PostgresCommonEnumeration("validation_issue_classification")>]
-type internal ValidationIssueClassification =
+type ValidationIssueClassification =
     | WARNING
     | ERROR
 
@@ -345,7 +345,7 @@ module internal StepValidationIssuesDTO =
 
     type internal IDispatcher =
         interface
-            abstract member InsertRow       : StepValidationIssuesDTO -> unit
+            abstract member InsertRows      : StepValidationIssuesDTO list -> unit
             abstract member DeleteRows      : RunUid -> unit
             abstract member DeleteRows      : RunUid * policyIds: string Set -> unit
         end
@@ -356,8 +356,8 @@ module internal StepValidationIssuesDTO =
             new PostgresTableDispatcher<StepValidationIssuesDTO, Unit>
                 ("step_validation_issues", schema, connection)
 
-        let rowInserter =
-            dispatcher.MakeRowInserter ()
+        let rowsInserter =
+            dispatcher.MakeMultipleRowInserter ()
 
         let deleteValidationIssues =
             dispatcher.MakeEquality1Remover <@ _.run_uid @>
@@ -367,8 +367,13 @@ module internal StepValidationIssuesDTO =
 
         {
             new IDispatcher with
-                member _.InsertRow row =
-                    ignore <| rowInserter (row, ())
+                member _.InsertRows rows =
+                    // It's a shame this step is needed. However, without further specialisation
+                    // of the rows inserter logic, this is the best we can do.
+                    let rows' =
+                        rows |> List.map (fun r -> r, ())
+
+                    ignore <| rowsInserter rows'
 
                 member _.DeleteRows (RunUid runUid') = 
                     ignore <| deleteValidationIssues runUid'

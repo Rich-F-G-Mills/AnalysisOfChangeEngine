@@ -1,7 +1,9 @@
 ﻿
 namespace AnalysisOfChangeEngine.DataStore.Postgres.DataTransferObjects
 
+open System
 open System.Reflection
+open System.Text
 open FSharp.Linq.RuntimeHelpers
 open FSharp.Reflection
 open FSharp.Quotations
@@ -50,6 +52,42 @@ module private RecordParser =
                 Expr.Lambda(rowReaderVarDef, Expr.NewRecord(typeof<'TRecord>, columnParsers))
 
             downcast LeafExpressionConverter.EvaluateQuotation newDtoExpr
+
+
+[<RequireQualifiedAccess>]
+module private StringBuilderPool =
+
+    open Microsoft.Extensions.ObjectPool
+
+
+    type internal IDisposableStringBuilder =
+        interface
+            inherit IDisposable
+
+            abstract member Append: string -> unit
+            abstract member AppendJoin: string -> seq<string> -> unit
+        end
+
+
+    let private poolProvider =
+        new DefaultObjectPoolProvider ()
+
+    let private stringBuilderPool =
+        poolProvider.CreateStringBuilderPool ()
+
+    let getDisposable () =
+        let sb =
+            stringBuilderPool.Get ()
+
+        {
+            new IDisposableStringBuilder with
+                member _.Append str =
+                    sb.Append str |> ignore
+                member _.AppendJoin concat strs =
+                    sb.AppendJoin (concat, strs) |> ignore
+                member _.Dispose () =
+                    stringBuilderPool.Return sb
+        }
 
 
 type PostgresTableDispatcher<'TBaseRow, 'TAugRow> (tableName: string, schema: string, connection) =
@@ -357,8 +395,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow> (tableName: string, schema: st
                 |> Sql.executeNonQuery
 
 
-    // This isn't the most efficient implementation possible. However, it isn't likely
-    // to be used that often, meaning we can trade some performance for elegance.
+    // In order to reduce the amount of heap allocated strings, 
     member _.MakeEquality1Multiple1Remover
         (column1: Expr<'TBaseRow -> 'TValue1>, column2: Expr<'TBaseRow -> 'TValue2>) =
             let column1Name, column2Name =
@@ -373,8 +410,8 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow> (tableName: string, schema: st
                 downcast TransferableType.getForType schema typeof<'TValue1>,
                 downcast TransferableType.getForType schema typeof<'TValue2>
 
-            let sqlCommand =
-                sprintf "DELETE FROM \"%s\".\"%s\" WHERE (%s = %s) AND (%s IN (%s))"
+            let sqlCommandPreamble =
+                sprintf "DELETE FROM \"%s\".\"%s\" WHERE (%s = %s) AND (%s IN ("
                     schema
                     tableName
                     (tt1.ToSqlSelector (sprintf "\"%s\"" column1Name))
@@ -382,6 +419,11 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow> (tableName: string, schema: st
                     (tt2.ToSqlSelector (sprintf "\"%s\"" column2Name))
 
             fun value1 (value2Set: _ Set) ->
+                use sqlCommand =
+                    StringBuilderPool.getDisposable ()
+
+                do sqlCommand.Append sqlCommandPreamble
+
                 let paramProps =
                     value2Set
                     |> Seq.mapi (fun idx value2 ->
@@ -395,10 +437,10 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow> (tableName: string, schema: st
                         |})
                     |> Seq.toList
 
-                let combinedParamSites =
-                    paramProps
-                    |> Seq.map _.ParamSite
-                    |> String.join ", "
+                // Ideally we'd construct the param sites using SringBuilder primitives. However,
+                // given their use within the parameter tuples below, might as well use them here!
+                do sqlCommand.AppendJoin "," (paramProps |> Seq.map _.ParamSite)
+                do sqlCommand.Append ("))")
 
                 let combinedParamTuples =
                     paramProps
@@ -408,7 +450,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow> (tableName: string, schema: st
 
                 connection
                 |> Sql.existingConnection
-                |> Sql.query (sqlCommand combinedParamSites)
+                |> Sql.query (sqlCommand.ToString ())
                 |> Sql.parameters combinedParamTuples
                 |> Sql.executeNonQuery
 
@@ -486,19 +528,14 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow> (tableName: string, schema: st
             |> Sql.executeNonQuery
 
     // Deferred so that we only create an inserter when required.
-    // TODO - This is not an efficient implementation! If nothing else, we're going to be allocating
-    // a lot of intermediate strings on the heap. This suggests we might want to be using a StringBuilder,
-    // or better yet, a StringBuilder pool. However, unlikely to be a performance bottleneck.
     member _.MakeMultipleRowInserter () =
         let combinedColumnNames =
             combinedTableColumns
-            // We just need to list out the column names. This is NOT the same as
-            // when we specify them for a SELECT statement.
             |> Seq.map (_.Name >> sprintf "\"%s\"")
             |> String.join ", "
 
-        let sqlInsert =
-            sprintf "INSERT INTO \"%s\".\"%s\" (%s) VALUES %s"
+        let sqlCommandPreamble =
+            sprintf "INSERT INTO \"%s\".\"%s\" (%s) VALUES "
                 schema tableName combinedColumnNames
 
         let rowIdxVarDef =
@@ -556,22 +593,31 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow> (tableName: string, schema: st
             downcast LeafExpressionConverter.EvaluateQuotation constructParamPropsExpr
 
         fun (rows: ('TBaseRow * 'TAugRow) List) ->
+            use sqlCommand =
+                StringBuilderPool.getDisposable ()
+
+            do sqlCommand.Append sqlCommandPreamble
+
             let paramProps =
                 rows
                 |> List.mapi (fun rowIdx (baseRow, augRow) ->
                     constructParamProps (rowIdx, baseRow, augRow))
 
-            let combinedParamSites =
-                paramProps
-                |> Seq.map (fun rowParamProps ->
-                    rowParamProps
+            for rowProps in paramProps do
+                do sqlCommand.Append "("
+
+                let rowParamSites =
+                    rowProps
                     |> Seq.map (fun (_, paramSite, _) -> paramSite)
-                    |> String.join ", "
-                    |> sprintf "(%s)")
-                |> String.join ", "
+
+                do sqlCommand.AppendJoin "," rowParamSites
+
+                do sqlCommand.Append ")"
 
             let paramValueTuples =
                 paramProps
+                // One would hope that collecting sequences would be less wasteful than collecting
+                // lists. However... This is speculation!
                 |> Seq.collect (fun rowParamProps ->
                     rowParamProps
                     |> Seq.map (fun (paramName, _, paramValue) -> paramName, paramValue))
@@ -580,7 +626,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow> (tableName: string, schema: st
             connection
             |> Sql.existingConnection
             // Ideally, this is where a StringBuilder would come in!
-            |> Sql.query (sqlInsert combinedParamSites)
+            |> Sql.query (sqlCommand.ToString ())
             |> Sql.parameters paramValueTuples
             |> Sql.executeNonQuery
 
