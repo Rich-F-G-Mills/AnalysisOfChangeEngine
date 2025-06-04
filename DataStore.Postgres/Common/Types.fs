@@ -74,16 +74,40 @@ module Types =
         }
 
 
+    [<NoEquality; NoComparison>]
+    type ProductSchemaName =
+        ProductSchemaName of string
+
+    [<NoEquality; NoComparison>]
+    type internal EnumSchemaName =
+        EnumSchemaName of string
+
+    [<NoEquality; NoComparison>]
+    type internal PgTypeName =
+        PgTypeName of string
+
+
+    [<RequireQualifiedAccess>]
+    [<NoEquality; NoComparison>]
+    type PostgresEnumerationSchema =
+        | Common
+        | ProductSpecific
+
+    [<AbstractClass>]
+    [<AttributeUsage(validOn = AttributeTargets.Class, AllowMultiple = false)>]
+    type PostgresEnumerationAttribute (pgTypeName: string, location: PostgresEnumerationSchema) =
+        inherit Attribute ()
+
+        member val PgTypeName =
+            pgTypeName
+
+        member val Location =
+            location
+
     [<Sealed>]
     type PostgresProductSpecificEnumerationAttribute (typeName: string) =
-        inherit Attribute()
-
-        member val TypeName =
-            typeName
+        inherit PostgresEnumerationAttribute (typeName, PostgresEnumerationSchema.ProductSpecific)
 
     [<Sealed>]
     type PostgresCommonEnumerationAttribute (typeName: string) =
-        inherit Attribute()
-
-        member val TypeName =
-            typeName
+        inherit PostgresEnumerationAttribute (typeName, PostgresEnumerationSchema.Common)

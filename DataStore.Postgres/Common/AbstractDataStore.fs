@@ -7,7 +7,6 @@ module AbstractDataStore =
 
     open System
     open Npgsql
-    open Npgsql.FSharp
     open FsToolkit.ErrorHandling
     open AnalysisOfChangeEngine
     open AnalysisOfChangeEngine.DataStore.Postgres.DataTransferObjects
@@ -15,30 +14,30 @@ module AbstractDataStore =
 
     [<AbstractClass>]
     type AbstractDataStore<'TPolicyRecord, 'TPolicyRecordDTO, 'TStepResults, 'TStepResultsDTO>
-        (sessionContext: SessionContext, connection: NpgsqlConnection, schema: string) =
+        (sessionContext: SessionContext, dataSource: NpgsqlDataSource, schema: string) =
 
         // --- DISPATCHERS ---
 
         let extractionHeaderDispatcher =
-            ExtractionHeaderDTO.buildDispatcher (schema, connection)
+            ExtractionHeaderDTO.buildDispatcher (schema, dataSource)
 
         let policyDataDispatcher =
-            PolicyDataDTO.builderDispatcher<'TPolicyRecordDTO> (schema, connection)
+            PolicyDataDTO.builderDispatcher<'TPolicyRecordDTO> (schema, dataSource)
 
         let runHeaderDispatcher =
-            RunHeaderDTO.buildDispatcher (schema, connection)
+            RunHeaderDTO.buildDispatcher (schema, dataSource)
 
         let runStepDispatcher =
-            DataTransferObjects.RunStepDTO.buildDispatcher (schema, connection)
+            DataTransferObjects.RunStepDTO.buildDispatcher (schema, dataSource)
 
         let stepHeaderDispatcher =
-            StepHeaderDTO.buildDispatcher (connection)
+            StepHeaderDTO.buildDispatcher (dataSource)
 
         let stepResultsDispatcher =
-            StepResultsDTO.buildDispatcher<'TStepResultsDTO> (schema, connection)
+            StepResultsDTO.buildDispatcher<'TStepResultsDTO> (schema, dataSource)
 
         let stepValidationIssuesDispatcher =
-            StepValidationIssuesDTO.buildDispatcher (schema, connection)
+            StepValidationIssuesDTO.buildDispatcher (schema, dataSource)
 
 
 

@@ -2,24 +2,25 @@
 namespace AnalysisOfChangeEngine.DataStore.Postgres.DataTransferObjects
 
 open System
+open System.Collections.Concurrent
+open System.Data.Common
 open System.Reflection
 open FSharp.Linq.RuntimeHelpers
 open FSharp.Quotations
 open FSharp.Reflection
 open FsToolkit.ErrorHandling
+open Npgsql
 
 open AnalysisOfChangeEngine.DataStore.Postgres
 
 
 type internal ITransferableType =
     interface
-        abstract member UnderlyingType      : Type with get
-        abstract member ToSqlParamValueExpr : Expr with get
-        abstract member ToSqlParamSite      : paramName: string -> string
-        abstract member ToSqlParamSiteExpr  : Expr<string -> string>
-        abstract member ToSqlLiteralExpr    : Expr with get
-        abstract member ToSqlSelector       : string -> string
-        abstract member ReadSqlColumnExpr   : Expr<RowReader> * string -> Expr
+        abstract member UnderlyingType              : Type with get
+        abstract member ToSqlParamValueExpr         : ProductSchemaName -> Expr
+        abstract member ToSqlParamValueArrayExpr    : ProductSchemaName -> Expr
+        abstract member SqlColMapper                : string -> string
+        abstract member ReadSqlColumnExpr           : Expr<DbDataReader> * int -> Expr
     end
 
 // The generic version is more usueful when it comes to the type-safety it provides.
@@ -27,310 +28,323 @@ type internal ITransferableType<'TValue> =
     interface
         inherit ITransferableType
 
-        abstract member ToSqlParamValueExpr : Expr<'TValue -> SqlValue> with get
-        abstract member ToSqlParamValue     : 'TValue -> SqlValue
-        abstract member ToSqlLiteralExpr    : Expr<'TValue -> string> with get
-        abstract member ReadSqlColumnExpr   : Expr<RowReader> * string -> Expr<'TValue>
+        // We use the non-generic version of the Sql parameter as it won't always have the
+        // same generic type as that used in the underlying DTO member type.
+        // eg... Such as for enums where the underlying type is a string.
+        abstract member ToSqlParamValueExpr         : ProductSchemaName -> Expr<'TValue -> NpgsqlParameter>
+        abstract member ToSqlParamValueArrayExpr    : ProductSchemaName -> Expr<'TValue array -> NpgsqlParameter>
+        abstract member ToSqlParamValue             : ProductSchemaName -> ('TValue -> NpgsqlParameter)
+        abstract member ToSqlParamValueArray        : ProductSchemaName -> ('TValue array -> NpgsqlParameter)
+        abstract member ReadSqlColumnExpr           : Expr<DbDataReader> * int -> Expr<'TValue>
     end
 
 
-(*
-Design Decision:
-    In the case of enumerations, we will need to be able to invoke the corresponding
-    transferable type generator via reflection. Easier to locate and invoke
-    the required function if we use a pseudo-static class rather than an F# module.
-*)
-[<AbstractClass; Sealed>]
-type private TransferableTypeFactory private () =
-    
-    static member internal createFor<'TValue>
-        colSelector colReaderExpr toSqlParamValueExpr toSqlParamSiteExpr toSqlLiteralExpr
-        : ITransferableType =
-            // Prevents the user from having to supply both the Expr and non-Expr versions/
-            // TODO - Could this be done using the ReflectedDefinition attribute?
-            let toSqlParamValue: 'TValue -> SqlValue =
-                downcast LeafExpressionConverter.EvaluateQuotation toSqlParamValueExpr  
-                
-            let toSqlParamSite: string -> string =
-                downcast LeafExpressionConverter.EvaluateQuotation toSqlParamSiteExpr
-
-            let transferableType =
-                {
-                    new ITransferableType<'TValue> with
-                        member _.ToSqlParamValueExpr with get()         = toSqlParamValueExpr
-                        member _.ToSqlParamValue value                  = toSqlParamValue value
-                        member _.ToSqlLiteralExpr with get()            = toSqlLiteralExpr                  
-                        member _.ReadSqlColumnExpr (rrExpr, colName)    = colReaderExpr rrExpr colName                    
-
-                    interface ITransferableType with                                            
-                        member _.UnderlyingType                         = typeof<'TValue>
-                        member _.ToSqlParamSiteExpr with get()          = toSqlParamSiteExpr
-                        member _.ToSqlParamSite paramName               = toSqlParamSite paramName
-                        member _.ToSqlSelector colName                  = colSelector colName
-                        member _.ToSqlParamValueExpr with get()         = toSqlParamValueExpr
-                        member _.ToSqlLiteralExpr   with get()          = toSqlLiteralExpr                    
-                        member _.ReadSqlColumnExpr (rrExpr, colName)    = colReaderExpr rrExpr colName                                  
-                }
-
-            upcast transferableType
-
-    // Here we assume that the supplied type parameter is for the discriminated
-    // union we're looking to serialise to the database.
-    // Note that this returns a transferable type for the DU and its optional alter-ego.
-    static member internal createForEnum<'TEnum> (schema, pgEnumName) =
-        let enumType =
-            typeof<'TEnum>
-
-        let caseMapping =
-            FSharpType.GetUnionCases (enumType, BindingFlags.NonPublic)
-            |> Seq.map (fun uc -> uc.Name, uc)
-            |> Map.ofSeq
-
-        // We need to ensure that our enumeration cases are non-parameterised.
-        assert
-            caseMapping
-            |> Map.forall (fun _ uc -> uc.GetFields().Length = 0)
-
-        let enumStrValueVarDef =
-            Var ("enumStrValue", typeof<string>)
-
-        let enumStrValueVar =
-            Expr.Var enumStrValueVarDef
-            |> Expr.Cast<string>
-
-        let caseExprs =
-            caseMapping
-            |> Map.toSeq
-            |> Seq.map (fun (enumStrValue, enumCaseInfo) ->
-                {|
-                    StrVsStr =
-                        <@ %enumStrValueVar = enumStrValue @>
-                    CaseCreation =
-                        Expr.NewUnionCase(enumCaseInfo, [])
-                        |> Expr.Cast<'TEnum>
-                |})
-            |> Seq.toList      
-                    
-        let colSelector =
-            sprintf "%s::text"
-
-        // If we get supplied text that doesn't correspond to one of our DU levels...
-        // This will intentionally fail as that suggests a discrepency between our
-        // view of the enumeration here and the underlying database type.
-        let stringToEnumMappingLambdaExpr =
-            Expr.Lambda(
-                enumStrValueVarDef,
-                caseExprs
-                |> Seq.fold
-                    (fun elseExpr caseExpr ->
-                        Expr.IfThenElse(caseExpr.StrVsStr, caseExpr.CaseCreation, elseExpr)
-                        |> Expr.Cast<'TEnum>)
-                    <@ failwith "Unable to transfer enumeration case." @>
-            )
-            |> Expr.Cast<string -> 'TEnum>            
-
-        let colReaderExpr (r: Expr<RowReader>) colName =
-            <@ (%stringToEnumMappingLambdaExpr) ((%r).string colName) @>
-
-        let optionalColReaderExpr (r: Expr<RowReader>) colName =
-            <@ Option.map %stringToEnumMappingLambdaExpr ((%r).stringOrNone colName) @>
-
-        let toSqlParamValueExpr =
-            // Given we're not checking the available enumeration values from the Postgres side,
-            // no reason not to just use the %A formatter below.
-            // TODO - Could we query the underlying database for the available values?
-            <@ fun (enumValue: 'TEnum) -> SqlValue.String (sprintf "%A" enumValue) @>
-
-        let optionalToSqlParamValueExpr =
-            // Given we're not checking the available enumeration values from the Postgres side,
-            // no reason not to just use the %A formatter below.
-            <@ Option.either (SqlValue.String << sprintf "%A") (fun _ -> SqlValue.Null) @>
-                
-        let toSqlParamSite =
-            <@ fun paramName -> sprintf "%s::\"%s\".\"%s\"" paramName schema pgEnumName @>
-
-        let toSqlLiteralExpr =
-            // Same situation as for the parameter value logic above.
-            <@ fun enumValue -> sprintf "'%A'::\"%s\".\"%s\"" enumValue schema pgEnumName @>
-
-        let optionalToSqlLiteralExpr =
-            <@ Option.either
-                (fun enumValue -> sprintf "'%A'::\"%s\".\"%s\"" enumValue schema pgEnumName)
-                (fun _ -> sprintf "NULL::\"%s\".\"%s\"" schema pgEnumName) @>
-
-        let transferableType =
-            TransferableTypeFactory.createFor<'TEnum>
-                colSelector colReaderExpr toSqlParamValueExpr toSqlParamSite toSqlLiteralExpr
-
-        let optionalTransferableType =
-            TransferableTypeFactory.createFor<'TEnum option>
-                colSelector optionalColReaderExpr optionalToSqlParamValueExpr toSqlParamSite optionalToSqlLiteralExpr
-
-        transferableType, optionalTransferableType
-
-
 [<RequireQualifiedAccess>]
-module internal TransferableType =
-    
-    open System.Collections.Generic
+module private CachedByProductSchema =
+
+    let make (fn: ProductSchemaName -> 'T) =
+        // In theory, we could make this non-concurrent as this code is most likely to
+        // be called via assembly start-up logic, which is single-threaded.
+        // However, with this minor change, can make it easily support parallel execution.
+        let cachedValues =
+            new ConcurrentDictionary<string, 'T> ()
+
+        fun (ProductSchemaName productSchema' as productSchema) ->
+            // In theory, this will lead to allocations as the getter factory is using a closure.
+            // However, for the sake of aesthetic beauty, we'll live with it.
+            cachedValues.GetOrAdd (productSchema', fun _ -> fn productSchema)
 
 
-    let private makePrimitiveTransferType<'TValue> colReaderExpr toSqlParamValueExpr toSqlLiteralExpr =
-        TransferableTypeFactory.createFor<'TValue> id colReaderExpr toSqlParamValueExpr <@ id @> toSqlLiteralExpr
+[<AbstractClass; Sealed>]
+type internal TransferableType private () =
 
-    let private primitiveTransferTypes =
-        [
-            makePrimitiveTransferType<bool>
-                (fun r c -> <@ (%r).bool c @>)
-                <@ SqlValue.Bool @>
-                <@ sprintf "%b" @>
+    static let cachedTransferableTypes =
+        new ConcurrentDictionary<Type, ITransferableType>()
 
-            makePrimitiveTransferType<Int16>
-                (fun r c -> <@ (%r).int16 c @>)
-                <@ int >> SqlValue.Int @>
-                <@ sprintf "%i" @>
-
-            makePrimitiveTransferType<Int16 option>
-                (fun r c -> <@ (%r).int16OrNone c @>)
-                <@ Option.either (SqlValue.Int << int) (fun _ -> SqlValue.Null) @>
-                <@ Option.either (sprintf "%i") (fun _ -> "NULL") @>
-
-            makePrimitiveTransferType<int>
-                (fun r c -> <@ (%r).int c @>)
-                <@ SqlValue.Int @>
-                <@ sprintf "%i" @>
-
-            makePrimitiveTransferType<Guid>
-                (fun r c -> <@ (%r).uuid c @>)
-                <@ SqlValue.Uuid @>
-                <@ sprintf "'%O'" @>
-
-            makePrimitiveTransferType<Guid option>
-                (fun r c -> <@ (%r).uuidOrNone c @>)
-                <@ SqlValue.UuidOrNull @>
-                <@ Option.either (sprintf "'%O'") (fun _ -> "NULL") @>
-
-            makePrimitiveTransferType<string>
-                (fun r c -> <@ (%r).string c @>)
-                <@ SqlValue.String @>
-                <@ sprintf "'%s'" @>
-
-            makePrimitiveTransferType<string option>
-                (fun r c -> <@ (%r).stringOrNone c @>)
-                <@ SqlValue.StringOrNull @>
-                <@ Option.either (sprintf "'%s'") (fun _ -> "NULL") @> 
-
-            makePrimitiveTransferType<DateOnly>
-                (fun r c -> <@ (%r).dateOnly c @>)
-                <@ Choice2Of2 >> SqlValue.Date @>
-                <@ _.ToString("O") >> sprintf "'%s'::date" @>
-
-            makePrimitiveTransferType<DateTime>
-                (fun r c -> <@ (%r).dateTime c @>)
-                <@ SqlValue.Timestamp @>
-                <@ _.ToString("O") >> sprintf "'%s'::timestamp" @>
-
-            makePrimitiveTransferType<float32>
-                (fun r c -> <@ (%r).float c @>)
-                <@ SqlValue.Real @>
-                <@ sprintf "%f" @>
-        ]
-
-    let private enumTransferTypeMI =
-        typeof<TransferableTypeFactory>
-        |> _.GetMethod(
-                nameof(TransferableTypeFactory.createForEnum),
-                BindingFlags.Static ||| BindingFlags.NonPublic)
-
-    let private invokeEnumTransferType (t: Type, schema: string, pgEnumName: string)
-        : ITransferableType * ITransferableType =
-            // You'd think we'd need to supply parameters as a tuple... But no!
-            downcast enumTransferTypeMI.MakeGenericMethod(t).Invoke(null, [| schema; pgEnumName |])
-
-    let private (|KnownPrimitiveType|_|) t =
-        primitiveTransferTypes
-        |> List.tryPick (function | tt when t = tt.UnderlyingType -> Some tt | _ -> None)
-
-    let private (|EnumType|_|) schema t =
+    static let (|NonOptionalNonParameterizedUnion|_|) (unionType: Type) =
         option {
-            do! Option.requireTrue (FSharpType.IsUnion (t, BindingFlags.NonPublic))
+            do! Option.requireTrue (FSharpType.IsUnion (unionType, BindingFlags.NonPublic))
 
-            let pgCommonEnumAttrib =
-                t.GetCustomAttribute<PostgresCommonEnumerationAttribute> (true)
+            let recordColumns =
+                FSharpType.GetUnionCases (unionType, BindingFlags.NonPublic)
+
+            let allNonParameterized =
+                recordColumns
+                |> Array.forall (fun uc -> uc.GetFields().Length = 0)
+
+            do! Option.requireTrue allNonParameterized
+
+            let! pgEnumAttrib =
+                unionType.GetCustomAttribute<PostgresEnumerationAttribute> (true)
                 |> Option.ofNull
 
-            let pgProductSpecificEnumAttrib =
-                t.GetCustomAttribute<PostgresProductSpecificEnumerationAttribute> (true)
-                |> Option.ofNull
+            let mapper =
+                match pgEnumAttrib.Location with
+                | PostgresEnumerationSchema.Common ->
+                    fun _ -> EnumSchemaName "common"
+                | PostgresEnumerationSchema.ProductSpecific ->
+                    fun (ProductSchemaName name) -> EnumSchemaName name
 
-            // We must have one or the other of these attributes.
-            match pgCommonEnumAttrib, pgProductSpecificEnumAttrib with
-            | Some pgCommonEnumAttrib', None ->
-                return "common", pgCommonEnumAttrib'.TypeName
-            | None, Some pgProductSpecificEnumAttrib' ->
-                return schema, pgProductSpecificEnumAttrib'.TypeName
-            | _ ->
-                return! None
+            return PgTypeName pgEnumAttrib.PgTypeName, mapper
         }
 
-    let private (|Optional|_|) (t: Type) =
+    static let (|NonOptionalNonUnion|_|) (nonOptionalType: Type) =
+        Option.requireFalse (FSharpType.IsUnion (nonOptionalType, BindingFlags.NonPublic))
+
+    static let (|Optional|_|) (maybeOptionalType: Type) =
         option {
-            do! Option.requireTrue t.IsGenericType
+            do! Option.requireTrue maybeOptionalType.IsGenericType
 
             let genericTypeDef =
-                t.GetGenericTypeDefinition()
+                maybeOptionalType.GetGenericTypeDefinition()
 
             do! Option.requireTrue (genericTypeDef = typedefof<_ option>)
 
             let innerType =
-                t.GenericTypeArguments[0]
+                maybeOptionalType.GenericTypeArguments[0]
 
             return innerType
         }
 
-    let private (|MaybeOptionalEnumType|_|) schema : Type -> _ = function
-        // Check if we're optional first.
-        | Optional (EnumType schema (schemaToUse, pgEnumName) as enumType) ->
-            Some (enumType, schemaToUse, pgEnumName)
-        | EnumType schema (schemaToUse, pgEnumName) as enumType ->
-            Some (enumType, schemaToUse, pgEnumName)
-        | _ ->
-            None
+    // We cannot re-use this... If a query results in multiple null parameters,
+    // NPGSQL complains if we use the same object instance more than once.
+    static member makeNullParameter () =
+        new NpgsqlParameter (Value = DBNull.Value)
 
-    // Given the transferable type for an enumeration also depends on the schema,
-    // we need to include that in the key as well.
-    let private cachedEnumTypes =
-        new Dictionary<Type * string, ITransferableType>()
+    static member makeTypedParameter<'T> (value: 'T) : NpgsqlParameter =
+        // Previously, the code below was being used directly within a code quotation.
+        // However, the runtime expression compiler could not cope with the resulting logic.
+        // A simple solution was to wrap the logic in a static member that CAN be called.
+        upcast new NpgsqlParameter<'T> (TypedValue = value)
 
-    let internal getForType (schema: string) = function
-        | KnownPrimitiveType tt ->
-            tt
+    static member makeTypedParameter<'T> (value: 'T, dataTypeName: string) : NpgsqlParameter =
+        // As above. Using multiple dispatch for those instances where a data type name is needed.
+        upcast new NpgsqlParameter<'T> (TypedValue = value, DataTypeName = dataTypeName)
 
-        | MaybeOptionalEnumType schema (enumType, schemaToUse, pgEnumName) as t ->
-            match cachedEnumTypes.TryGetValue((t, schemaToUse)) with
-            | true, tt ->
-                tt
+    // Cannot use let binding as generic. Same applies to the following below.
+    static member private CreateFor<'TValue> colMapper colReaderExpr toSqlParamValueExpr toSqlParamValueArrayExpr =
+        // Here we cache various expressions by product schema. In absence of any
+        // dependence on the prevailing product schema, we _might_ have just used lazy
+        // values instead.
+        let toSqlParamValueExpr' =
+            CachedByProductSchema.make toSqlParamValueExpr
 
-            | false, _ ->
-                // If we're not already cached... We need to go through the motions...
-                let tt, optionalTt =
-                    invokeEnumTransferType (enumType, schemaToUse, pgEnumName)
+        let toSqlParamValueArrayExpr' =
+            CachedByProductSchema.make toSqlParamValueArrayExpr
 
-                let asOptionalType =
-                    typedefof<_ option>.MakeGenericType(enumType)
+        let toSqlParamValue' =
+            CachedByProductSchema.make (fun productSchema ->
+                // Might as well re-use the expression we created above!
+                downcast LeafExpressionConverter.EvaluateQuotation (toSqlParamValueExpr' productSchema))
 
-                // Given we have the transferable type for the DU and its optional alter-ego, we'll
-                // add them both while we have them.
-                do cachedEnumTypes.Add ((enumType, schemaToUse), tt)
-                do cachedEnumTypes.Add ((asOptionalType, schemaToUse), optionalTt)
+        let toSqlParamValueArray' =
+            CachedByProductSchema.make (fun productSchema ->
+                downcast LeafExpressionConverter.EvaluateQuotation (toSqlParamValueArrayExpr' productSchema))
 
-                // Now we need to figure out which one we need to return...
-                if t = enumType then
-                    tt
-                elif t = asOptionalType then
-                    optionalTt
-                else
-                    failwith "Unexpected error."
- 
-        | t ->
-            failwithf "Unable to create transferable type for '%s'." t.Name
+        {
+            new ITransferableType<'TValue> with
+                member _.ToSqlParamValueExpr productSchema      = toSqlParamValueExpr' productSchema
+                member _.ToSqlParamValueArrayExpr productSchema = toSqlParamValueArrayExpr' productSchema
+                member _.ToSqlParamValue productSchema          = toSqlParamValue' productSchema
+                member _.ToSqlParamValueArray productSchema     = toSqlParamValueArray' productSchema
+                member _.ReadSqlColumnExpr (rrExpr, colIdx)     = colReaderExpr rrExpr colIdx                    
+
+            interface ITransferableType with                                            
+                member _.UnderlyingType                         = typeof<'TValue>
+                member _.SqlColMapper colSpec                   = colMapper colSpec
+                member _.ToSqlParamValueExpr productSchema      = toSqlParamValueExpr' productSchema
+                member _.ToSqlParamValueArrayExpr productSchema = toSqlParamValueArrayExpr' productSchema
+                member _.ReadSqlColumnExpr (rrExpr, colIdx)     = colReaderExpr rrExpr colIdx                                  
+        }
+
+    static member private CreateForNonOptionalNonUnion<'TNonOptionalValue> () =
+        let colReaderExpr (r: Expr<DbDataReader>) colIdx =
+            <@ (%r).GetFieldValue<'TNonOptionalValue> colIdx @>
+
+        // This is independent of the product schema, so we can re-use this as needed.
+        let toSqlParamValueExpr': Expr<_ -> NpgsqlParameter> =
+            <@
+            fun value ->
+                TransferableType.makeTypedParameter<_> value
+            @>
+
+        let toSqlParamValueArrayExpr': Expr<_ -> NpgsqlParameter> =
+            <@
+            fun value ->
+                TransferableType.makeTypedParameter<_ array> value
+            @>
+
+        TransferableType.CreateFor<'TNonOptionalValue>
+            id colReaderExpr (fun _ -> toSqlParamValueExpr') (fun _ -> toSqlParamValueArrayExpr')
+
+    static member private CreateForNonOptionalUnion<'TNonOptionalUnion> (PgTypeName pgTypeName', mapper) =
+        let nonOptionalUnionType =
+            typeof<'TNonOptionalUnion>
+
+        let recordColumns =
+            FSharpType.GetUnionCases (nonOptionalUnionType, BindingFlags.NonPublic)
+
+        let columnProps =
+            recordColumns
+            |> Array.map (fun uc ->
+                let unionName =
+                    Expr.Cast<string> <| Expr.Value uc.Name            
+
+                {|
+                    StringComparer =
+                        // Although we could capture the variable expression via a closure,
+                        // this makes it explicit what variable is being used.
+                        fun strRepVar ->
+                            <@ (%strRepVar) = %unionName @>
+                    ValueComparer =
+                        // As above.
+                        fun (unionValVar: Expr<'TNonOptionalUnion>) ->
+                            Expr.Cast<bool> <| Expr.UnionCaseTest (unionValVar, uc)
+                    CaseFactory =
+                        Expr.Cast<'TNonOptionalUnion> <| Expr.NewUnionCase (uc, [])
+                |})
+
+        let strRepVarDef =
+            Var ("strRep", typeof<string>)            
+
+        let strRepVar =
+            Expr.Cast<string> <| Expr.Var strRepVarDef
+
+        let colReaderExpr (r: Expr<DbDataReader>) colIdx =
+            Expr.Let(
+                strRepVarDef,
+                <@ (%r).GetString colIdx @>,
+                columnProps
+                |> Seq.fold
+                    (fun onElse p ->
+                        Expr.IfThenElse (p.StringComparer strRepVar, p.CaseFactory, onElse)
+                        |> Expr.Cast<'TNonOptionalUnion>)
+                    <@ failwith "Unable to convert union case." @>
+            )
+            |> Expr.Cast<'TNonOptionalUnion>
+
+        let toSqlParameterValueExpr (productSchema: ProductSchemaName): Expr<_ -> NpgsqlParameter> =
+            let (EnumSchemaName enumSchema') =
+                mapper productSchema
+
+            let dataTypeName =
+                sprintf "%s.%s" enumSchema' pgTypeName'
+
+            <@
+            fun (unionVal: 'TNonOptionalUnion) ->
+                let strRep =
+                    // Given we're not actively checking against the available enumeration cases,
+                    // we might as well just use our own string representation.
+                    sprintf "%A" unionVal
+
+                TransferableType.makeTypedParameter<string>
+                    (strRep, dataTypeName)
+            @>
+
+        let toSqlParameterValueArrayExpr (productSchema: ProductSchemaName): Expr<_ -> NpgsqlParameter> =
+            let (EnumSchemaName enumSchema') =
+                mapper productSchema
+
+            let dataTypeName =
+                sprintf "%s.%s[]" enumSchema' pgTypeName'
+
+            <@
+            fun (unionVals: 'TNonOptionalUnion array) ->
+                let strReps =
+                    unionVals
+                    |> Array.map (sprintf "%A")
+
+                TransferableType.makeTypedParameter<string array>
+                    (strReps, dataTypeName)
+            @>
+
+        TransferableType.CreateFor<'TNonOptionalUnion>
+            (sprintf "%s::text") colReaderExpr toSqlParameterValueExpr toSqlParameterValueArrayExpr
+
+    static member private CreateForOptional<'TInnerType> () =
+        let transferableType =
+            TransferableType.GetFor<'TInnerType> ()
+
+        let colReaderExpr r colIdx =
+            let innerColReaderExpr =
+                transferableType.ReadSqlColumnExpr (r, colIdx)
+
+            <@
+            if (%r).IsDBNull colIdx then
+                None
+            else
+                Some (%innerColReaderExpr)
+            @>
+
+        let toSqlParamValueExpr productSchema: Expr<_ -> NpgsqlParameter> =
+            let innerToSqlParamValueExpr =
+                transferableType.ToSqlParamValueExpr productSchema
+
+            <@
+            // Here we're injecting a lambda expression directly into our optional map.
+            Option.map %innerToSqlParamValueExpr
+            // There isn't any issue capturing a static member for use in this way.
+            >> Option.defaultWith TransferableType.makeNullParameter
+            @>
+
+        let toSqlParamValueArrayExpr _: Expr<_ -> NpgsqlParameter> =
+            let typeName =
+                typeof<'TInnerType>.FullName
+
+            <@
+            failwithf "Cannot convert optional type '%s' into an parameter array." typeName
+            @>
+
+        TransferableType.CreateFor<'TInnerType option>
+            // Just because it's NULL-able, we can still use the inner column's mapper.
+            transferableType.SqlColMapper colReaderExpr toSqlParamValueExpr toSqlParamValueArrayExpr
+
+    static member val private mi_CreateForOptional =
+        typeof<TransferableType>
+            .GetMethod(
+                nameof(TransferableType.CreateForOptional),
+                // Will not find method without these binding flags.
+                BindingFlags.Static ||| BindingFlags.NonPublic
+            )
+
+    static member private InvokeCreateForOptional (innerType: Type) : ITransferableType =
+        downcast TransferableType.mi_CreateForOptional
+            .MakeGenericMethod(innerType)
+            .Invoke(null, Array.empty)
+
+    static member GetFor<'TValue> ()
+        : ITransferableType<'TValue> =
+            let valueType =
+                typeof<'TValue>
+
+            downcast cachedTransferableTypes.GetOrAdd (valueType, fun _ ->
+                let transferableType =
+                    match valueType with
+                    | NonOptionalNonUnion ->
+                        TransferableType.CreateForNonOptionalNonUnion<'TValue> ()
+
+                    | NonOptionalNonParameterizedUnion (pgTypeName, schemaMapper) ->
+                        TransferableType.CreateForNonOptionalUnion<'TValue>
+                            (pgTypeName, schemaMapper)
+
+                    | Optional innerType ->
+                        // No way around this. We don't have a way to unwrap the outer layer
+                        // of the optional type represented by the generic.
+                        downcast TransferableType.InvokeCreateForOptional innerType
+
+                    | _ ->
+                        failwithf "Unable to create transferable type for '%s'." valueType.FullName
+
+                transferableType :> ITransferableType)
+                
+    static member val private mi_GetFor =
+        typeof<TransferableType>
+            .GetMethod(
+                nameof(TransferableType.GetFor),
+                BindingFlags.Static ||| BindingFlags.NonPublic
+            )
+
+    static member InvokeGetFor (valueType: Type) : ITransferableType =
+        downcast TransferableType.mi_GetFor
+            .MakeGenericMethod(valueType)
+            .Invoke(null, Array.empty)            

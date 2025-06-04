@@ -104,10 +104,10 @@ module OBWholeOfLife =
                 abstract member SelectAll       : unit -> TableCodeDTO list
             end
 
-        let internal buildDispatcher (connection: NpgsqlConnection) =
+        let internal buildDispatcher dataSource =
             let dispatcher =
                 new DataTransferObjects.PostgresTableDispatcher<TableCodeDTO, unit>
-                    ("table_codes", schema, connection)
+                    ("table_codes", schema, dataSource)
 
             {
                 new IDispatcher with
@@ -116,12 +116,12 @@ module OBWholeOfLife =
             }
 
 
-    type DataStore (sessionContext: SessionContext, connection: NpgsqlConnection) =
+    type DataStore (sessionContext: SessionContext, dataSource: NpgsqlDataSource) =
         inherit AbstractDataStore<OBWholeOfLife.PolicyRecord, PolicyRecordDTO, OBWholeOfLife.StepResults, StepResultsDTO>
-            (sessionContext, connection, "ob_wol")
+            (sessionContext, dataSource, schema)
 
         let tableCodeDispatcher =
-            TableCodeDTO.buildDispatcher connection
+            TableCodeDTO.buildDispatcher dataSource
 
         let tableCodes =
             tableCodeDispatcher.SelectAll ()
@@ -220,5 +220,4 @@ module OBWholeOfLife =
                 exit_bonus_rate             = stepResults.ExitBonusRate
                 unpaid_premiums             = stepResults.UnpaidPremiums
                 death_uplift_factor         = stepResults.DeathUpliftFactor
-            }           
-
+            }

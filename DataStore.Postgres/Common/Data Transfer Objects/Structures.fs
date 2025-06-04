@@ -93,9 +93,6 @@ module internal ExtractionHeaderDTO =
         let selectByUid =
             dispatcher.MakeBaseEquality1Selector <@ _.uid @>
 
-        let rowInserter =
-            dispatcher.MakeRowInserter ()
-
         {
             new IDispatcher with
                 member _.SelectAll () =
@@ -108,7 +105,7 @@ module internal ExtractionHeaderDTO =
                     | _     -> failwith "Multiple extraction headers found."
 
                 member _.InsertRow row =
-                    ignore <| rowInserter (row, ())
+                    ignore <| dispatcher.InsertRow (row, ())
         }
 
     let toUnderlying (hdr: ExtractionHeaderDTO): ExtractionHeader =
@@ -189,9 +186,6 @@ module internal RunHeaderDTO =
         let selectByUid =
             dispatcher.MakeBaseEquality1Selector <@ _.uid @>
 
-        let rowInserter =
-            dispatcher.MakeRowInserter ()
-
         {
             new IDispatcher with
                 member _.SelectAll () =
@@ -204,7 +198,7 @@ module internal RunHeaderDTO =
                     | _     -> failwith "Multiple run headers found."
 
                 member _.InsertRow row =
-                    ignore <| rowInserter (row, ())
+                    ignore <| dispatcher.InsertRow (row, ())
         }
 
     let toUnderlying (hdr: RunHeaderDTO): RunHeader =
@@ -256,16 +250,13 @@ module internal RunStepDTO =
         let selectByRunUid =
             dispatcher.MakeBaseEquality1Selector <@ _.run_uid @>
 
-        let rowInserter =
-            dispatcher.MakeRowInserter ()
-
         {
             new IDispatcher with
                 member _.GetByRunUid (RunUid runUid') =
                     selectByRunUid runUid'
 
                 member _.InsertRow row =
-                    ignore <| rowInserter (row, ())
+                    ignore <| dispatcher.InsertRow (row, ())
         }
 
 
@@ -288,7 +279,7 @@ module internal StepResultsDTO =
             abstract member TryGetRows      : RunUid -> StepUid -> policyId: string -> 'TAugRow option
             abstract member DeleteRows      : RunUid -> unit
             // Cannot overload functions with curried arguments!
-            abstract member DeleteRows      : RunUid * policyIds: string Set -> unit
+            abstract member DeleteRows      : RunUid * policyIds: string array -> unit
             // We don't allow deleting results for a specific step/policy combination as all steps
             // would need to be run regardless.
         end
@@ -347,7 +338,7 @@ module internal StepValidationIssuesDTO =
         interface
             abstract member InsertRows      : StepValidationIssuesDTO list -> unit
             abstract member DeleteRows      : RunUid -> unit
-            abstract member DeleteRows      : RunUid * policyIds: string Set -> unit
+            abstract member DeleteRows      : RunUid * policyIds: string array -> unit
         end
 
 
@@ -355,9 +346,6 @@ module internal StepValidationIssuesDTO =
         let dispatcher =
             new PostgresTableDispatcher<StepValidationIssuesDTO, Unit>
                 ("step_validation_issues", schema, connection)
-
-        let rowsInserter =
-            dispatcher.MakeMultipleRowInserter ()
 
         let deleteValidationIssues =
             dispatcher.MakeEquality1Remover <@ _.run_uid @>
@@ -373,7 +361,7 @@ module internal StepValidationIssuesDTO =
                     let rows' =
                         rows |> List.map (fun r -> r, ())
 
-                    ignore <| rowsInserter rows'
+                    ignore <| dispatcher.InsertRows rows'
 
                 member _.DeleteRows (RunUid runUid') = 
                     ignore <| deleteValidationIssues runUid'

@@ -7,7 +7,6 @@ module Runner =
     open System
     open FsToolkit.ErrorHandling
     open Npgsql
-    open Npgsql.FSharp
     open AnalysisOfChangeEngine
     open AnalysisOfChangeEngine.Controller.WalkAnalyser
     open AnalysisOfChangeEngine.DataStore
@@ -92,19 +91,23 @@ module Runner =
             let sessionContext: SessionContext =
                 { UserName = "RICH" }
 
-            let connStr =
-                Sql.host "localhost"
-                |> Sql.port 5432
-                |> Sql.database "analysis_of_change"
-                |> Sql.username "postgres"
-                |> Sql.password "internet"
-                |> Sql.formatConnectionString
+            let connStrBdr =
+                new NpgsqlConnectionStringBuilder(
+                    Host        = "localhost",
+                    Port        = 5432,
+                    Database    =  "analysis_of_change",
+                    Username    =  "postgres",
+                    Password    = "internet"
+                )
 
-            use connection =
-                new NpgsqlConnection (connStr)
+            let dataSourceBdr =
+                new NpgsqlDataSourceBuilder (connStrBdr.ConnectionString)
+
+            let dataSource =
+                dataSourceBdr.Build ()
 
             let dataStore =
-                new Postgres.OBWholeOfLife.DataStore (sessionContext, connection)
+                new Postgres.OBWholeOfLife.DataStore (sessionContext, dataSource)
 
             //let runHeader =
             //    dataStore.TryGetRunHeader openingRunUid

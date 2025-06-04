@@ -30,6 +30,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "DataStore.Postgres", "DataS
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "DataStore.Postgres.OBWholeOfLife", "DataStore.Postgres\OB Whole-Of-Life\DataStore.Postgres.OBWholeOfLife.fsproj", "{28437AB5-B28C-4A31-8054-98A2B16C3821}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "DbPlay", "DbPlay\DbPlay.fsproj", "{7713B02E-26AF-49A7-8A93-155CA9BEF794}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -68,6 +70,10 @@ Global
 		{28437AB5-B28C-4A31-8054-98A2B16C3821}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{28437AB5-B28C-4A31-8054-98A2B16C3821}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{28437AB5-B28C-4A31-8054-98A2B16C3821}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7713B02E-26AF-49A7-8A93-155CA9BEF794}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7713B02E-26AF-49A7-8A93-155CA9BEF794}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7713B02E-26AF-49A7-8A93-155CA9BEF794}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7713B02E-26AF-49A7-8A93-155CA9BEF794}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -78,5 +84,8 @@ Global
 		{B041226E-9E41-406B-BAF1-BBF8B52AC560} = {DD055ECC-78A5-4E51-8977-0ED0CCEB5542}
 		{91CA7AAB-54D3-4465-BE3B-C8D10426BD80} = {F2E2DD18-67D3-44C9-B74E-2A5DF5265DF1}
 		{28437AB5-B28C-4A31-8054-98A2B16C3821} = {5C1363B6-D115-42DB-BA1F-0C2B95293113}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {27505255-7790-4193-983E-8E7636334A79}
 	EndGlobalSection
 EndGlobal
