@@ -126,7 +126,7 @@ module Types =
 
     /// Possible issues identified when applying step validation logic.
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
-    type StepValidationIssueClassification =
+    type ValidationIssueClassification =
         /// Although an identified issue, it is tolerable.
         | Warning
         /// Indicates a (serious) issue has been identified.
@@ -142,13 +142,13 @@ module Types =
     type StepValidationOutcome =
         /// Indicates that the validation logic was successfully applied, regardless of
         /// whether this led to validation issues being recognised (or not).
-        | Completed of (StepValidationIssueClassification * string) list
+        | Completed of (ValidationIssueClassification * string) list
         /// Indicates that the validation logic was unable to run for a specified reason.
         | Failed of Reason: string
 
         /// Alias for a completed validation without any issues raised.
         static member val Empty =
-            Completed []
+            Completed [] with get
 
     /// Step validator that receives the current policy record followed by
     /// the prior (where available) and current step results.
@@ -367,7 +367,7 @@ module Types =
                 new List<IStepHeader> ()
 
             member val InteriorSteps =
-                _interiorSteps.AsReadOnly ()            
+                _interiorSteps.AsReadOnly () with get           
 
 
             /// Required step.
@@ -419,4 +419,4 @@ module Types =
                     yield! this.InteriorSteps
                     yield this.MoveToClosingData :> IStepHeader
                     yield this.AddNewRecords :> IStepHeader
-                }
+                } with get

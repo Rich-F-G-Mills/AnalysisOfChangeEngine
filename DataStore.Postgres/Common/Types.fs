@@ -60,7 +60,7 @@ module Types =
             Comments                    : string option
             CreatedBy                   : string
             CreatedWhen                 : DateTime
-            OpeningRunUid               : RunUid option
+            PriorRunUid                 : RunUid option
             ClosingRunDate              : DateOnly
             PolicyDataExtractionUid     : ExtractionUid        
         }
@@ -99,10 +99,10 @@ module Types =
         inherit Attribute ()
 
         member val PgTypeName =
-            pgTypeName
+            pgTypeName with get
 
         member val Location =
-            location
+            location with get
 
     [<Sealed>]
     type PostgresProductSpecificEnumerationAttribute (typeName: string) =

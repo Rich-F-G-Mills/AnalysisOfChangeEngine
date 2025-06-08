@@ -9,7 +9,6 @@ open FSharp.Linq.RuntimeHelpers
 open FSharp.Reflection
 open FSharp.Quotations
 
-open FsToolkit.ErrorHandling
 open Npgsql
 
 open AnalysisOfChangeEngine.DataStore.Postgres
@@ -23,7 +22,7 @@ Design Decision:
     typed expressions, we can automate the generation of the SQL queries we'll need.
 
     The back-bone of all this is what is known as a 'dispatcher' object. This exposes a number of
-    instance methods that allow us to query the database in a number of ways.
+    instance methods that allow us to query the database in a number of (relatively) type-safe ways.
 
     In some cases, we are compiling code-quotations at runtime to achieve this.
 *)
@@ -67,7 +66,8 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
             typeof<'TAugRow>
 
         static let baseTableColumns =
-            FSharpType.GetRecordFields (baseTableType, BindingFlags.NonPublic)
+            FSharpType.GetRecordFields
+                (baseTableType, BindingFlags.Public ||| BindingFlags.NonPublic)
 
         static let augTableColumns =
             if augTableType = typeof<Unit> then
@@ -340,13 +340,28 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         tableName 
                         filterColSelector
 
-                fun value ->
+                let executeNonQuery value =
                     use dbCommand =
                         dataSource.CreateCommand sqlCommand
 
                     do ignore <| dbCommand.Parameters.Add (toSqlParamValue value)
 
                     dbCommand.ExecuteNonQuery ()
+
+                let asBatchCommand value =
+                    let dbBatchCommand = 
+                        new NpgsqlBatchCommand (sqlCommand)
+
+                    do ignore <| dbBatchCommand.Parameters.Add (toSqlParamValue value)
+
+                    dbBatchCommand
+
+                {|
+                    ExecuteNonQuery = executeNonQuery
+                    AsBatchCommand  = asBatchCommand
+                |}
+
+                
 
         member this.MakeEquality2Remover
             (column1: Expr<'TBaseRow -> 'TValue1>, column2: Expr<'TBaseRow -> 'TValue2>) =
@@ -363,7 +378,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         filterColSelector1
                         filterColSelector2
 
-                fun value1 value2 ->
+                let executeNonQuery value1 value2 =
                     use dbCommand =
                         dataSource.CreateCommand sqlCommand
 
@@ -371,6 +386,20 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                     do ignore <| dbCommand.Parameters.Add (toSqlParamValue2 value2)
 
                     dbCommand.ExecuteNonQuery ()
+
+                let asBatchCommand value1 value2 =
+                    let dbBatchCommand = 
+                        new NpgsqlBatchCommand (sqlCommand)
+
+                    do ignore <| dbBatchCommand.Parameters.Add (toSqlParamValue1 value1)
+                    do ignore <| dbBatchCommand.Parameters.Add (toSqlParamValue2 value2)
+
+                    dbBatchCommand
+
+                {|
+                    ExecuteNonQuery = executeNonQuery
+                    AsBatchCommand  = asBatchCommand
+                |}
 
         member this.MakeEquality3Remover
             (column1: Expr<'TBaseRow -> 'TValue1>, column2: Expr<'TBaseRow -> 'TValue2>, column3: Expr<'TBaseRow -> 'TValue3>) =
@@ -391,7 +420,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         filterColSelector2
                         filterColSelector3
 
-                fun value1 value2 value3 ->
+                let executeNonQuery value1 value2 value3 =
                     use dbCommand =
                         dataSource.CreateCommand sqlCommand
 
@@ -400,6 +429,21 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                     do ignore <| dbCommand.Parameters.Add (toSqlParamValue3 value3)
 
                     dbCommand.ExecuteNonQuery ()
+
+                let asBatchCommand value1 value2 value3 =
+                    let dbBatchCommand = 
+                        new NpgsqlBatchCommand (sqlCommand)
+
+                    do ignore <| dbBatchCommand.Parameters.Add (toSqlParamValue1 value1)
+                    do ignore <| dbBatchCommand.Parameters.Add (toSqlParamValue2 value2)
+                    do ignore <| dbBatchCommand.Parameters.Add (toSqlParamValue3 value3)
+
+                    dbBatchCommand
+
+                {|
+                    ExecuteNonQuery = executeNonQuery
+                    AsBatchCommand  = asBatchCommand
+                |}
 
 
         // In order to reduce the amount of heap allocated strings, 
@@ -418,7 +462,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         filterColSelector1
                         filterColSelector2
 
-                fun value1 (values2: _ array) ->
+                let executeNonQuery value1 (values2: _ array) =
                     use dbCommand =
                         dataSource.CreateCommand sqlCommand
 
@@ -426,6 +470,20 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                     do ignore <| dbCommand.Parameters.Add (toSqlParamValueArray2 values2)
 
                     dbCommand.ExecuteNonQuery ()
+
+                let asBatchCommand value1 (values2: _ array) =
+                    let dbBatchCommand = 
+                        new NpgsqlBatchCommand (sqlCommand)
+
+                    do ignore <| dbBatchCommand.Parameters.Add (toSqlParamValue1 value1)
+                    do ignore <| dbBatchCommand.Parameters.Add (toSqlParamValueArray2 values2)
+
+                    dbBatchCommand
+
+                {|
+                    ExecuteNonQuery = executeNonQuery
+                    AsBatchCommand  = asBatchCommand
+                |}
 
 
         member _.SelectAllBaseRecords () =
@@ -444,7 +502,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
         (*
         Design decision:
             Why go to all this trouble? Why not just create this upfront regardless?
-            If nothing else, we'd end up creating logic for tables that will never been updated.
+            If nothing else, we'd could end up creating logic for tables that will never been updated.
             This wasn't a performance decision, but a philosophical one. Further more,
             given these same outputs would be used for both single and multiple row insertions,
             it made sense to extract out this common logic.
@@ -487,28 +545,24 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                     downcast LeafExpressionConverter.EvaluateQuotation constructParamListExpr
 
                 constructParamList
-            )
+            ) with get
 
-        member this.InsertRow row =
-            use dbCommand =
-                dataSource.CreateCommand sqlInsertRowCommand
+        member this.MakeRowInserter () =
+            let executeNonQuery row =
+                use dbCommand =
+                    dataSource.CreateCommand sqlInsertRowCommand
 
-            let rowParams =
-                this.getRowInsertParameters.Value row
+                let rowParams: NpgsqlParameter list =
+                    this.getRowInsertParameters.Value row
 
-            for rowParam in rowParams do
-                do ignore <| dbCommand.Parameters.Add rowParam
+                for rowParam in rowParams do
+                    do ignore <| dbCommand.Parameters.Add rowParam
 
-            dbCommand.ExecuteNonQuery ()
+                dbCommand.ExecuteNonQuery ()
 
-        member this.InsertRows (rows: ('TBaseRow * 'TAugRow) list) =
-            use dbBatch =
-                dataSource.CreateBatch ()
-
-            for row in rows do
-                // Doesn't implement IDisposable so no need for 'use' here.
-                let dbBatchCommand =
-                    dbBatch.CreateBatchCommand (CommandText = sqlInsertRowCommand)
+            let asBatchCommand row =
+                let dbBatchCommand = 
+                    new NpgsqlBatchCommand (sqlInsertRowCommand)
 
                 let rowParams =
                     this.getRowInsertParameters.Value row
@@ -516,9 +570,55 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                 for rowParam in rowParams do
                     do ignore <| dbBatchCommand.Parameters.Add rowParam
 
-                do dbBatch.BatchCommands.Add dbBatchCommand
+                dbBatchCommand
 
-            dbBatch.ExecuteNonQuery ()
+            {|
+                ExecuteNonQuery = executeNonQuery
+                AsBatchCommand  = asBatchCommand
+            |}
+
+        member this.MakeRowsInserter () =
+            let executeNonQuery (rows: _ list) =
+                use dbBatch =
+                    dataSource.CreateBatch ()
+
+                for row in rows do
+                    // Doesn't implement IDisposable so no need for 'use' here.
+                    let dbBatchCommand =
+                        dbBatch.CreateBatchCommand (CommandText = sqlInsertRowCommand)
+
+                    let rowParams =
+                        this.getRowInsertParameters.Value row
+
+                    for rowParam in rowParams do
+                        do ignore <| dbBatchCommand.Parameters.Add rowParam
+
+                    do dbBatch.BatchCommands.Add dbBatchCommand
+
+                dbBatch.ExecuteNonQuery ()
+
+            let asBatchCommands rows =
+                rows |>
+                List.map (fun row ->
+                    let dbBatchCommand = 
+                        new NpgsqlBatchCommand (sqlInsertRowCommand)
+
+                    let rowParams =
+                        this.getRowInsertParameters.Value row
+
+                    for rowParam in rowParams do
+                        do ignore <| dbBatchCommand.Parameters.Add rowParam
+
+                    dbBatchCommand
+                )                
+
+            {|
+                ExecuteNonQuery = executeNonQuery
+                AsBatchCommand  = asBatchCommands
+            |}
+
+        member val TableName =
+            tableName with get
 
 
 [<Sealed>]

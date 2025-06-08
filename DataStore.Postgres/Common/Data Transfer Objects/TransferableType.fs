@@ -63,10 +63,14 @@ type internal TransferableType private () =
 
     static let (|NonOptionalNonParameterizedUnion|_|) (unionType: Type) =
         option {
-            do! Option.requireTrue (FSharpType.IsUnion (unionType, BindingFlags.NonPublic))
+            do! Option.requireTrue
+                 (FSharpType.IsUnion
+                    // We don't know if we're looking for (non-)public union types.
+                    (unionType, BindingFlags.Public ||| BindingFlags.NonPublic))
 
             let recordColumns =
-                FSharpType.GetUnionCases (unionType, BindingFlags.NonPublic)
+                FSharpType.GetUnionCases
+                    (unionType, BindingFlags.Public ||| BindingFlags.NonPublic)
 
             let allNonParameterized =
                 recordColumns
@@ -89,7 +93,9 @@ type internal TransferableType private () =
         }
 
     static let (|NonOptionalNonUnion|_|) (nonOptionalType: Type) =
-        Option.requireFalse (FSharpType.IsUnion (nonOptionalType, BindingFlags.NonPublic))
+        Option.requireFalse
+            (FSharpType.IsUnion
+                (nonOptionalType, BindingFlags.Public ||| BindingFlags.NonPublic))
 
     static let (|Optional|_|) (maybeOptionalType: Type) =
         option {
@@ -114,7 +120,8 @@ type internal TransferableType private () =
     static member makeTypedParameter<'T> (value: 'T) : NpgsqlParameter =
         // Previously, the code below was being used directly within a code quotation.
         // However, the runtime expression compiler could not cope with the resulting logic.
-        // A simple solution was to wrap the logic in a static member that CAN be called.
+        // A simple solution was to wrap the logic in a static member that CAN be
+        // included and compiled within a quotation.
         upcast new NpgsqlParameter<'T> (TypedValue = value)
 
     static member makeTypedParameter<'T> (value: 'T, dataTypeName: string) : NpgsqlParameter =
@@ -182,7 +189,8 @@ type internal TransferableType private () =
             typeof<'TNonOptionalUnion>
 
         let recordColumns =
-            FSharpType.GetUnionCases (nonOptionalUnionType, BindingFlags.NonPublic)
+            FSharpType.GetUnionCases
+                (nonOptionalUnionType, BindingFlags.Public ||| BindingFlags.NonPublic)
 
         let columnProps =
             recordColumns
@@ -193,7 +201,7 @@ type internal TransferableType private () =
                 {|
                     StringComparer =
                         // Although we could capture the variable expression via a closure,
-                        // this makes it explicit what variable is being used.
+                        // this makes it explicit what variable is being used.                       
                         fun strRepVar ->
                             <@ (%strRepVar) = %unionName @>
                     ValueComparer =
@@ -219,7 +227,7 @@ type internal TransferableType private () =
                     (fun onElse p ->
                         Expr.IfThenElse (p.StringComparer strRepVar, p.CaseFactory, onElse)
                         |> Expr.Cast<'TNonOptionalUnion>)
-                    <@ failwith "Unable to convert union case." @>
+                    <@ failwithf "Unable to convert union case '%s'." (%strRepVar) @>
             )
             |> Expr.Cast<'TNonOptionalUnion>
 
@@ -305,7 +313,7 @@ type internal TransferableType private () =
                 nameof(TransferableType.CreateForOptional),
                 // Will not find method without these binding flags.
                 BindingFlags.Static ||| BindingFlags.NonPublic
-            )
+            ) with get
 
     static member private InvokeCreateForOptional (innerType: Type) : ITransferableType =
         downcast TransferableType.mi_CreateForOptional
@@ -328,8 +336,8 @@ type internal TransferableType private () =
                             (pgTypeName, schemaMapper)
 
                     | Optional innerType ->
-                        // No way around this. We don't have a way to unwrap the outer layer
-                        // of the optional type represented by the generic.
+                        // No obvious way around this. We don't have a way to unwrap
+                        // the outer layer of the optional type represented by the generic.
                         downcast TransferableType.InvokeCreateForOptional innerType
 
                     | _ ->
@@ -342,7 +350,7 @@ type internal TransferableType private () =
             .GetMethod(
                 nameof(TransferableType.GetFor),
                 BindingFlags.Static ||| BindingFlags.NonPublic
-            )
+            ) with get
 
     static member InvokeGetFor (valueType: Type) : ITransferableType =
         downcast TransferableType.mi_GetFor

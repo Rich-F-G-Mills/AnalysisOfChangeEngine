@@ -102,7 +102,7 @@ module AbstractDataStore =
             runHeaderDispatcher.SelectAll ()
             |> List.map DataTransferObjects.RunHeaderDTO.toUnderlying
 
-        member this.CreateRun (title, comments, openingRunUid, closingRunDate, policyDataExtractionUid, walk: #AbstractWalk<_, _, _>) =
+        member this.CreateRun (title, comments, priorRunUid, closingRunDate, policyDataExtractionUid, walk: #AbstractWalk<_, _, _>) =
             let stepHeaders =
                 this.GetAllStepHeaders ()
                 |> Seq.map (fun hdr -> hdr.Uid.Value)
@@ -130,7 +130,7 @@ module AbstractDataStore =
                     Comments                = comments
                     CreatedBy               = sessionContext.UserName
                     CreatedWhen             = DateTime.Now
-                    OpeningRunUid           = openingRunUid
+                    PriorRunUid             = priorRunUid
                     ClosingRunDate          = closingRunDate
                     PolicyDataExtractionUid = policyDataExtractionUid
                 }
@@ -207,57 +207,170 @@ module AbstractDataStore =
             0
 
 
-        // --- STEP VALIDATION ISSUES ---
-
-        member this.AddValidationIssues (RunUid runUid') (StepUid stepUid') policyId issues =
-            let newRows =
-                issues
-                |> List.map (fun (classification, message) ->
-                    {
-                        run_uid         = runUid'
-                        step_uid        = stepUid'
-                        policy_id       = policyId
-                        classification  = classification
-                        message         = message
-                    })    
-                    
-            do stepValidationIssuesDispatcher.InsertRows newRows
-       
-
         // --- POLICY DATA ---
-
-        /// Returns a set of policy IDs for the given extraction UID. However, if no
-        /// extraction header exists for the given UID, then None is returned.
-        member this.TryGetPolicyIds extractionUid =
-            option {
-                // Check to see if we have a record of this extraction UID.
-                let! _ =
-                    this.TryGetExtractionHeader extractionUid
-
-                return policyDataDispatcher.GetPolicyIds extractionUid
-            }
 
         /// Returns a tuple of exited, remaining and new policy IDs. In each case, the IDs
         /// are returned as a set of strings.
-        member this.GetPolicyIdDifferences (openingExtractionUid, closingExtractionUid) =
+        member this.TryGetOutstandingRecords currentRunUid =
             result {
-                let! openingPolicyIds =
-                    this.TryGetPolicyIds openingExtractionUid
-                    |> Result.requireSome (sprintf "Unable to locate opening extraction Uid %A." openingExtractionUid)
-                    
-                let! closingPolicyIds =
-                    this.TryGetPolicyIds closingExtractionUid
-                    |> Result.requireSome (sprintf "Unable to locate closing extraction Uid %A." closingExtractionUid)
+                let! currentRunHeader =
+                    this.TryGetRunHeader currentRunUid
+                    |> Result.requireSome (sprintf "Unable to locate current run header '%O'" currentRunUid)
 
-                let exitedPolicyIds =
-                    Set.difference openingPolicyIds closingPolicyIds
+                // We don't get about the closing extraction header, only that it exists!
+                let! _ =
+                    this.TryGetExtractionHeader currentRunHeader.PolicyDataExtractionUid
+                    |> Result.requireSome
+                        (sprintf "Unable to locate current extraction header '%O'" currentRunHeader.PolicyDataExtractionUid)
 
-                let newPolicyIds =
-                    Set.difference closingPolicyIds openingPolicyIds
+                let! priorRunHeader =
+                    match currentRunHeader.PriorRunUid with
+                    | Some priorRunUid ->
+                        match this.TryGetRunHeader priorRunUid with
+                        | Some hdr ->
+                            Ok (Some hdr)
+                        | None ->
+                            Error (sprintf "Unable to locate prior run header '%O'" priorRunUid)
+                    | _ ->
+                        Ok None
 
-                let remainingPolicyIds =
-                    Set.intersect openingPolicyIds closingPolicyIds
+                // As above, we only care that the prior extraction header exists,
+                // provided a prior run is present.
+                let! _ =
+                    match priorRunHeader with
+                    | Some runHdr ->
+                        match this.TryGetExtractionHeader runHdr.PolicyDataExtractionUid with
+                        | Some extractionHdr ->
+                            Ok (Some extractionHdr)
+                        | None ->
+                            Error (sprintf "Unable to locate opening extraction header '%O'" runHdr.PolicyDataExtractionUid)
+                    | None ->
+                        Ok None
 
-                return exitedPolicyIds, remainingPolicyIds, newPolicyIds
+                let sqlCommand =
+                    $"""
+                    WITH
+                        run_steps AS (
+		                    SELECT rs.step_idx AS idx, sh.*
+		                    FROM {schema}.run_steps AS rs
+		                    LEFT JOIN common.step_headers AS sh
+		                    ON rs.step_uid = sh.uid
+		                    WHERE run_uid = @current_run_uid
+	                    ),
+	
+	                    opening_policy_ids AS (
+		                    SELECT DISTINCT policy_id
+		                    FROM {schema}.policy_data
+		                    WHERE extraction_uid = @prior_extraction_uid
+	                    ),
+	
+	                    closing_policy_ids AS (
+		                    SELECT DISTINCT policy_id
+		                    FROM {schema}.policy_data
+		                    WHERE extraction_uid = @current_extraction_uid
+	                    ),
+	
+	                    remaining_policy_ids AS (
+		                    SELECT policy_id
+		                    FROM opening_policy_ids
+		                    INTERSECT SELECT policy_id
+		                    FROM closing_policy_ids
+	                    ),
+	
+	                    exited_policy_ids AS (
+		                    SELECT policy_id
+		                    FROM opening_policy_ids
+		                    EXCEPT SELECT policy_id
+		                    FROM closing_policy_ids
+	                    ),
+	
+	                    new_policy_ids AS (
+		                    SELECT policy_id
+		                    FROM closing_policy_ids
+		                    EXCEPT SELECT policy_id
+		                    FROM opening_policy_ids
+	                    ),
+	
+	                    run_failures AS (
+		                    SELECT *
+		                    FROM {schema}.run_failures
+		                    WHERE run_uid = @current_run_uid
+	                    ),
+	
+	                    steps_run AS (
+		                    SELECT policy_id, step_uid
+		                    FROM {schema}.step_results
+		                    WHERE run_uid = @current_run_uid
+	                    ),
+	
+	                    steps_expected AS (
+		                    SELECT policy_id, uid AS step_uid
+		                    FROM exited_policy_ids, run_steps
+		                    WHERE run_if_exited_record
+		                    UNION ALL SELECT policy_id, uid AS step_uid
+		                    FROM remaining_policy_ids, run_steps
+		                    UNION ALL SELECT policy_id, uid AS step_uid
+		                    FROM new_policy_ids, run_steps
+		                    WHERE run_if_new_record
+	                    ),
+	
+	                    step_statuses AS (
+		                    SELECT
+			                    COALESCE (expected.policy_id, run.policy_id) AS policy_id,
+			                    COALESCE (expected.step_uid, run.step_uid) AS step_uid,
+			                    run.policy_id IS NOT NULL AND expected.policy_id IS NOT NULL AS was_run
+		                    FROM steps_expected AS expected
+		                    LEFT JOIN steps_run AS run
+		                    ON expected.policy_id = run.policy_id
+			                    AND expected.step_uid = run.step_uid		
+	                    )
+
+		            SELECT
+			            policy_id,
+			            policy_id IN (SELECT policy_id FROM run_failures) AS had_run_failure,
+                        CASE
+		                    WHEN policy_id IN (SELECT policy_id FROM exited_policy_ids)
+			                    THEN 'EXITED'::common.cohort_membership
+		                    WHEN policy_id IN (SELECT policy_id FROM remaining_policy_ids)
+			                    THEN 'REMAINING'::common.cohort_membership
+		                    WHEN policy_id IN (SELECT policy_id FROM new_policy_ids)
+			                    THEN 'NEW'::common.cohort_membership
+	                    END AS cohort
+		            FROM step_statuses
+		            -- This approach seems MUCH faster than using a SELECT DISTINCT and a WHERE.
+		            GROUP BY policy_id		
+		            HAVING NOT bool_and(was_run)
+                    """
+
+                use dbCommand = 
+                    dataSource.CreateCommand (sqlCommand)
+
+                let currentRunUidParam =
+                    new NpgsqlParameter<Guid>
+                        ("@current_run_uid", currentRunUid.Value)
+
+                let currentExtractionUidParam =
+                    new NpgsqlParameter<Guid>
+                        ("@current_extraction_uid", currentRunHeader.PolicyDataExtractionUid.Value)
+
+                let priorExtractionUidParam =
+                    match priorRunHeader with
+                    | Some hdr ->
+                        new NpgsqlParameter<Guid>
+                            ("@prior_extraction_uid", hdr.PolicyDataExtractionUid.Value)
+                    | None ->
+                        new NpgsqlParameter<Guid> (Value = DBNull.Value)
+
+                do ignore <| dbCommand.Parameters.Add currentRunUidParam
+                do ignore <| dbCommand.Parameters.Add currentExtractionUidParam
+                do ignore <| dbCommand.Parameters.Add priorExtractionUidParam
+
+                use dbReader =
+                    dbCommand.ExecuteReader ()
+
+                return [
+                    while dbReader.Read () do
+                        yield OutstandingRecordDTO.recordParser dbReader
+                ]
             }
 

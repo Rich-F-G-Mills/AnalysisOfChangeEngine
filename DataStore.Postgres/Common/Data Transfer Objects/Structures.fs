@@ -2,6 +2,10 @@
 namespace AnalysisOfChangeEngine.DataStore.Postgres.DataTransferObjects
 
 open System
+open System.Data.Common
+open FSharp.Reflection
+open Npgsql
+open AnalysisOfChangeEngine
 open AnalysisOfChangeEngine.DataStore.Postgres
 
 
@@ -39,7 +43,8 @@ module internal StepHeaderDTO =
             // the trade-off is that we could find issues occurring mid-flight.
             // It would be "best" if any issues occur as an exception
             // during assembly start-up code (ie... fail-safe AND fail-fast).
-            dispatcher.MakeBaseEquality1Selector <@ _.uid @>
+            dispatcher.MakeBaseEquality1Selector    
+                <@ _.uid @>
 
         {
             new IDispatcher with
@@ -91,7 +96,11 @@ module internal ExtractionHeaderDTO =
                 ("extraction_headers", schema, connection)
 
         let selectByUid =
-            dispatcher.MakeBaseEquality1Selector <@ _.uid @>
+            dispatcher.MakeBaseEquality1Selector
+                <@ _.uid @>
+
+        let rowInserter =
+            dispatcher.MakeRowInserter ()
 
         {
             new IDispatcher with
@@ -105,7 +114,7 @@ module internal ExtractionHeaderDTO =
                     | _     -> failwith "Multiple extraction headers found."
 
                 member _.InsertRow row =
-                    ignore <| dispatcher.InsertRow (row, ())
+                    do ignore <| rowInserter.ExecuteNonQuery (row, ())
         }
 
     let toUnderlying (hdr: ExtractionHeaderDTO): ExtractionHeader =
@@ -163,7 +172,7 @@ type internal RunHeaderDTO =
         comments                    : string option
         created_by                  : string
         created_when                : DateTime
-        opening_run_uid             : Guid option
+        prior_run_uid               : Guid option
         closing_run_date            : DateOnly
         policy_data_extraction_uid  : Guid        
     }
@@ -184,7 +193,11 @@ module internal RunHeaderDTO =
                 ("run_headers", schema, connection)
 
         let selectByUid =
-            dispatcher.MakeBaseEquality1Selector <@ _.uid @>
+            dispatcher.MakeBaseEquality1Selector    
+                <@ _.uid @>
+
+        let rowInserter =
+            dispatcher.MakeRowInserter ()
 
         {
             new IDispatcher with
@@ -198,7 +211,7 @@ module internal RunHeaderDTO =
                     | _     -> failwith "Multiple run headers found."
 
                 member _.InsertRow row =
-                    ignore <| dispatcher.InsertRow (row, ())
+                    do ignore <| rowInserter.ExecuteNonQuery (row, ())
         }
 
     let toUnderlying (hdr: RunHeaderDTO): RunHeader =
@@ -208,7 +221,7 @@ module internal RunHeaderDTO =
             Comments                    = hdr.comments
             CreatedBy                   = hdr.created_by
             CreatedWhen                 = hdr.created_when
-            OpeningRunUid               = hdr.opening_run_uid |> Option.map RunUid 
+            PriorRunUid                 = hdr.prior_run_uid |> Option.map RunUid 
             ClosingRunDate              = hdr.closing_run_date
             PolicyDataExtractionUid     = ExtractionUid hdr.policy_data_extraction_uid       
         }
@@ -220,7 +233,7 @@ module internal RunHeaderDTO =
             comments                    = hdr.Comments
             created_by                  = hdr.CreatedBy
             created_when                = hdr.CreatedWhen
-            opening_run_uid             = hdr.OpeningRunUid |> Option.map _.Value
+            prior_run_uid               = hdr.PriorRunUid |> Option.map _.Value
             closing_run_date            = hdr.ClosingRunDate
             policy_data_extraction_uid  = hdr.PolicyDataExtractionUid.Value
         }
@@ -248,7 +261,11 @@ module internal RunStepDTO =
                 ("run_steps", schema, connection)
 
         let selectByRunUid =
-            dispatcher.MakeBaseEquality1Selector <@ _.run_uid @>
+            dispatcher.MakeBaseEquality1Selector
+                <@ _.run_uid @>
+
+        let rowInserter =
+            dispatcher.MakeRowInserter ()
 
         {
             new IDispatcher with
@@ -256,8 +273,18 @@ module internal RunStepDTO =
                     selectByRunUid runUid'
 
                 member _.InsertRow row =
-                    ignore <| dispatcher.InsertRow (row, ())
+                    ignore <| rowInserter.ExecuteNonQuery (row, ())
         }
+
+
+[<NoEquality; NoComparison>]
+type internal RunFailuresDTO =
+    {    
+        run_uid                 : Guid
+        policy_id               : string
+        run_when                : DateTime
+        reason                  : string
+    }
 
 
 [<NoEquality; NoComparison>]
@@ -279,7 +306,7 @@ module internal StepResultsDTO =
             abstract member TryGetRows      : RunUid -> StepUid -> policyId: string -> 'TAugRow option
             abstract member DeleteRows      : RunUid -> unit
             // Cannot overload functions with curried arguments!
-            abstract member DeleteRows      : RunUid * policyIds: string array -> unit
+            abstract member DeleteRows      : RunUid * policyId: string -> NpgsqlBatchCommand
             // We don't allow deleting results for a specific step/policy combination as all steps
             // would need to be run regardless.
         end
@@ -291,13 +318,16 @@ module internal StepResultsDTO =
                 ("step_results", schema, connection)
             
         let resultGetter =
-            dispatcher.MakeAugEquality3Selector (<@ _.run_uid @>, <@ _.step_uid @>, <@ _.policy_id @>)
+            dispatcher.MakeAugEquality3Selector
+                (<@ _.run_uid @>, <@ _.step_uid @>, <@ _.policy_id @>)
 
         let deleteRunResults =
-            dispatcher.MakeEquality1Remover <@ _.run_uid @>
+            dispatcher.MakeEquality1Remover
+                <@ _.run_uid @>
 
-        let deleteRunResultsForPolcies =
-            dispatcher.MakeEquality1Multiple1Remover (<@ _.run_uid @>, <@ _.policy_id @>)
+        let deleteRunResultsForPolicy =
+            dispatcher.MakeEquality2Remover
+                (<@ _.run_uid @>, <@ _.policy_id @>)
 
         {
             new IDispatcher<'TAugRowDTO> with                    
@@ -308,18 +338,28 @@ module internal StepResultsDTO =
                     | _     -> failwith "Multiple step results found for policy."
 
                 member _.DeleteRows (RunUid runUid') =
-                    ignore <| deleteRunResults runUid'
+                    do ignore <| deleteRunResults.ExecuteNonQuery runUid'
 
-                member _.DeleteRows (RunUid runUid', policyIds) =
-                    ignore <| deleteRunResultsForPolcies runUid' policyIds
+                member _.DeleteRows (RunUid runUid', policyId) =
+                    deleteRunResultsForPolicy.AsBatchCommand runUid' policyId
         }
 
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
 [<PostgresCommonEnumeration("validation_issue_classification")>]
-type ValidationIssueClassification =
+type ValidationIssueClassificationDTO =
     | WARNING
     | ERROR
+
+[<RequireQualifiedAccess>]
+module ValidationIssueClassificationDTO =
+    
+    let fromUnderlying = function
+        | ValidationIssueClassification.Error ->
+            ValidationIssueClassificationDTO.ERROR
+        | ValidationIssueClassification.Warning ->
+            ValidationIssueClassificationDTO.WARNING
+
 
 [<NoEquality; NoComparison>]
 type internal StepValidationIssuesDTO =
@@ -327,7 +367,8 @@ type internal StepValidationIssuesDTO =
         run_uid                 : Guid
         step_uid                : Guid
         policy_id               : string
-        classification          : ValidationIssueClassification
+        run_when                : DateTime
+        classification          : ValidationIssueClassificationDTO
         message                 : string
     }
 
@@ -338,7 +379,7 @@ module internal StepValidationIssuesDTO =
         interface
             abstract member InsertRows      : StepValidationIssuesDTO list -> unit
             abstract member DeleteRows      : RunUid -> unit
-            abstract member DeleteRows      : RunUid * policyIds: string array -> unit
+            abstract member DeleteRows      : RunUid * policyId: string -> unit
         end
 
 
@@ -348,10 +389,15 @@ module internal StepValidationIssuesDTO =
                 ("step_validation_issues", schema, connection)
 
         let deleteValidationIssues =
-            dispatcher.MakeEquality1Remover <@ _.run_uid @>
+            dispatcher.MakeEquality1Remover
+                <@ _.run_uid @>
 
-        let deleteValidationIssuesForPolicies =
-            dispatcher.MakeEquality1Multiple1Remover (<@ _.run_uid @>, <@ _.policy_id @>)
+        let deleteValidationIssuesForPolicy =
+            dispatcher.MakeEquality2Remover
+                (<@ _.run_uid @>, <@ _.policy_id @>)
+
+        let rowsInserter =
+            dispatcher.MakeRowsInserter ()
 
         {
             new IDispatcher with
@@ -361,11 +407,55 @@ module internal StepValidationIssuesDTO =
                     let rows' =
                         rows |> List.map (fun r -> r, ())
 
-                    ignore <| dispatcher.InsertRows rows'
+                    do ignore <| rowsInserter.AsBatchCommand rows'
 
                 member _.DeleteRows (RunUid runUid') = 
-                    ignore <| deleteValidationIssues runUid'
+                    ignore <| deleteValidationIssues.ExecuteNonQuery runUid'
 
-                member _.DeleteRows (RunUid runUid', policyIds) = 
-                    ignore <| deleteValidationIssuesForPolicies runUid' policyIds
+                member _.DeleteRows (RunUid runUid', policyId) = 
+                    ignore <| deleteValidationIssuesForPolicy.AsBatchCommand runUid' policyId
         }
+
+
+[<NoEquality; NoComparison>]
+type internal StepValidationRunFailuresDTO =
+    {
+        run_uid                 : Guid
+        step_uid                : Guid
+        policy_id               : string
+        run_when                : DateTime
+        reason                  : string
+    }
+
+
+// Implement equality logic so we can use GroupBy.
+[<RequireQualifiedAccess; NoComparison>]
+[<PostgresCommonEnumeration("cohort_membership")>]
+type CohortMembershipDTO =
+    | EXITED
+    | REMAINING
+    | NEW
+
+[<NoEquality; NoComparison>]
+type OutstandingRecordDTO =
+    {
+        policy_id               : string
+        had_run_error           : bool
+        cohort                  : CohortMembershipDTO
+    }
+
+[<RequireQualifiedAccess>]
+module internal OutstandingRecordDTO =
+    let private recordFields =
+        FSharpType.GetRecordFields typeof<OutstandingRecordDTO>
+
+    let private recordTransferableTypes =
+        recordFields
+        |> Array.map (fun pi -> TransferableType.InvokeGetFor pi.PropertyType)
+
+    // Because we're not wrapping this DTO in a dispatcher, we have to create the record
+    // parser ourselves.
+    // Type inferencing can't seem to cope without the type hint.
+    let recordParser : DbDataReader -> OutstandingRecordDTO =
+        RecordParser.Create<OutstandingRecordDTO>
+            (recordTransferableTypes, [| 0 .. recordFields.Length - 1 |])

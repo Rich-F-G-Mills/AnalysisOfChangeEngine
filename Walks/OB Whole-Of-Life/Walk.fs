@@ -225,7 +225,7 @@ module OBWholeOfLife =
 
                     | (_, Some _, _) ->                            
                         StepValidationOutcome.Completed [
-                            StepValidationIssueClassification.Warning, "Regression mis-match."
+                            ValidationIssueClassification.Warning, "Regression mis-match."
                         ]
 
                     | (_, None, _) when config.IgnoreOpeningMismatches ->
@@ -288,11 +288,11 @@ module OBWholeOfLife =
 
                         | (_, Some _, _) ->                            
                             StepValidationOutcome.Completed [
-                                StepValidationIssueClassification.Warning, "Mismatch between opening position in AoC logic."
+                                ValidationIssueClassification.Warning, "Mismatch between opening position in AoC logic."
                             ]
 
                         | (_, None, _) ->
-                            StepValidationOutcome.Failed "No opening results for comparison."
+                            StepValidationOutcome.Failed "No prior results for comparison."
                 }
             )          
 

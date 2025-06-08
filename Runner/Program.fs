@@ -65,16 +65,16 @@ module Runner =
             let closingRunDate =
                 new DateOnly (today.Year, today.Month, 1)
 
-            let openingRunUid =
-                RunUid (Guid "2ba4d2d5-5c79-4e35-b435-fb8a54713fd1")
+            let priorRunUid =
+                RunUid (Guid "1dd045cb-068c-4a55-842f-fd37722de30b")
 
-            let closingRunUid =
-                RunUid (Guid "2c31b642-b0d5-450c-b44b-54ebf1790a85")
+            let currentRunUid =
+                RunUid (Guid "3d8ddea7-992b-4c13-ab70-85d1697b0304")
 
-            let openingExtractionUid =
+            let priorExtractionUid =
                 ExtractionUid (Guid "3f1a56c8-9d23-42d7-a5b1-874f01b87e1f")
 
-            let closingExtractionUid =
+            let currentExtractionUid =
                 ExtractionUid (Guid "d49cb0ab-79e9-4b39-bc0d-47ae8b19e092")
 
             let openingRunDate =
@@ -112,14 +112,6 @@ module Runner =
             //let runHeader =
             //    dataStore.TryGetRunHeader openingRunUid
 
-            let! exitedPolicyRecords, remainingPolicyRecords, newPolicyRecords =
-                dataStore.GetPolicyIdDifferences (openingExtractionUid, closingExtractionUid)
-
-            do printfn "Count exiting   : %i" exitedPolicyRecords.Count
-            do printfn "Count remaining : %i" remainingPolicyRecords.Count
-            do printfn "Count new       : %i" newPolicyRecords.Count
-            do printfn "\n"
-
             let stepUidResolver =
                 dataStore.CreateStepUidResolver ()
 
@@ -136,24 +128,35 @@ module Runner =
             let! walk =
                 OBWholeOfLife.Walk.create (logger LogLevel.WARNING, runContext, walkConfig)
 
-            //let openingRun =
+            //let priorRun =
             //    dataStore.CreateRun ("Monthly MI", None, None, openingRunDate, openingExtractionUid, walk)
 
-            //let closingRun =
-            //    dataStore.CreateRun ("Monthly MI", None, Some openingRun.Uid, closingRunDate, closingExtractionUid, walk)
+            //let currentRun =
+            //    dataStore.CreateRun ("Monthly MI", None, Some priorRun.Uid, closingRunDate, closingExtractionUid, walk)
 
-            let! openingRun =
-                dataStore.TryGetRunHeader openingRunUid
-                |> Result.requireSome "Unable to locate opening run header."
+            let! priorRun =
+                dataStore.TryGetRunHeader priorRunUid
+                |> Result.requireSome "Unable to locate prior run header."
 
-            let! closingRun =
-                dataStore.TryGetRunHeader closingRunUid
-                |> Result.requireSome "Unable to locate closing run header."
+            let! currentRun =
+                dataStore.TryGetRunHeader currentRunUid
+                |> Result.requireSome "Unable to locate current run header."
 
-            do printfn "Opening run UID: %O" openingRun.Uid.Value
-            do printfn "Closing run UID: %O\n\n" closingRun.Uid.Value
+            let! outstandingRecords =
+                dataStore.TryGetOutstandingRecords currentRun.Uid
+
+            outstandingRecords
+            |> List.groupBy _.cohort
+            |> List.iter (fun (cohort, records) ->
+                do printfn "Cohort: %A (%i records)" cohort records.Length)
+
+            do printfn "Outstanding records: %i\n\n" outstandingRecords.Length
+
+            do printfn "Opening run UID: %O" priorRun.Uid.Value
+            do printfn "Closing run UID: %O\n\n" currentRun.Uid.Value
 
             do printfn "Steps: (%i found)" (walk.AllSteps |> Seq.length)
+
 
             for (idx, step) in Seq.indexed walk.AllSteps do
                 let isDataChange =
