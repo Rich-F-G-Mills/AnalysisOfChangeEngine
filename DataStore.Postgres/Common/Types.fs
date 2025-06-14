@@ -70,12 +70,28 @@ module Types =
         {
             Uid                         : StepUid
             Title                       : string
-            Description                 : string    
+            Description                 : string   
+            RunIfExitedRecord           : bool
+            RunIfNewRecord              : bool
         }
 
+    // Implement equality logic so we can use GroupBy.
+    [<RequireQualifiedAccess; NoComparison>]
+    type CohortMembership =
+        | Exited
+        | Remaining
+        | New
 
     [<NoEquality; NoComparison>]
-    type ProductSchemaName =
+    type OutstandingRecord =
+        {
+            PolicyId                    : string
+            HasRunError                 : bool
+            Cohort                      : CohortMembership
+        }
+
+    [<NoEquality; NoComparison>]
+    type internal ProductSchemaName =
         ProductSchemaName of string
 
     [<NoEquality; NoComparison>]
@@ -109,5 +125,5 @@ module Types =
         inherit PostgresEnumerationAttribute (typeName, PostgresEnumerationSchema.ProductSpecific)
 
     [<Sealed>]
-    type PostgresCommonEnumerationAttribute (typeName: string) =
+    type internal PostgresCommonEnumerationAttribute (typeName: string) =
         inherit PostgresEnumerationAttribute (typeName, PostgresEnumerationSchema.Common)

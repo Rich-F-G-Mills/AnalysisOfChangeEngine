@@ -22,6 +22,8 @@ module OBWholeOfLife =
             StepFactory                 : StepFactory
             PxDispatcher                : obj
             IgnoreOpeningMismatches     : bool
+            OpeningRunDate              : DateOnly
+            ClosingRunDate              : DateOnly
         }
 
     [<NoEquality; NoComparison>]
@@ -33,7 +35,7 @@ module OBWholeOfLife =
 
 
     [<Sealed>]
-    type Walk private (logger: ILogger, runContext: RunContext, config: WalkConfiguration) as this =
+    type Walk private (logger: ILogger, config: WalkConfiguration) as this =
         inherit AbstractWalk<OBWholeOfLife.PolicyRecord, OBWholeOfLife.StepResults, ApiCollection> (logger)
 
 
@@ -107,7 +109,7 @@ module OBWholeOfLife =
                             | OBWholeOfLife.PolicyStatus.PremiumPaying, OBWholeOfLife.PolicyStatus.PaidUp ->
                                 let rollForwardNPDD =
                                     // Ensure that we at least roll it forward to the closing date.
-                                    DateOnly.Max (prior.NextPremiumDueDate, runContext.ClosingRunDate)
+                                    DateOnly.Max (prior.NextPremiumDueDate, config.ClosingRunDate)
 
                                 // We roll-forward the NPDD assuming the premium had been paid.
                                 OBWholeOfLife.PolicyStatus.PremiumPaying, rollForwardNPDD
@@ -164,9 +166,9 @@ module OBWholeOfLife =
 
         // --- CONTROL CREATION ---
 
-        static member create (logger, runContext, config) =
+        static member create (logger, config) =
             result {
-                return new Walk (logger, runContext, config)
+                return new Walk (logger, config)
             }
 
 
@@ -179,14 +181,14 @@ module OBWholeOfLife =
                 px_OpeningRegression =
                     PxApi.createOpeningDispatcher<OBWholeOfLife.PolicyRecord> {
                         OpeningRunDate =
-                            runContext.OpeningRunDate
+                            config.OpeningRunDate
                     }
                 px_PostOpeningRegression =
                     PxApi.createPostOpeningDispatcher<OBWholeOfLife.PolicyRecord> {
                         OpeningRunDate =
-                            runContext.OpeningRunDate
+                            config.OpeningRunDate
                         ClosingRunDate =
-                            runContext.ClosingRunDate
+                            config.ClosingRunDate
                     }
             }
              

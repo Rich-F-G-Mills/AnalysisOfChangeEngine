@@ -14,33 +14,16 @@ module OBWholeOfLife =
         | Male
         | Female
 
-    [<RequireQualifiedAccess>]
-    module internal Gender =
-        let createParser (male, female) (value: 'T) =
-            if value = male then
-                Ok Gender.Male
-            elif value = female then
-                Ok Gender.Female
-            else
-                Error value
-
     [<RequireQualifiedAccess; NoComparison>]
     type PolicyStatus =
         | PaidUp
         | AllPaid
         | PremiumPaying
 
-    [<RequireQualifiedAccess>]
-    module PolicyStatus =
-        let createParser (pp, pup, ap) (value: 'T) =
-            if value = pp then
-                Ok PolicyStatus.PremiumPaying
-            elif value = pup then
-                Ok PolicyStatus.PaidUp
-            elif value = ap then
-                Ok PolicyStatus.AllPaid
-            else
-                Error value
+    [<RequireQualifiedAccess; NoComparison>]
+    type PremiumFrequency =
+        | Monthly
+        | Yearly
 
     [<NoComparison>]
     type LifeData =
@@ -89,6 +72,8 @@ module OBWholeOfLife =
             TableCode           : string
             EntryDate           : DateOnly
             NextPremiumDueDate  : DateOnly
+            PremiumFrequency    : PremiumFrequency
+            ModalPremium        : float32
             Status              : PolicyStatus
             Lives               : LivesBasis
             LimitedPaymentTerm  : int

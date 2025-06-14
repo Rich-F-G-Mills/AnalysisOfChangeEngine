@@ -6,10 +6,20 @@ namespace AnalysisOfChangeEngine.DataStore.Postgres
 module AbstractDataStore =
 
     open System
+    open FSharp.Quotations
     open Npgsql
     open FsToolkit.ErrorHandling
     open AnalysisOfChangeEngine
     open AnalysisOfChangeEngine.DataStore.Postgres.DataTransferObjects
+
+
+    // Only required because nameof cannot work with non-static members.
+    let private fieldName<'TRecord, 'TValue> (field: Expr<'TRecord -> 'TValue>) =
+        match field with
+        | Patterns.Lambda (_, Patterns.PropertyGet (_, propInfo, _)) ->
+            propInfo.Name
+        | _ ->
+            failwith "Invalid field expression."
         
 
     [<AbstractClass>]
@@ -39,6 +49,8 @@ module AbstractDataStore =
         let stepValidationIssuesDispatcher =
             StepValidationIssuesDTO.buildDispatcher (schema, dataSource)
 
+        let runFailuresDispatcher =
+            RunFailuresDTO.buildDispatcher (schema, dataSource)
 
 
         // --- UID RESOLVER ---
@@ -189,10 +201,9 @@ module AbstractDataStore =
         /// means that None will be returned. If successful, the map returned will indicate
         /// for which steps a getter is available.
         member this.CreateStepResultGetters runUid =
-            result {
+            option {
                 let! stepHeadersForRun =
                     this.TryGetStepHeadersForRun runUid
-                    |> Result.requireSome "Unable to locate step headers for run."
 
                 let getters =
                     stepHeadersForRun
@@ -209,6 +220,10 @@ module AbstractDataStore =
 
         // --- POLICY DATA ---
 
+        member this.GetPolicyRecords extractionUid policyIds =
+            policyDataDispatcher.GetPolicyRecords extractionUid policyIds
+            |> Map.map (fun _ -> this.dtoToPolicyRecord)
+
         /// Returns a tuple of exited, remaining and new policy IDs. In each case, the IDs
         /// are returned as a set of strings.
         member this.TryGetOutstandingRecords currentRunUid =
@@ -217,57 +232,74 @@ module AbstractDataStore =
                     this.TryGetRunHeader currentRunUid
                     |> Result.requireSome (sprintf "Unable to locate current run header '%O'" currentRunUid)
 
-                // We don't get about the closing extraction header, only that it exists!
-                let! _ =
-                    this.TryGetExtractionHeader currentRunHeader.PolicyDataExtractionUid
-                    |> Result.requireSome
-                        (sprintf "Unable to locate current extraction header '%O'" currentRunHeader.PolicyDataExtractionUid)
-
-                let! priorRunHeader =
+                let priorRunHeader =
                     match currentRunHeader.PriorRunUid with
+                    // If a prior run ID is specified, it MUST exist!
                     | Some priorRunUid ->
                         match this.TryGetRunHeader priorRunUid with
                         | Some hdr ->
-                            Ok (Some hdr)
+                            Some hdr
                         | None ->
-                            Error (sprintf "Unable to locate prior run header '%O'" priorRunUid)
+                            failwithf "Unable to locate prior run header '%O'" priorRunUid
                     | _ ->
-                        Ok None
+                        None
 
-                // As above, we only care that the prior extraction header exists,
-                // provided a prior run is present.
-                let! _ =
-                    match priorRunHeader with
-                    | Some runHdr ->
-                        match this.TryGetExtractionHeader runHdr.PolicyDataExtractionUid with
-                        | Some extractionHdr ->
-                            Ok (Some extractionHdr)
-                        | None ->
-                            Error (sprintf "Unable to locate opening extraction header '%O'" runHdr.PolicyDataExtractionUid)
-                    | None ->
-                        Ok None
+                let runStepPgTableName =
+                    runStepDispatcher.PgTableName
 
+                let stepHeaderPgTableName =
+                    stepHeaderDispatcher.PgTableName
+
+                let policyDataPgTableName =
+                    policyDataDispatcher.PgTableName
+
+                let stepResultsPgTableName =
+                    stepResultsDispatcher.PgTableName
+
+                let runFailuresPgTableName =
+                    runFailuresDispatcher.PgTableName
+
+                (*
+                Design Decision:
+                    Why not implement this directly in the DB itself as a function or view?
+                    However, any time we needed to change the logic, we'd need to update the
+                    views in each of our Postgres schemas. Further, Postgres logic cannot
+                    be parameterised in terms of the schema name.
+                    As such, it's easier to dynamically generate the SQL logic here.
+                *)
+                // TODO - A tidier way to do this?
+                // TODO - At least create a helper function that can extract the Postgres type-name
+                // specified in the PG attribute associated with the type.
+                // Regardless, we use aliases as a way to avoid the need to keep extracting field names.
                 let sqlCommand =
                     $"""
                     WITH
                         run_steps AS (
-		                    SELECT rs.step_idx AS idx, sh.*
-		                    FROM {schema}.run_steps AS rs
-		                    LEFT JOIN common.step_headers AS sh
-		                    ON rs.step_uid = sh.uid
-		                    WHERE run_uid = @current_run_uid
+		                    SELECT
+                                rs.{fieldName<RunStepDTO, _> <@ _.step_idx @>} AS idx,
+                                sh.{fieldName<StepHeaderDTO, _> <@ _.uid @>} AS uid,
+                                sh.{fieldName<StepHeaderDTO, _> <@ _.run_if_exited_record @>} AS run_if_exited_record,
+                                sh.{fieldName<StepHeaderDTO, _> <@ _.run_if_new_record @>} AS run_if_new_record
+		                    FROM {schema}.{runStepPgTableName} AS rs
+		                    LEFT JOIN common.{stepHeaderPgTableName} AS sh
+		                    ON rs.{fieldName<RunStepDTO, _> <@ _.step_uid @>} =
+                                sh.{fieldName<StepHeaderDTO, _> <@ _.uid @>}
+		                    WHERE rs.{fieldName<RunStepDTO, _> <@ _.run_uid @>} =
+                                @current_run_uid
 	                    ),
 	
 	                    opening_policy_ids AS (
-		                    SELECT DISTINCT policy_id
-		                    FROM {schema}.policy_data
-		                    WHERE extraction_uid = @prior_extraction_uid
+		                    SELECT DISTINCT {fieldName<PolicyDataBaseDTO, _> <@ _.policy_id @>} AS policy_id
+		                    FROM {schema}.{policyDataPgTableName}
+		                    WHERE {fieldName<PolicyDataBaseDTO, _> <@ _.extraction_uid @>} =
+                                @prior_extraction_uid
 	                    ),
 	
 	                    closing_policy_ids AS (
-		                    SELECT DISTINCT policy_id
-		                    FROM {schema}.policy_data
-		                    WHERE extraction_uid = @current_extraction_uid
+		                    SELECT DISTINCT {fieldName<PolicyDataBaseDTO, _> <@ _.policy_id @>} AS policy_id
+		                    FROM {schema}.{policyDataPgTableName}
+		                    WHERE {fieldName<PolicyDataBaseDTO, _> <@ _.extraction_uid @>} =
+                                @current_extraction_uid
 	                    ),
 	
 	                    remaining_policy_ids AS (
@@ -291,16 +323,20 @@ module AbstractDataStore =
 		                    FROM opening_policy_ids
 	                    ),
 	
-	                    run_failures AS (
-		                    SELECT *
-		                    FROM {schema}.run_failures
-		                    WHERE run_uid = @current_run_uid
+	                    run_failure_policy_ids AS (
+		                    SELECT {fieldName<RunFailuresDTO, _> <@ _.policy_id @>} AS policy_id
+		                    FROM {schema}.{runFailuresPgTableName}
+		                    WHERE {fieldName<RunFailuresDTO, _> <@ _.run_uid @>} =
+                                @current_run_uid
 	                    ),
 	
 	                    steps_run AS (
-		                    SELECT policy_id, step_uid
-		                    FROM {schema}.step_results
-		                    WHERE run_uid = @current_run_uid
+		                    SELECT
+                                {fieldName<StepResultsBaseDTO, _> <@ _.policy_id @>} AS policy_id,
+                                {fieldName<StepResultsBaseDTO, _> <@ _.step_uid @>} AS step_uid
+		                    FROM {schema}.{stepResultsPgTableName}
+		                    WHERE {fieldName<StepResultsBaseDTO, _> <@ _.run_uid @>} =
+                                @current_run_uid
 	                    ),
 	
 	                    steps_expected AS (
@@ -327,7 +363,7 @@ module AbstractDataStore =
 
 		            SELECT
 			            policy_id,
-			            policy_id IN (SELECT policy_id FROM run_failures) AS had_run_failure,
+			            policy_id IN (SELECT policy_id FROM run_failure_policy_ids) AS had_run_failure,
                         CASE
 		                    WHEN policy_id IN (SELECT policy_id FROM exited_policy_ids)
 			                    THEN 'EXITED'::common.cohort_membership
@@ -353,13 +389,15 @@ module AbstractDataStore =
                     new NpgsqlParameter<Guid>
                         ("@current_extraction_uid", currentRunHeader.PolicyDataExtractionUid.Value)
 
-                let priorExtractionUidParam =
+                let priorExtractionUidParam: NpgsqlParameter =
                     match priorRunHeader with
                     | Some hdr ->
                         new NpgsqlParameter<Guid>
                             ("@prior_extraction_uid", hdr.PolicyDataExtractionUid.Value)
                     | None ->
-                        new NpgsqlParameter<Guid> (Value = DBNull.Value)
+                        // Cannot use NpgsqlParameter<Guid> here as DBNull.Value cannot be cast to a Guid.
+                        new NpgsqlParameter
+                            ("@prior_extraction_uid", DBNull.Value)
 
                 do ignore <| dbCommand.Parameters.Add currentRunUidParam
                 do ignore <| dbCommand.Parameters.Add currentExtractionUidParam
@@ -368,9 +406,11 @@ module AbstractDataStore =
                 use dbReader =
                     dbCommand.ExecuteReader ()
 
+                let recordParser =
+                    OutstandingRecordDTO.recordParser >> OutstandingRecordDTO.toUnderlying
+
                 return [
                     while dbReader.Read () do
-                        yield OutstandingRecordDTO.recordParser dbReader
+                        yield recordParser dbReader
                 ]
             }
-

@@ -1,8 +1,6 @@
 ﻿
 namespace AnalysisOfChangeEngine.DataStore.Postgres.DataTransferObjects
 
-open System
-open System.Collections.Generic
 open System.Data.Common
 open System.Reflection
 open FSharp.Linq.RuntimeHelpers
@@ -194,7 +192,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                     failwith "Unexpected pattern."
 
             let (tt: ITransferableType<'TValue>) =
-                TransferableType.GetFor<'TValue> ()
+                TransferableType.GetFor<_> ()
 
             let filterColSelector =
                 tt.SqlColMapper (sprintf "\"%s\"" columnName)
@@ -329,6 +327,42 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
             this.MakeEquality3Selector (column1, column2, column3, combinedSqlRecordSelector, combinedRecordParser)
 
 
+        member private this.MakeEquality1Multiple1Selector
+            (column1: Expr<'TBaseRow -> 'TValue1>, column2: Expr<'TBaseRow -> 'TValue2>, sqlColumnsSelector, parser) =
+                let filterColSelector1, toSqlParamValue1, _ =
+                    this.GetEqualitySelectorDetails column1
+
+                let filterColSelector2, _, toSqlParamValueArray2 =
+                    this.GetEqualitySelectorDetails column2
+
+                let sqlCommand =
+                    sprintf "%s WHERE (%s = $1) AND (%s = ANY($2))"
+                        sqlColumnsSelector
+                        filterColSelector1
+                        filterColSelector2
+
+                fun value1 values2 ->
+                    use dbCommand =
+                        dataSource.CreateCommand sqlCommand
+
+                    do ignore <| dbCommand.Parameters.Add (toSqlParamValue1 value1)
+                    do ignore <| dbCommand.Parameters.Add (toSqlParamValueArray2 values2)
+                    
+                    use dbReader =
+                        dbCommand.ExecuteReader ()
+
+                    // We can't return a sequence as it's not clear how we'd ensure
+                    // the reader would get disposed if we created it outside the sequence
+                    // block. If we created within, same again!
+                    [
+                        while dbReader.Read () do
+                            yield parser dbReader
+                    ]
+
+        member this.MakeCombinedEquality1Multiple1Selector (column1, column2) =
+            this.MakeEquality1Multiple1Selector (column1, column2, combinedSqlRecordSelector, combinedRecordParser)
+
+
         member this.MakeEquality1Remover
             (column: Expr<'TBaseRow -> 'TValue>) =
                 let filterColSelector, toSqlParamValue, _ =
@@ -359,9 +393,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                 {|
                     ExecuteNonQuery = executeNonQuery
                     AsBatchCommand  = asBatchCommand
-                |}
-
-                
+                |}                
 
         member this.MakeEquality2Remover
             (column1: Expr<'TBaseRow -> 'TValue1>, column2: Expr<'TBaseRow -> 'TValue2>) =
@@ -462,7 +494,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         filterColSelector1
                         filterColSelector2
 
-                let executeNonQuery value1 (values2: _ array) =
+                let executeNonQuery value1 values2 =
                     use dbCommand =
                         dataSource.CreateCommand sqlCommand
 
@@ -471,7 +503,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
 
                     dbCommand.ExecuteNonQuery ()
 
-                let asBatchCommand value1 (values2: _ array) =
+                let asBatchCommand value1 values2 =
                     let dbBatchCommand = 
                         new NpgsqlBatchCommand (sqlCommand)
 
@@ -503,9 +535,9 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
         Design decision:
             Why go to all this trouble? Why not just create this upfront regardless?
             If nothing else, we'd could end up creating logic for tables that will never been updated.
-            This wasn't a performance decision, but a philosophical one. Further more,
+            This wasn't a performance decision, but a philosophical one. Furthermore,
             given these same outputs would be used for both single and multiple row insertions,
-            it made sense to extract out this common logic.
+            it made sense to extract out this common logic and only instantiate when needed.
         *)
         member val private getRowInsertParameters =
             lazy (
@@ -617,11 +649,8 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                 AsBatchCommand  = asBatchCommands
             |}
 
-        member val TableName =
-            tableName with get
-
 
 [<Sealed>]
-type PostgresCommonTableDispatcher<'TBaseRow, 'TAugRow> internal (tableName, dataSource) =
+type internal PostgresCommonTableDispatcher<'TBaseRow, 'TAugRow> internal (tableName, dataSource) =
     inherit PostgresTableDispatcher<'TBaseRow, 'TAugRow>
         (tableName, "common", dataSource)

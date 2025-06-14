@@ -10,18 +10,6 @@ module Types =
     open System.Collections.Generic
     open System.Reflection
     open FSharp.Quotations
-
-
-    type Reason = string
-
-
-    /// Details of the context within which the walk is to be run.
-    [<NoEquality; NoComparison>]
-    type RunContext =
-        {
-            OpeningRunDate: DateOnly
-            ClosingRunDate: DateOnly
-        }
       
 
     // Do NOT change this to IApiEndpoint. Again. The same endpoint could have
@@ -30,7 +18,7 @@ module Types =
         interface
             /// Note that API requestors with the SAME NAME will be grouped together!
             abstract Name: string
-            abstract Execute: Map<string, PropertyInfo> -> 'TPolicyRecord -> Result<Map<string, obj>, string>
+            abstract Execute: Map<string, PropertyInfo> -> 'TPolicyRecord -> Async<Result<Map<string, obj>, string>>
         end
 
     (*
@@ -69,6 +57,9 @@ module Types =
 
 
     [<AbstractClass>]
+    // Private constructor as this will never be instantiated. It purely provides a container
+    // for actions that can be performed as part of a source definition. Furthermore, having them
+    // defined as instance members allows them to be more easily discoverable via reflection.
     type SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection> private () =
         (*
         Design Decision:

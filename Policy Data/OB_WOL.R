@@ -16,7 +16,8 @@ params <-
     probEntryDateChange       = 0.002,
     probOpeningPUP            = 0.4,
     probBecomesPUP            = 0.05,
-    probIsJointLife           = 0.15
+    probIsJointLife           = 0.15,
+    probMonthlyFreq           = 0.75
   )
 
 
@@ -53,6 +54,23 @@ policyDetails <-
           prob =
             c(probExit, probReinstate, 1.0 - probExit - probReinstate)
         ),
+      
+      PREMIUM_FREQUENCY =
+        sample(
+          c('MONTHLY', 'YEARLY'),
+          size = numPolicies,
+          replace = TRUE,
+          prob =
+            c(probMonthlyFreq, 1.0 - probMonthlyFreq)
+        ),
+      
+      MODAL_PREMIUM =
+        runif(
+          n = numPolicies,
+          min = 0.50,
+          max = 10.0
+        ) |>
+        round(digits = 2L),
       
       RANDOM_ENTRY_DATE_OFFSET =
         runif(n = numPolicies, min = 0.0, max = 20 * 365) |>
@@ -215,7 +233,9 @@ generatedSql <-
               '{GENDER_1}',
               {ENTRY_AGE_2},
               '{GENDER_2}',
-              {JVA}
+              {JVA},
+              '{PREMIUM_FREQUENCY}',
+              {MODAL_PREMIUM}
             )"
         ) |>
         stringr::str_remove_all(
@@ -244,7 +264,9 @@ generatedSql <-
               '{GENDER_1}',
               {ENTRY_AGE_2},
               '{GENDER_2}',
-              {JVA}
+              {JVA},
+              '{PREMIUM_FREQUENCY}',
+              {MODAL_PREMIUM}
             )"
         ) |>
         stringr::str_remove_all(
@@ -286,15 +308,15 @@ generatedSql <-
       SQL =
         glue::glue(
           "
-          DELETE FROM ob_wol.policy_data;
-          DELETE FROM ob_wol.extraction_headers;
+          --DELETE FROM ob_wol.policy_data;
+          --DELETE FROM ob_wol.extraction_headers;
           
-          INSERT INTO ob_wol.extraction_headers(
-            uid,
-            extraction_date
-          ) VALUES
-            ('{openingExtractionUid}', '{openingExtractionDate}'),
-            ('{closingExtractionUid}', '{closingExtractionDate}');
+          --INSERT INTO ob_wol.extraction_headers(
+          --  uid,
+          --  extraction_date
+          --) VALUES
+          --  ('{openingExtractionUid}', '{openingExtractionDate}'),
+          --  ('{closingExtractionUid}', '{closingExtractionDate}');
           
           INSERT INTO ob_wol.policy_data(
             extraction_uid,
@@ -309,7 +331,9 @@ generatedSql <-
             gender_1,
             entry_age_2,
             gender_2,
-            joint_val_age
+            joint_val_age,
+            premium_frequency,
+            modal_premium
           ) VALUES
             {SQL};"
           

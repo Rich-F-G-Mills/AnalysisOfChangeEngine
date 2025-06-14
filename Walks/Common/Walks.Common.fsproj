@@ -6,7 +6,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="PxApi.fs" />
+    <Compile Include="ExcelApi.fs" />
+    <None Include="PxApi %28NOT IN USE%29.fs" />
     <Compile Include="Steps.fs" />
   </ItemGroup>
 

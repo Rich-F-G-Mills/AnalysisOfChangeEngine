@@ -80,14 +80,6 @@ module Runner =
             let openingRunDate =
                 closingRunDate.AddMonths -1
 
-            let runContext: RunContext =
-                {
-                    OpeningRunDate =
-                        openingRunDate
-                    ClosingRunDate =
-                        closingRunDate
-                }
-
             let sessionContext: SessionContext =
                 { UserName = "RICH" }
 
@@ -117,16 +109,15 @@ module Runner =
 
             let walkConfig: OBWholeOfLife.WalkConfiguration =
                 {
-                    PxDispatcher =
-                        new obj ()
-                    StepFactory =
-                        new StepFactory (stepUidResolver)
-                    IgnoreOpeningMismatches =
-                        false
+                    PxDispatcher            = new obj ()
+                    StepFactory             = new StepFactory (stepUidResolver)
+                    IgnoreOpeningMismatches = false
+                    OpeningRunDate          = openingRunDate
+                    ClosingRunDate          = closingRunDate
                 }
 
             let! walk =
-                OBWholeOfLife.Walk.create (logger LogLevel.WARNING, runContext, walkConfig)
+                OBWholeOfLife.Walk.create (logger LogLevel.WARNING, walkConfig)
 
             //let priorRun =
             //    dataStore.CreateRun ("Monthly MI", None, None, openingRunDate, openingExtractionUid, walk)
@@ -146,11 +137,11 @@ module Runner =
                 dataStore.TryGetOutstandingRecords currentRun.Uid
 
             outstandingRecords
-            |> List.groupBy _.cohort
+            |> List.groupBy _.Cohort
             |> List.iter (fun (cohort, records) ->
                 do printfn "Cohort: %A (%i records)" cohort records.Length)
 
-            do printfn "Outstanding records: %i\n\n" outstandingRecords.Length
+            do printfn "\n\nOutstanding records: %i\n\n" outstandingRecords.Length
 
             do printfn "Opening run UID: %O" priorRun.Uid.Value
             do printfn "Closing run UID: %O\n\n" currentRun.Uid.Value
@@ -183,36 +174,32 @@ module Runner =
 
             do printfn "Done."
 
-            let hdr, parsedStep =
+            let _, parsedStep =
                 parsedWalk.OpeningDataStage.WithinStageSteps.Head
 
-            let uas =
+            let uasDefinition =
                 parsedStep.ElementDefinitions["UnsmoothedAssetShare"]
 
-            let rawPolRecord: OBWholeOfLife.RawPolicyRecord =
-                {
-                    TableCode           = "A"
-                    Taxable             = true
-                    EntryDate           = new DateOnly (2000, 1, 1)
-                    NextPremiumDueDate  = new DateOnly (2024, 1, 1)
-                    Status =
-                        OBWholeOfLife.PolicyStatus.PremiumPaying
-                    Lives =
-                        OBWholeOfLife.LivesBasis.SingleLife {
-                            EntryAge = 20
-                            Gender = OBWholeOfLife.Gender.Male
-                        }
-                    LimitedPaymentTerm  = 20
-                    SumAssured          = 1000.0f
-                }
+            let somePolicyIds =
+                outstandingRecords
+                |> Seq.choose (function
+                    | { PolicyId = pid; Cohort = CohortMembership.Remaining }
+                    | { PolicyId = pid; Cohort = CohortMembership.New } ->
+                        Some pid
+                    | _ ->
+                        None) 
+                |> Seq.take 5
+                |> Seq.toArray
 
-            let! polRecord =
-                OBWholeOfLife.PolicyRecord.validate rawPolRecord
+            let somePolicyRecords =
+                dataStore.GetPolicyRecords currentExtractionUid somePolicyIds
 
-            let res =
-                uas.WrappedInvoker (polRecord, [|1.0f|], [||])
+            do printfn "%A" somePolicyRecords
 
-            do printfn "Result: %A" res
+            //let res =
+            //    uas.WrappedInvoker (polRecord, [|1.0f|], [||])
+
+            //do printfn "Result: %A" res
 
             return 0
         }

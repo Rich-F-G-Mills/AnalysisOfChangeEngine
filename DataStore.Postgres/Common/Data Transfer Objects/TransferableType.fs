@@ -46,6 +46,7 @@ module private CachedByProductSchema =
         // In theory, we could make this non-concurrent as this code is most likely to
         // be called via assembly start-up logic, which is single-threaded.
         // However, with this minor change, can make it easily support parallel execution.
+        // It also gives us access to the elegent GetOrAdd instance member.
         let cachedValues =
             new ConcurrentDictionary<string, 'T> ()
 
@@ -55,17 +56,25 @@ module private CachedByProductSchema =
             cachedValues.GetOrAdd (productSchema', fun _ -> fn productSchema)
 
 
+(*
+Design Decision:
+    Why not use a module instead of a pseudo-static class?
+    A subset of the methods need to be discoverable via reflection, which is easier to wrangle with
+    vanilla (static) members.
+*)
 [<AbstractClass; Sealed>]
 type internal TransferableType private () =
 
     static let cachedTransferableTypes =
+        // Making this concurrent is probably overkill. However, useful to have just in case!
         new ConcurrentDictionary<Type, ITransferableType>()
 
     static let (|NonOptionalNonParameterizedUnion|_|) (unionType: Type) =
         option {
             do! Option.requireTrue
                  (FSharpType.IsUnion
-                    // We don't know if we're looking for (non-)public union types.
+                    // Not having this is leading to runtime failures in some cases.
+                    // TODO - Bottom out exactly what combination of flags we should be using!
                     (unionType, BindingFlags.Public ||| BindingFlags.NonPublic))
 
             let recordColumns =
@@ -114,17 +123,17 @@ type internal TransferableType private () =
 
     // We cannot re-use this... If a query results in multiple null parameters,
     // NPGSQL complains if we use the same object instance more than once.
-    static member makeNullParameter () =
+    static member inline makeNullParameter () =
         new NpgsqlParameter (Value = DBNull.Value)
 
-    static member makeTypedParameter<'T> (value: 'T) : NpgsqlParameter =
+    static member inline makeTypedParameter<'T> (value) : NpgsqlParameter =
         // Previously, the code below was being used directly within a code quotation.
         // However, the runtime expression compiler could not cope with the resulting logic.
         // A simple solution was to wrap the logic in a static member that CAN be
         // included and compiled within a quotation.
         upcast new NpgsqlParameter<'T> (TypedValue = value)
 
-    static member makeTypedParameter<'T> (value: 'T, dataTypeName: string) : NpgsqlParameter =
+    static member inline makeTypedParameter<'T> (value, dataTypeName) : NpgsqlParameter =
         // As above. Using multiple dispatch for those instances where a data type name is needed.
         upcast new NpgsqlParameter<'T> (TypedValue = value, DataTypeName = dataTypeName)
 
@@ -169,6 +178,7 @@ type internal TransferableType private () =
             <@ (%r).GetFieldValue<'TNonOptionalValue> colIdx @>
 
         // This is independent of the product schema, so we can re-use this as needed.
+        // (I know... Could have used a point-free style here)
         let toSqlParamValueExpr': Expr<_ -> NpgsqlParameter> =
             <@
             fun value ->
@@ -336,8 +346,8 @@ type internal TransferableType private () =
                             (pgTypeName, schemaMapper)
 
                     | Optional innerType ->
-                        // No obvious way around this. We don't have a way to unwrap
-                        // the outer layer of the optional type represented by the generic.
+                        // No obvious way around this. We don't have a(n obvious) way to peel
+                        // away the outer layer of the optional type represented by the generic.
                         downcast TransferableType.InvokeCreateForOptional innerType
 
                     | _ ->

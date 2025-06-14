@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="PxApi.fs" />
+    <Compile Include="ExcelApi.fs" />
     <Compile Include="Walk.fs" />
     <None Include="README.md" />
   </ItemGroup>

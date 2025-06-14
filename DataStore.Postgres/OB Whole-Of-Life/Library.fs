@@ -16,46 +16,74 @@ module OBWholeOfLife =
 
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
+    [<PostgresProductSpecificEnumeration("gender")>]
+    type GenderDTO =
+        | MALE
+        | FEMALE
+
+    [<RequireQualifiedAccess>]
+    module GenderDTO =
+
+        let ofGender = function
+            | OBWholeOfLife.Gender.Male ->
+                GenderDTO.MALE
+            | OBWholeOfLife.Gender.Female ->
+                GenderDTO.FEMALE
+
+        let toGender = function
+            | GenderDTO.MALE ->
+                OBWholeOfLife.Gender.Male
+            | GenderDTO.FEMALE ->
+                OBWholeOfLife.Gender.Female
+
+
+    [<RequireQualifiedAccess; NoComparison; NoEquality>]
     [<PostgresProductSpecificEnumeration("policy_status")>]
     type PolicyStatusDTO =
         | PP
         | PUP
         | AP
 
-        static member ofPolicyStatus = function
-            | OBWholeOfLife.PolicyStatus.PremiumPaying ->
-                PP
-            | OBWholeOfLife.PolicyStatus.PaidUp ->
-                PUP
-            | OBWholeOfLife.PolicyStatus.AllPaid ->
-                AP
+    [<RequireQualifiedAccess>]
+    module PolicyStatusDTO =
 
-        static member toPolicyStatus = function
-            | PP ->
+        let ofPolicyStatus = function
+            | OBWholeOfLife.PolicyStatus.PremiumPaying ->
+                PolicyStatusDTO.PP
+            | OBWholeOfLife.PolicyStatus.PaidUp ->
+                PolicyStatusDTO.PUP
+            | OBWholeOfLife.PolicyStatus.AllPaid ->
+                PolicyStatusDTO.AP
+
+        let toPolicyStatus = function
+            | PolicyStatusDTO.PP ->
                 OBWholeOfLife.PolicyStatus.PremiumPaying
-            | PUP ->
+            | PolicyStatusDTO.PUP ->
                 OBWholeOfLife.PolicyStatus.PaidUp
-            | AP ->
+            | PolicyStatusDTO.AP ->
                 OBWholeOfLife.PolicyStatus.AllPaid
 
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    [<PostgresProductSpecificEnumeration("gender")>]
-    type GenderDTO =
-        | MALE
-        | FEMALE
+    [<PostgresProductSpecificEnumeration("premium_frequency")>]
+    type PremiumFrequencyDTO =
+        | MONTHLY
+        | YEARLY
 
-        static member ofGender = function
-            | OBWholeOfLife.Gender.Male ->
-                MALE
-            | OBWholeOfLife.Gender.Female ->
-                FEMALE
+    [<RequireQualifiedAccess>]
+    module PremiumFrequencyDTO = 
 
-        static member toGender = function
-            | MALE ->
-                OBWholeOfLife.Gender.Male
-            | FEMALE ->
-                OBWholeOfLife.Gender.Female
+        let ofPremiumFrequency = function
+            | OBWholeOfLife.PremiumFrequency.Monthly ->
+                PremiumFrequencyDTO.MONTHLY
+            | OBWholeOfLife.PremiumFrequency.Yearly ->
+                PremiumFrequencyDTO.YEARLY
+
+        let toPremiumFrequency = function
+            | PremiumFrequencyDTO.MONTHLY ->
+                OBWholeOfLife.PremiumFrequency.Monthly
+            | PremiumFrequencyDTO.YEARLY ->
+                OBWholeOfLife.PremiumFrequency.Yearly
 
 
     [<NoComparison; NoEquality>]
@@ -72,6 +100,8 @@ module OBWholeOfLife =
             entry_age_2         : Int16 option
             gender_2            : GenderDTO option
             joint_val_age       : Int16 option
+            premium_frequency   : PremiumFrequencyDTO
+            modal_premium       : float32
         }
 
 
@@ -166,10 +196,14 @@ module OBWholeOfLife =
                         Taxable             = isTaxable
                         EntryDate           = policyRecord.entry_date
                         NextPremiumDueDate  = policyRecord.npdd
-                        Status              = PolicyStatusDTO.toPolicyStatus policyRecord.status
+                        Status              =
+                            PolicyStatusDTO.toPolicyStatus policyRecord.status
                         Lives               = lives
                         SumAssured          = policyRecord.sum_assured
                         LimitedPaymentTerm  = int policyRecord.ltd_payment_term
+                        PremiumFrequency    =
+                            PremiumFrequencyDTO.toPremiumFrequency policyRecord.premium_frequency
+                        ModalPremium        = policyRecord.modal_premium
                     }
 
                 return! OBWholeOfLife.PolicyRecord.validate rawPolicyRecord
@@ -196,6 +230,9 @@ module OBWholeOfLife =
                 joint_val_age =
                     policyRecord.Lives.JointValuationAge
                     |> Option.map int16
+                premium_frequency   =
+                    PremiumFrequencyDTO.ofPremiumFrequency policyRecord.PremiumFrequency
+                modal_premium       = policyRecord.ModalPremium
             }
 
         override _.dtoToStepResults dto =

@@ -3,22 +3,31 @@ namespace AnalysisOfChangeEngine.DataStore.Postgres.DataTransferObjects
 
 open System
 open System.Data.Common
+open System.Reflection
 open FSharp.Reflection
 open Npgsql
 open AnalysisOfChangeEngine
 open AnalysisOfChangeEngine.DataStore.Postgres
 
 
+// EVERYTHING here should be internal! Nothing here should be escaping beyond
+// the bounds of this assembly.
+
 [<NoEquality; NoComparison>]
 type internal StepHeaderDTO =
     {
-        uid             : Guid
-        title           : string
-        description     : string
+        uid                     : Guid
+        title                   : string
+        description             : string
+        run_if_exited_record    : bool
+        run_if_new_record       : bool
     }
     
 [<RequireQualifiedAccess>]
 module internal StepHeaderDTO =
+
+    let [<Literal>] private pgTableName =
+        "step_headers"
 
     (*
     Design Decision:
@@ -30,12 +39,13 @@ module internal StepHeaderDTO =
         interface
             abstract member SelectAll       : unit -> StepHeaderDTO list
             abstract member TryGetByUid     : StepUid -> StepHeaderDTO option
+            abstract member PgTableName     : string with get
         end
 
-    let buildDispatcher connection =
+    let internal buildDispatcher connection =
         let dispatcher =
             new PostgresCommonTableDispatcher<StepHeaderDTO, Unit>
-                ("step_headers", connection)
+                (pgTableName, connection)
 
         let selectByUid =
             // Could we have used lazy instantiation here?
@@ -56,20 +66,27 @@ module internal StepHeaderDTO =
                     | []    -> None
                     | [x]   -> Some x
                     | _     -> failwith "Multiple step headers found."
+
+                member _.PgTableName
+                    with get () = pgTableName
         }
 
-    let toUnderlying (hdr: StepHeaderDTO): StepHeader =
+    let internal toUnderlying (hdr: StepHeaderDTO): StepHeader =
         {
-            Uid         = StepUid hdr.uid
-            Title       = hdr.title
-            Description = hdr.description            
+            Uid                 = StepUid hdr.uid
+            Title               = hdr.title
+            Description         = hdr.description
+            RunIfExitedRecord   = hdr.run_if_exited_record
+            RunIfNewRecord      = hdr.run_if_new_record
         }
 
-    let fromUnderlying (hdr: StepHeader): StepHeaderDTO =
+    let internal fromUnderlying (hdr: StepHeader): StepHeaderDTO =
         {
-            uid         = hdr.Uid.Value
-            title       = hdr.Title
-            description = hdr.Description
+            uid                     = hdr.Uid.Value
+            title                   = hdr.Title
+            description             = hdr.Description
+            run_if_exited_record    = hdr.RunIfExitedRecord
+            run_if_new_record       = hdr.RunIfNewRecord
         }
 
 
@@ -83,17 +100,21 @@ type internal ExtractionHeaderDTO =
 [<RequireQualifiedAccess>]
 module internal ExtractionHeaderDTO =
 
+    let [<Literal>] private pgTableName =
+        "extraction_headers"
+
     type internal IDispatcher =
         interface
             abstract member SelectAll       : unit -> ExtractionHeaderDTO list
             abstract member TryGetByUid     : ExtractionUid -> ExtractionHeaderDTO option
             abstract member InsertRow       : ExtractionHeaderDTO -> unit
+            abstract member PgTableName     : string with get
         end
         
-    let buildDispatcher (schema, connection) =
+    let internal buildDispatcher (schema, connection) =
         let dispatcher =
             new PostgresTableDispatcher<ExtractionHeaderDTO, Unit>
-                ("extraction_headers", schema, connection)
+                (pgTableName, schema, connection)
 
         let selectByUid =
             dispatcher.MakeBaseEquality1Selector
@@ -115,15 +136,18 @@ module internal ExtractionHeaderDTO =
 
                 member _.InsertRow row =
                     do ignore <| rowInserter.ExecuteNonQuery (row, ())
+
+                member _.PgTableName
+                    with get () = pgTableName                  
         }
 
-    let toUnderlying (hdr: ExtractionHeaderDTO): ExtractionHeader =
+    let internal toUnderlying (hdr: ExtractionHeaderDTO): ExtractionHeader =
         {
             Uid             = ExtractionUid hdr.uid
             ExtractionDate  = hdr.extraction_date            
         }
 
-    let fromUnderlying (hdr: ExtractionHeader): ExtractionHeaderDTO =
+    let internal fromUnderlying (hdr: ExtractionHeader): ExtractionHeaderDTO =
         {
             uid             = hdr.Uid.Value
             extraction_date = hdr.ExtractionDate
@@ -140,26 +164,34 @@ type internal PolicyDataBaseDTO =
 [<RequireQualifiedAccess>]
 module internal PolicyDataDTO =
 
-    type internal IDispatcher =
+    let [<Literal>] private pgTableName =
+        "policy_data"
+
+    type internal IDispatcher<'TAugRowDTO> =
         interface
-            abstract member GetPolicyIds     : ExtractionUid -> string Set
+            abstract member GetPolicyRecords    : ExtractionUid -> string array -> Map<string, 'TAugRowDTO>
+            abstract member PgTableName         : string with get
         end
 
     let internal builderDispatcher<'TAugRowDTO> (schema, connection) =
         let dispatcher =
             new PostgresTableDispatcher<PolicyDataBaseDTO, 'TAugRowDTO>
-                ("policy_data", schema, connection)
+                (pgTableName, schema, connection)
 
-        let policyIdGetter =
-            dispatcher.MakeBaseEquality1Selector <@ _.extraction_uid @>
-            >> Seq.map _.policy_id
-            >> Set
+        let recordGetter =
+            dispatcher.MakeCombinedEquality1Multiple1Selector
+                (<@ _.extraction_uid @>, <@ _.policy_id @>)
                 
         {
-            new IDispatcher with
+            new IDispatcher<'TAugRowDTO> with
 
-                member _.GetPolicyIds (ExtractionUid extractionUid') =
-                    policyIdGetter extractionUid'
+                member _.GetPolicyRecords (ExtractionUid extractionUid') policyIds =
+                    recordGetter extractionUid' policyIds
+                    |> Seq.map (fun (baseRec, augRec) -> baseRec.policy_id, augRec)
+                    |> Map.ofSeq
+
+                member _.PgTableName
+                    with get () = pgTableName                  
         }
             
 
@@ -180,17 +212,21 @@ type internal RunHeaderDTO =
 [<RequireQualifiedAccess>]
 module internal RunHeaderDTO =
 
+    let [<Literal>] private pgTableName =
+        "run_headers"
+
     type internal IDispatcher =
         interface
             abstract member SelectAll       : unit -> RunHeaderDTO list
             abstract member TryGetByUid     : RunUid -> RunHeaderDTO option
             abstract member InsertRow       : RunHeaderDTO -> unit
+            abstract member PgTableName     : string with get
         end
         
-    let buildDispatcher (schema, connection) =
+    let internal buildDispatcher (schema, connection) =
         let dispatcher =
             new PostgresTableDispatcher<RunHeaderDTO, Unit>
-                ("run_headers", schema, connection)
+                (pgTableName, schema, connection)
 
         let selectByUid =
             dispatcher.MakeBaseEquality1Selector    
@@ -212,9 +248,12 @@ module internal RunHeaderDTO =
 
                 member _.InsertRow row =
                     do ignore <| rowInserter.ExecuteNonQuery (row, ())
+
+                member _.PgTableName
+                    with get () = pgTableName                  
         }
 
-    let toUnderlying (hdr: RunHeaderDTO): RunHeader =
+    let internal toUnderlying (hdr: RunHeaderDTO): RunHeader =
         {
             Uid                         = RunUid hdr.uid
             Title                       = hdr.title
@@ -226,7 +265,7 @@ module internal RunHeaderDTO =
             PolicyDataExtractionUid     = ExtractionUid hdr.policy_data_extraction_uid       
         }
 
-    let fromUnderlying (hdr: RunHeader): RunHeaderDTO =
+    let internal fromUnderlying (hdr: RunHeader): RunHeaderDTO =
         {
             uid                         = hdr.Uid.Value
             title                       = hdr.Title
@@ -237,6 +276,7 @@ module internal RunHeaderDTO =
             closing_run_date            = hdr.ClosingRunDate
             policy_data_extraction_uid  = hdr.PolicyDataExtractionUid.Value
         }
+
 
 [<NoEquality; NoComparison>]
 type internal RunStepDTO =
@@ -249,16 +289,20 @@ type internal RunStepDTO =
 [<RequireQualifiedAccess>]
 module internal RunStepDTO =
 
+    let [<Literal>] private pgTableName =
+        "run_steps"
+
     type internal IDispatcher =
         interface
             abstract member GetByRunUid     : RunUid -> RunStepDTO list
             abstract member InsertRow       : RunStepDTO -> unit
+            abstract member PgTableName     : string with get
         end
 
-    let buildDispatcher (schema, connection) =
+    let internal buildDispatcher (schema, connection) =
         let dispatcher =
             new PostgresTableDispatcher<RunStepDTO, Unit>
-                ("run_steps", schema, connection)
+                (pgTableName, schema, connection)
 
         let selectByRunUid =
             dispatcher.MakeBaseEquality1Selector
@@ -274,6 +318,9 @@ module internal RunStepDTO =
 
                 member _.InsertRow row =
                     ignore <| rowInserter.ExecuteNonQuery (row, ())
+
+                member _.PgTableName
+                    with get () = pgTableName              
         }
 
 
@@ -285,6 +332,28 @@ type internal RunFailuresDTO =
         run_when                : DateTime
         reason                  : string
     }
+
+[<RequireQualifiedAccess>]
+module internal RunFailuresDTO =
+    
+    let [<Literal>] private pgTableName =
+        "run_failures"
+
+    type internal IDispatcher =
+        interface
+            abstract member PgTableName     : string with get
+        end
+
+    let internal buildDispatcher (schema, connection) =
+        let dispatcher =
+            new PostgresTableDispatcher<RunFailuresDTO, Unit>
+                (pgTableName, schema, connection)
+
+        {
+            new IDispatcher with
+                member _.PgTableName
+                    with get () = pgTableName                  
+        }
 
 
 [<NoEquality; NoComparison>]
@@ -299,27 +368,25 @@ type internal StepResultsBaseDTO =
 
 [<RequireQualifiedAccess>]
 module internal StepResultsDTO =
+
+    let [<Literal>] private pgTableName =
+        "step_results"
         
     type internal IDispatcher<'TAugRow> =
         interface
-            // Having them curried in this way better reflects how this will be used.
-            abstract member TryGetRows      : RunUid -> StepUid -> policyId: string -> 'TAugRow option
             abstract member DeleteRows      : RunUid -> unit
             // Cannot overload functions with curried arguments!
             abstract member DeleteRows      : RunUid * policyId: string -> NpgsqlBatchCommand
             // We don't allow deleting results for a specific step/policy combination as all steps
             // would need to be run regardless.
+            abstract member PgTableName     : string with get
         end
 
-    let buildDispatcher<'TAugRowDTO> (schema, connection) =
+    let internal buildDispatcher<'TAugRowDTO> (schema, connection) =
 
         let dispatcher =
             PostgresTableDispatcher<StepResultsBaseDTO, 'TAugRowDTO>
-                ("step_results", schema, connection)
-            
-        let resultGetter =
-            dispatcher.MakeAugEquality3Selector
-                (<@ _.run_uid @>, <@ _.step_uid @>, <@ _.policy_id @>)
+                (pgTableName, schema, connection)
 
         let deleteRunResults =
             dispatcher.MakeEquality1Remover
@@ -330,31 +397,28 @@ module internal StepResultsDTO =
                 (<@ _.run_uid @>, <@ _.policy_id @>)
 
         {
-            new IDispatcher<'TAugRowDTO> with                    
-                member _.TryGetRows (RunUid runUid') (StepUid stepUid') policyId =
-                    match resultGetter runUid' stepUid' policyId with
-                    | []    -> None
-                    | [x]   -> Some x
-                    | _     -> failwith "Multiple step results found for policy."
-
+            new IDispatcher<'TAugRowDTO> with                  
                 member _.DeleteRows (RunUid runUid') =
                     do ignore <| deleteRunResults.ExecuteNonQuery runUid'
 
                 member _.DeleteRows (RunUid runUid', policyId) =
                     deleteRunResultsForPolicy.AsBatchCommand runUid' policyId
+
+                member _.PgTableName
+                    with get () = pgTableName                   
         }
 
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
 [<PostgresCommonEnumeration("validation_issue_classification")>]
-type ValidationIssueClassificationDTO =
+type internal ValidationIssueClassificationDTO =
     | WARNING
     | ERROR
 
 [<RequireQualifiedAccess>]
-module ValidationIssueClassificationDTO =
+module internal ValidationIssueClassificationDTO =
     
-    let fromUnderlying = function
+    let internal fromUnderlying = function
         | ValidationIssueClassification.Error ->
             ValidationIssueClassificationDTO.ERROR
         | ValidationIssueClassification.Warning ->
@@ -375,18 +439,21 @@ type internal StepValidationIssuesDTO =
 [<RequireQualifiedAccess>]
 module internal StepValidationIssuesDTO =
 
+    let [<Literal>] private pgTableName =
+        "step_validation_issues"
+
     type internal IDispatcher =
         interface
             abstract member InsertRows      : StepValidationIssuesDTO list -> unit
             abstract member DeleteRows      : RunUid -> unit
             abstract member DeleteRows      : RunUid * policyId: string -> unit
+            abstract member PgTableName     : string with get
         end
 
-
-    let buildDispatcher (schema, connection) =
+    let internal buildDispatcher (schema, connection) =
         let dispatcher =
             new PostgresTableDispatcher<StepValidationIssuesDTO, Unit>
-                ("step_validation_issues", schema, connection)
+                (pgTableName, schema, connection)
 
         let deleteValidationIssues =
             dispatcher.MakeEquality1Remover
@@ -414,6 +481,10 @@ module internal StepValidationIssuesDTO =
 
                 member _.DeleteRows (RunUid runUid', policyId) = 
                     ignore <| deleteValidationIssuesForPolicy.AsBatchCommand runUid' policyId
+
+                member _.PgTableName
+                    with get () = pgTableName
+                    
         }
 
 
@@ -428,16 +499,26 @@ type internal StepValidationRunFailuresDTO =
     }
 
 
-// Implement equality logic so we can use GroupBy.
-[<RequireQualifiedAccess; NoComparison>]
+[<RequireQualifiedAccess; NoEquality; NoComparison>]
 [<PostgresCommonEnumeration("cohort_membership")>]
-type CohortMembershipDTO =
+type internal CohortMembershipDTO =
     | EXITED
     | REMAINING
     | NEW
 
+[<RequireQualifiedAccess>]
+module internal CohortMembershipDTO =
+
+    let internal toUnderlying = function
+        | CohortMembershipDTO.EXITED ->
+            CohortMembership.Exited
+        | CohortMembershipDTO.REMAINING ->
+            CohortMembership.Remaining
+        | CohortMembershipDTO.NEW ->
+            CohortMembership.New
+
 [<NoEquality; NoComparison>]
-type OutstandingRecordDTO =
+type internal OutstandingRecordDTO =
     {
         policy_id               : string
         had_run_error           : bool
@@ -446,16 +527,25 @@ type OutstandingRecordDTO =
 
 [<RequireQualifiedAccess>]
 module internal OutstandingRecordDTO =
+    // Because we're not wrapping this DTO in a dispatcher, we have to create the record
+    // parser ourselves.
     let private recordFields =
-        FSharpType.GetRecordFields typeof<OutstandingRecordDTO>
+        FSharpType.GetRecordFields
+            // We know the type is private, so we can be specific about our binding flags.
+            (typeof<OutstandingRecordDTO>, BindingFlags.NonPublic)
 
     let private recordTransferableTypes =
         recordFields
         |> Array.map (fun pi -> TransferableType.InvokeGetFor pi.PropertyType)
 
-    // Because we're not wrapping this DTO in a dispatcher, we have to create the record
-    // parser ourselves.
     // Type inferencing can't seem to cope without the type hint.
-    let recordParser : DbDataReader -> OutstandingRecordDTO =
+    let internal recordParser : DbDataReader -> OutstandingRecordDTO =
         RecordParser.Create<OutstandingRecordDTO>
             (recordTransferableTypes, [| 0 .. recordFields.Length - 1 |])
+
+    let internal toUnderlying (osRecord: OutstandingRecordDTO): OutstandingRecord =
+        {
+            PolicyId    = osRecord.policy_id
+            Cohort      = CohortMembershipDTO.toUnderlying osRecord.cohort
+            HasRunError = osRecord.had_run_error
+        }

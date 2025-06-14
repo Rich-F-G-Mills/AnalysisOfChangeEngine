@@ -3,9 +3,10 @@ namespace AnalysisOfChangeEngine.Walks
 
 
 [<RequireQualifiedAccess>]
-module PxApi =
+module ExcelApi =
 
     open System
+    open FsToolkit.ErrorHandling
     open AnalysisOfChangeEngine
     open AnalysisOfChangeEngine.Structures.PolicyRecords
     open AnalysisOfChangeEngine.Structures.StepResults
@@ -17,35 +18,14 @@ module PxApi =
 
 
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
-    type PxGender =
-        | M
-        | F
+    type ExcelGender =
+        | MALE
+        | FEMALE
 
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
-    type PxLivesBasis =
-        | S
-        | J
-
-
-    [<NoComparison>]
-    type StepRelatedAttributes =
-        {
-            AoCOpeningCalculationDate   : DateOnly option
-            CalculationDate             : DateOnly        
-        }
-
-    [<NoComparison>]
-    type PolicyRelatedAttributes =
-        {
-            EntryDate                   : DateOnly
-            NextPremiumDueDate          : DateOnly
-            EntryAgeLife1               : int
-            GenderLife1                 : PxGender
-            EntryAgeLife2               : int option
-            JointValuationAge           : int option
-            SingleJointLife             : PxLivesBasis
-        }
-
+    type ExcelLivesBasis =
+        | SINGLE
+        | JOINT
 
     [<NoEquality; NoComparison>]
     type OutputAttributes =
@@ -128,7 +108,7 @@ module PxApi =
                     member _.Name =
                         "PX API [Opening]"
                     member _.Execute field record =
-                        Error "failed"
+                        AsyncResult.returnError "failed"
             }
 
 
@@ -140,5 +120,5 @@ module PxApi =
                     member _.Name =
                         "PX API [Post-Opening Regression]"
                     member _.Execute field record =
-                        Error "failed"
+                        AsyncResult.returnError "failed"
             }
