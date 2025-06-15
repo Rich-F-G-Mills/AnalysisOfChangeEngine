@@ -2945,13 +2945,12 @@ module internal HResultType =
 
     [<RequireQualifiedAccess>]
     module HResult =
-        // TODO - Is this really needed? Concerned that the following would otherwise be re-evaluated each time.
+        // We need to be careful with parameterised lets as these appear to be run each time!
+        // As such, safer to just set up the mapper once and use it.
         let private mapper =
             Attributes.createMapperFromNativeToType<int, HResult>
 
         let ofNative =
-            do printfn "Setting up mapper."
-
             mapper >> Option.defaultValue HResult.UNKNOWN_HRESULT
 
 

@@ -8,8 +8,6 @@
   <ItemGroup>
     <None Include="README.md" />
     <Compile Include="StateMonad.fs" />
-    <Compile Include="TypeExtentions.fs" />
-    <Compile Include="RegEx.fs" />
     <Compile Include="Types.fs" />
   </ItemGroup>
 

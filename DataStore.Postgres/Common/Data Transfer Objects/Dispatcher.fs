@@ -9,6 +9,7 @@ open FSharp.Quotations
 
 open Npgsql
 
+open AnalysisOfChangeEngine
 open AnalysisOfChangeEngine.DataStore.Postgres
 
 

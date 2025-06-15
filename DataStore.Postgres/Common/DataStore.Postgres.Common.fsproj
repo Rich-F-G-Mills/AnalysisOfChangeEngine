@@ -7,7 +7,6 @@
 
   <ItemGroup>
     <Compile Include="Types.fs" />
-    <Compile Include="TypeExtensions.fs" />
     <Compile Include="Data Transfer Objects\TransferableType.fs" />
     <Compile Include="Data Transfer Objects\Dispatcher.fs" />
     <Compile Include="Data Transfer Objects\Structures.fs" />
@@ -21,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Common\Common.fsproj" />
+    <ProjectReference Include="..\..\TypeExtensions\TypeExtensions.fsproj" />
   </ItemGroup>
 
 </Project>

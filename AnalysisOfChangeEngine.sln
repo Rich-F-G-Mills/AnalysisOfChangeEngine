@@ -38,6 +38,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Api Providers", "Api Provid
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ApiProvider.Excel.NativeBindings", "ApiProvider\Excel.NativeBindings\ApiProvider.Excel.NativeBindings.csproj", "{53009B6F-3D84-441D-9904-5088888CC9F6}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "TypeExtensions", "TypeExtensions\TypeExtensions.fsproj", "{434C551E-CF8A-4C64-A2CE-693DDED1DF8B}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "StateMonad", "StateMonad\StateMonad.fsproj", "{A7E60DBC-C384-4749-AFAB-ED1781849445}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -88,6 +92,14 @@ Global
 		{53009B6F-3D84-441D-9904-5088888CC9F6}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{53009B6F-3D84-441D-9904-5088888CC9F6}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{53009B6F-3D84-441D-9904-5088888CC9F6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{434C551E-CF8A-4C64-A2CE-693DDED1DF8B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{434C551E-CF8A-4C64-A2CE-693DDED1DF8B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{434C551E-CF8A-4C64-A2CE-693DDED1DF8B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{434C551E-CF8A-4C64-A2CE-693DDED1DF8B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A7E60DBC-C384-4749-AFAB-ED1781849445}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A7E60DBC-C384-4749-AFAB-ED1781849445}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A7E60DBC-C384-4749-AFAB-ED1781849445}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A7E60DBC-C384-4749-AFAB-ED1781849445}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

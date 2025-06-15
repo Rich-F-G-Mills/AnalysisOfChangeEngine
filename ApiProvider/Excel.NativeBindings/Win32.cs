@@ -9,6 +9,7 @@ namespace AnalysisOfChangeEngine.ApiProvider.Excel.NativeBindings
         public static extern int AccessibleObjectFromWindow(
             [In] IntPtr hwnd,
             [In] uint dwId,
+            // TODO - The underlying native type is REFIID... Is that why we're using ref Guid here?
             [In] ref Guid riid,
             [Out, MarshalAs(UnmanagedType.IUnknown)] out Object ppvObject
         );

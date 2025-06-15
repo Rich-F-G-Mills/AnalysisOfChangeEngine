@@ -64,17 +64,3 @@ module internal Attributes =
 
     let createStrictMapperFromNativeToType<'TSource, 'TTarget when 'TSource:comparison and 'TTarget:comparison> =
         makeStrict createMapperFromNativeToType<'TSource, 'TTarget>
-
-    let createMapperToNativeFromType<'TSource, 'TTarget when 'TSource:comparison and 'TTarget:comparison> =
-        // do printfn "Creating mapper to native '%s' from '%s'." typeof<'TSource>.Name typeof<'TTarget>.Name
-        
-        let cases =
-            getMappingsForType<'TSource, 'TTarget>
-            |> Seq.map (fun (s, t) -> t, s)
-            |> Map.ofSeq
-
-        fun target ->            
-            Map.tryFind target cases
-
-    let createStrictMapperToNativeFromType<'TSource, 'TTarget when 'TSource:comparison and 'TTarget:comparison> =
-        makeStrict createMapperToNativeFromType<'TSource, 'TTarget>

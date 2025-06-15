@@ -1,6 +1,7 @@
 ﻿
 namespace AnalysisOfChangeEngine.StateMonad
 
+
 type Stateful<'TState, 'TValue> =
     Stateful of ('TState -> 'TValue * 'TState)
 

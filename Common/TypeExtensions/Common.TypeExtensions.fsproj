@@ -6,12 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="PxApi %28NOT IN USE%29.fs" />
-    <Compile Include="Steps.fs" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\Common\Common.fsproj" />
+    <Compile Include="Library.fs" />
   </ItemGroup>
 
 </Project>
