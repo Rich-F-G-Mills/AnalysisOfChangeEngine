@@ -9,6 +9,7 @@ module OBWholeOfLife =
     open FSharp.Quotations
     open FsToolkit.ErrorHandling
     open AnalysisOfChangeEngine
+    open AnalysisOfChangeEngine.Common
     open AnalysisOfChangeEngine.Structures.PolicyRecords
     open AnalysisOfChangeEngine.Structures.StepResults
     open AnalysisOfChangeEngine.Walks
@@ -29,8 +30,8 @@ module OBWholeOfLife =
     [<NoEquality; NoComparison>]
     type ApiCollection =
         {
-            px_OpeningRegression        : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, PxApi.OutputAttributes>
-            px_PostOpeningRegression    : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, PxApi.OutputAttributes>
+            px_OpeningRegression        : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelApi.ExcelOutputs>
+            px_PostOpeningRegression    : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelApi.ExcelOutputs>
         }
 
 
@@ -46,8 +47,8 @@ module OBWholeOfLife =
 
         // Short-hand way of changing our source for UAS and SAS (post-opening regression!)
         let useForAssetShares
-            (unsmoothedSelector: Expr<PxApi.OutputAttributes -> float32>)
-            (smoothedSelector: Expr<PxApi.OutputAttributes -> float32>)
+            (unsmoothedSelector: Expr<ExcelApi.ExcelOutputs -> float32>)
+            (smoothedSelector: Expr<ExcelApi.ExcelOutputs -> float32>)
             : SourceExpr<OBWholeOfLife.PolicyRecord, OBWholeOfLife.StepResults, _> =
                 <@
                     fun from _ prior _ ->
@@ -179,12 +180,12 @@ module OBWholeOfLife =
         member val ApiCollection =
             {
                 px_OpeningRegression =
-                    PxApi.createOpeningDispatcher<OBWholeOfLife.PolicyRecord> {
+                    ExcelApi.createOpeningDispatcher {
                         OpeningRunDate =
                             config.OpeningRunDate
                     }
                 px_PostOpeningRegression =
-                    PxApi.createPostOpeningDispatcher<OBWholeOfLife.PolicyRecord> {
+                    ExcelApi.createPostOpeningDispatcher {
                         OpeningRunDate =
                             config.OpeningRunDate
                         ClosingRunDate =

@@ -6,7 +6,6 @@ namespace AnalysisOfChangeEngine.Structures.PolicyRecords
 module OBWholeOfLife =
 
     open System
-    open AnalysisOfChangeEngine
 
 
     [<RequireQualifiedAccess; NoComparison>]

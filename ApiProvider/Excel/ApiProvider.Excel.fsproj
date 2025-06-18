@@ -9,7 +9,8 @@
     <Compile Include="Attributes.fs" />
     <Compile Include="HResultType.fs" />
     <Compile Include="Win32.fs" />
-    <Compile Include="Provider.fs" />
+    <Compile Include="Locator.fs" />
+    <Compile Include="DataTransfer.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -17,16 +18,19 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\TypeExtensions\TypeExtensions.fsproj" />
+    <ProjectReference Include="..\..\Common\TypeExtensions\Common.TypeExtensions.fsproj" />
+    <ProjectReference Include="..\..\Common\TypePatterns\Common.TypePatterns.fsproj" />
     <ProjectReference Include="..\Excel.NativeBindings\ApiProvider.Excel.NativeBindings.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <Reference Include="Microsoft.Office.Interop.Excel">
       <HintPath>..\..\..\..\..\..\Program Files (x86)\Microsoft Visual Studio\Shared\Visual Studio Tools for Office\PIA\Office15\Microsoft.Office.Interop.Excel.dll</HintPath>
+      <EmbedInteropTypes></EmbedInteropTypes>
     </Reference>
     <Reference Include="office">
       <HintPath>..\..\..\..\..\..\Program Files (x86)\Microsoft Visual Studio\Shared\Visual Studio Tools for Office\PIA\Office15\Office.dll</HintPath>
+      <EmbedInteropTypes></EmbedInteropTypes>
     </Reference>
   </ItemGroup>
 

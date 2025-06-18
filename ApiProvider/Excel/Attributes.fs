@@ -2,24 +2,36 @@
 namespace AnalysisOfChangeEngine.ApiProvider.Excel
 
 
-module internal Attributes =
+[<AutoOpen>]
+module Attributes =
 
     open System
     open FSharp.Reflection
 
 
     [<AbstractClass>]
-    type MapFromAttributeBase<'T when 'T:comparison> (source: 'T) =
+    [<AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = true)>]
+    type internal MapFromAttributeBase<'T when 'T:comparison> (source: 'T) =
         inherit Attribute ()
 
-        member val Source = source
+        member val Source =
+            source with get
 
     [<Sealed>]
-    type MapFromIntAttribute (source: _) =
+    type internal MapFromIntAttribute (source: _) =
         inherit MapFromAttributeBase<int> (source)
 
 
-    let getMappingsForType<'TSource, 'TTarget when 'TSource:comparison and 'TTarget:comparison> =
+    [<Sealed>]
+    [<AttributeUsage(AttributeTargets.Property, AllowMultiple = false)>]
+    type ExcelRangeAliasAttribute (rangeName: string) =
+        inherit Attribute ()
+
+        member val RangeName =
+            rangeName with get
+
+
+    let internal getMappingsForType<'TSource, 'TTarget when 'TSource:comparison and 'TTarget:comparison> =
         let anyDuplicated arr =
             let distinct =
                 Array.distinct arr
@@ -41,18 +53,18 @@ module internal Attributes =
             mappings |> Array.map snd
 
         if anyDuplicated sources then
-            failwith (sprintf "Not all sources of type '%s' are distinct for target of type '%s'." typeof<'TSource>.Name typeof<'TTarget>.Name)
+            failwithf "Not all sources of type '%s' are distinct for target of type '%s'." typeof<'TSource>.Name typeof<'TTarget>.Name
         elif anyDuplicated targets then
-            failwith (sprintf "Not all targets of type '%s' are distinct." typeof<'TTarget>.Name)
+            failwithf "Not all targets of type '%s' are distinct." typeof<'TTarget>.Name
         else
             mappings
 
     let private makeStrict<'T1, 'T2 when 'T1:comparison> (mapper: 'T1 -> 'T2 option) from =
         match mapper from with
         | Some ``to`` -> ``to``
-        | None -> failwith (sprintf "Unable to map '%A' to target type '%s'." from typeof<'T2>.Name)
+        | None -> failwithf "Unable to map '%A' to target type '%s'." from typeof<'T2>.Name
 
-    let createMapperFromNativeToType<'TSource, 'TTarget when 'TSource:comparison and 'TTarget:comparison> =
+    let internal createMapperFromNativeToType<'TSource, 'TTarget when 'TSource:comparison and 'TTarget:comparison> =
         // do printfn "Creating mapper from native '%s' to '%s'." typeof<'TSource>.Name typeof<'TTarget>.Name
         
         let cases =
@@ -62,5 +74,5 @@ module internal Attributes =
         fun source ->
             Map.tryFind source cases
 
-    let createStrictMapperFromNativeToType<'TSource, 'TTarget when 'TSource:comparison and 'TTarget:comparison> =
+    let internal createStrictMapperFromNativeToType<'TSource, 'TTarget when 'TSource:comparison and 'TTarget:comparison> =
         makeStrict createMapperFromNativeToType<'TSource, 'TTarget>

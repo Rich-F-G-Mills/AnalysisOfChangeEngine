@@ -16,7 +16,8 @@ module SourceParser =
     open FSharp.Quotations
     open FSharp.Reflection
     open AnalysisOfChangeEngine
-    open AnalysisOfChangeEngine.StateMonad
+    open AnalysisOfChangeEngine.Common
+    open AnalysisOfChangeEngine.Common.StateMonad
 
     (*
         When constructing a record via a code quotation, if the elements are not supplied in

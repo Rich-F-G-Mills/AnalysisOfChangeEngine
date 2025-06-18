@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
@@ -10,8 +10,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Common\Common.fsproj" />
     <ProjectReference Include="..\Controller\Controller.fsproj" />
+    <ProjectReference Include="..\Core\Core.fsproj" />
     <ProjectReference Include="..\DataStore.Postgres\OB Whole-Of-Life\DataStore.Postgres.OBWholeOfLife.fsproj" />
     <ProjectReference Include="..\Walks\OB Whole-Of-Life\Walks.OBWholeOfLife.fsproj" />
   </ItemGroup>

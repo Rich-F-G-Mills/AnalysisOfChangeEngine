@@ -11,6 +11,7 @@ open FSharp.Reflection
 open FsToolkit.ErrorHandling
 open Npgsql
 
+open AnalysisOfChangeEngine.Common
 open AnalysisOfChangeEngine.DataStore.Postgres
 
 
@@ -69,57 +70,26 @@ type internal TransferableType private () =
         // Making this concurrent is probably overkill. However, useful to have just in case!
         new ConcurrentDictionary<Type, ITransferableType>()
 
-    static let (|NonOptionalNonParameterizedUnion|_|) (unionType: Type) =
-        option {
-            do! Option.requireTrue
-                 (FSharpType.IsUnion
-                    // Not having this is leading to runtime failures in some cases.
-                    // TODO - Bottom out exactly what combination of flags we should be using!
-                    (unionType, BindingFlags.Public ||| BindingFlags.NonPublic))
+    static let (|NonOptionalNonParameterizedPostgresUnion|_|) (t: Type) =
+        match t with
+        | NonOptionalNonParameterizedUnion unionCases ->
+            option {
+                let! pgEnumAttrib =
+                    t.GetCustomAttribute<PostgresEnumerationAttribute> (true)
+                    |> Option.ofNull
 
-            let recordColumns =
-                FSharpType.GetUnionCases
-                    (unionType, BindingFlags.Public ||| BindingFlags.NonPublic)
+                let mapper =
+                    match pgEnumAttrib.Location with
+                    | PostgresEnumerationSchema.Common ->
+                        fun _ -> EnumSchemaName "common"
+                    | PostgresEnumerationSchema.ProductSpecific ->
+                        fun (ProductSchemaName name) -> EnumSchemaName name
 
-            let allNonParameterized =
-                recordColumns
-                |> Array.forall (fun uc -> uc.GetFields().Length = 0)
+                return PgTypeName pgEnumAttrib.PgTypeName, mapper
+            }
 
-            do! Option.requireTrue allNonParameterized
-
-            let! pgEnumAttrib =
-                unionType.GetCustomAttribute<PostgresEnumerationAttribute> (true)
-                |> Option.ofNull
-
-            let mapper =
-                match pgEnumAttrib.Location with
-                | PostgresEnumerationSchema.Common ->
-                    fun _ -> EnumSchemaName "common"
-                | PostgresEnumerationSchema.ProductSpecific ->
-                    fun (ProductSchemaName name) -> EnumSchemaName name
-
-            return PgTypeName pgEnumAttrib.PgTypeName, mapper
-        }
-
-    static let (|NonOptionalNonUnion|_|) (nonOptionalType: Type) =
-        Option.requireFalse
-            (FSharpType.IsUnion
-                (nonOptionalType, BindingFlags.Public ||| BindingFlags.NonPublic))
-
-    static let (|Optional|_|) (maybeOptionalType: Type) =
-        option {
-            do! Option.requireTrue maybeOptionalType.IsGenericType
-
-            let genericTypeDef =
-                maybeOptionalType.GetGenericTypeDefinition()
-
-            do! Option.requireTrue (genericTypeDef = typedefof<_ option>)
-
-            let innerType =
-                maybeOptionalType.GenericTypeArguments[0]
-
-            return innerType
-        }
+        | _ ->
+            None
 
     // We cannot re-use this... If a query results in multiple null parameters,
     // NPGSQL complains if we use the same object instance more than once.
@@ -341,7 +311,7 @@ type internal TransferableType private () =
                     | NonOptionalNonUnion ->
                         TransferableType.CreateForNonOptionalNonUnion<'TValue> ()
 
-                    | NonOptionalNonParameterizedUnion (pgTypeName, schemaMapper) ->
+                    | NonOptionalNonParameterizedPostgresUnion (pgTypeName, schemaMapper) ->
                         TransferableType.CreateForNonOptionalUnion<'TValue>
                             (pgTypeName, schemaMapper)
 

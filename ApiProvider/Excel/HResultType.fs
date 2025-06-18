@@ -5,13 +5,11 @@ namespace AnalysisOfChangeEngine.ApiProvider.Excel
 [<AutoOpen>]
 module internal HResultType =
 
-    open Attributes
-
     // Sourced from...
     // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-erref/705fb797-2175-4a90-b5a3-3918024b10b8
 
 
-    type HResult =
+    type internal HResult =
         | [<MapFromInt(0x00030200)>] STG_S_CONVERTED
         | [<MapFromInt(0x00030201)>] STG_S_BLOCK
         | [<MapFromInt(0x00030202)>] STG_S_RETRYNOW
@@ -2944,13 +2942,13 @@ module internal HResultType =
 
 
     [<RequireQualifiedAccess>]
-    module HResult =
+    module internal HResult =
         // We need to be careful with parameterised lets as these appear to be run each time!
         // As such, safer to just set up the mapper once and use it.
         let private mapper =
             Attributes.createMapperFromNativeToType<int, HResult>
 
-        let ofNative =
+        let internal ofNative =
             mapper >> Option.defaultValue HResult.UNKNOWN_HRESULT
 
 

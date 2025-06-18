@@ -5,16 +5,15 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
-  <ItemGroup>
-    <None Include="README.md" />
-    <Compile Include="StateMonad.fs" />
-    <Compile Include="Types.fs" />
-  </ItemGroup>
-
   <ItemGroup />
 
   <ItemGroup>
-    <PackageReference Include="FsToolkit.ErrorHandling" Version="4.18.0" />
+    <Compile Include="Library.fs" />
+    <None Include="README.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FsToolkit.ErrorHandling" Version="5.0.0" />
   </ItemGroup>
 
 </Project>

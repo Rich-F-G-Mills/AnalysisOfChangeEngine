@@ -14,13 +14,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FsToolkit.ErrorHandling" Version="4.18.0" />
+    <PackageReference Include="FsToolkit.ErrorHandling" Version="5.0.0" />
     <PackageReference Include="Npgsql" Version="9.0.3" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Common\Common.fsproj" />
-    <ProjectReference Include="..\..\TypeExtensions\TypeExtensions.fsproj" />
+    <ProjectReference Include="..\..\Common\TypeExtensions\Common.TypeExtensions.fsproj" />
+    <ProjectReference Include="..\..\Common\TypePatterns\Common.TypePatterns.fsproj" />
+    <ProjectReference Include="..\..\Core\Core.fsproj" />
   </ItemGroup>
 
 </Project>

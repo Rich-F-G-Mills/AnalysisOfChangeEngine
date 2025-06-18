@@ -4,7 +4,7 @@ namespace AnalysisOfChangeEngine
 
 /// Common types used throughout the analysis of change machinery.
 [<AutoOpen>]
-module Types =
+module Core =
 
     open System
     open System.Collections.Generic
@@ -18,7 +18,10 @@ module Types =
         interface
             /// Note that API requestors with the SAME NAME will be grouped together!
             abstract Name: string
-            abstract Execute: Map<string, PropertyInfo> -> 'TPolicyRecord -> Async<Result<Map<string, obj>, string>>
+            abstract Execute:
+                Map<string, PropertyInfo>
+                    -> 'TPolicyRecord
+                    -> Async<Result<Map<string, obj>, string>>
         end
 
     (*

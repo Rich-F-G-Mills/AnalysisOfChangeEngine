@@ -7,7 +7,7 @@ open System
 open System.Reflection
 open FSharp.Quotations
 open AnalysisOfChangeEngine
-open AnalysisOfChangeEngine.StateMonad
+open AnalysisOfChangeEngine.Common.StateMonad
 
 
 [<CustomEquality; CustomComparison>]

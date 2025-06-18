@@ -194,25 +194,6 @@ module AbstractDataStore =
         abstract member dtoToStepResults: 'TStepResultsDTO -> Result<'TStepResults, string>
 
         abstract member stepResultsToDTO: 'TStepResults -> Result<'TStepResultsDTO, string>
-
-        /// Constructs a mapping between the step Uids of the supplied run and
-        /// functions that, when supplied a policy Id, will fetch the results for that
-        /// step (provided they exist!). Note that requesting results for a non-existent run
-        /// means that None will be returned. If successful, the map returned will indicate
-        /// for which steps a getter is available.
-        member this.CreateStepResultGetters runUid =
-            option {
-                let! stepHeadersForRun =
-                    this.TryGetStepHeadersForRun runUid
-
-                let getters =
-                    stepHeadersForRun
-                    |> Seq.map (fun hdr ->
-                        hdr.Uid, stepResultsDispatcher.TryGetRows runUid hdr.Uid)
-                    |> Map.ofSeq
-
-                return getters
-            }
             
         member _.DeleteResultsForPolicy stepUid policyId =
             0

@@ -8,7 +8,7 @@ module WalkParser =
     open FSharp.Reflection
     open FSharp.Quotations
     open AnalysisOfChangeEngine
-    open AnalysisOfChangeEngine.StateMonad
+    open AnalysisOfChangeEngine.Common.StateMonad
 
 
     type private WalkState<'TPolicyRecord> =

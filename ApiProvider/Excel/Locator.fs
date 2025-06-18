@@ -2,20 +2,16 @@
 namespace AnalysisOfChangeEngine.ApiProvider.Excel
 
 
-[<RequireQualifiedAccess>]
-module Excel =
+open System
+open System.Diagnostics
+open Microsoft.Office.Interop
+open FsToolkit.ErrorHandling
 
-    open System
-    open System.Diagnostics
-    open Microsoft.Office.Interop
-    open FsToolkit.ErrorHandling
-
-    open AnalysisOfChangeEngine
+open AnalysisOfChangeEngine.Common
 
 
-    let inline private (=~) (lhs: string) (rhs: string) =
-        String.Equals (lhs, rhs, StringComparison.InvariantCultureIgnoreCase)
-
+[<AutoOpen>]
+module internal Locator =
 
     let private IID_IExcelWindow =
         Guid.Parse("00020893-0000-0000-C000-000000000046")
@@ -23,16 +19,17 @@ module Excel =
     let private OBJID_NATIVEOM =
         0xFFFFFFF0u
 
-
     let private hWndHasClass className hWnd =
         let className' =
             Win32.getClassName hWnd
 
-        className' =~ className
+        String.Equals (className, className', StringComparison.InvariantCultureIgnoreCase)
 
     let private tryGetExcelApplicationForProcess (``process``: Process) =
         option {
-            do! Option.requireTrue (``process``.ProcessName =~ "EXCEL")
+            do! Option.requireTrue 
+                    (String.Equals
+                        (``process``.ProcessName, "EXCEL", StringComparison.InvariantCultureIgnoreCase))
 
             let mainWindowHandle =
                 ``process``.MainWindowHandle
@@ -53,19 +50,13 @@ module Excel =
             return excelWindow.Application
         }
 
-    
-    let create workbookSelector =
+    let locateOpenWorkbooks workbookSelector =
         let excelApplications =
             Process.GetProcesses ()
             |> Array.choose tryGetExcelApplicationForProcess
 
-        // Within each Excel application, find the first workbook (if any) that satisfies the selector.
-        let reqdWorkbooks =
-            excelApplications
-            |> Array.choose (fun app ->
-                app.Workbooks
-                |> Seq.cast<Excel.Workbook>
-                |> Seq.tryFind (workbookSelector << _.Name))
-
-        reqdWorkbooks
-
+        excelApplications
+        |> Array.choose (fun app ->
+            app.Workbooks
+            |> Seq.cast<Excel.Workbook>
+            |> Seq.tryFind (workbookSelector << _.Name))

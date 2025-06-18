@@ -110,7 +110,7 @@ module Types =
         | ProductSpecific
 
     [<AbstractClass>]
-    [<AttributeUsage(validOn = AttributeTargets.Class, AllowMultiple = false)>]
+    [<AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = true)>]
     type PostgresEnumerationAttribute (pgTypeName: string, location: PostgresEnumerationSchema) =
         inherit Attribute ()
 

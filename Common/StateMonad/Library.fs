@@ -1,10 +1,12 @@
 ﻿
-namespace AnalysisOfChangeEngine.StateMonad
+namespace AnalysisOfChangeEngine.Common.StateMonad
 
 
 type Stateful<'TState, 'TValue> =
     Stateful of ('TState -> 'TValue * 'TState)
 
+
+[<RequireQualifiedAccess>]
 module Stateful =
 
     let inline bindM (Stateful transformer) binder =

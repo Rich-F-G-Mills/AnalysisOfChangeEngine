@@ -6,12 +6,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="PxApi %28NOT IN USE%29.fs" />
-    <Compile Include="Steps.fs" />
+    <Compile Include="Library.fs" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Core\Core.fsproj" />
+    <PackageReference Include="FsToolkit.ErrorHandling" Version="5.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TypeExtensions\Common.TypeExtensions.fsproj" />
   </ItemGroup>
 
 </Project>

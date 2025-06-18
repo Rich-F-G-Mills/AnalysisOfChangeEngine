@@ -1,5 +1,5 @@
 ﻿
-namespace AnalysisOfChangeEngine
+namespace AnalysisOfChangeEngine.Common
 
 
 [<AutoOpen>]

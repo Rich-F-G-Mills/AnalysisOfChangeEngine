@@ -8,13 +8,13 @@ module internal Win32 =
     open System.Collections.Generic
 
 
-    let accessibleObjectFromWindow targetId clsid hWnd =
+    let internal accessibleObjectFromWindow targetId clsid hWnd =
         match NativeBindings.Win32.AccessibleObjectFromWindow (hWnd, targetId, ref clsid) with
         | HResultError err, _ -> Error err
         | _, obj -> Ok obj
 
 
-    let getClassName hWnd =
+    let internal getClassName hWnd =
         let nameBuffer =
             Array.zeroCreate 256
 
@@ -27,7 +27,7 @@ module internal Win32 =
         |> String
 
 
-    let enumChildWindows hWndParent =
+    let internal enumChildWindows hWndParent =
         let childHWnds =
             new List<_> ()
 
