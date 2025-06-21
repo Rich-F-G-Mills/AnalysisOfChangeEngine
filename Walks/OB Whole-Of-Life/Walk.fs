@@ -30,8 +30,8 @@ module OBWholeOfLife =
     [<NoEquality; NoComparison>]
     type ApiCollection =
         {
-            px_OpeningRegression        : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelApi.ExcelOutputs>
-            px_PostOpeningRegression    : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelApi.ExcelOutputs>
+            xl_OpeningRegression        : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelApi.ExcelOutputs>
+            xl_PostOpeningRegression    : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelApi.ExcelOutputs>
         }
 
 
@@ -55,9 +55,9 @@ module OBWholeOfLife =
                         {
                             prior with
                                 UnsmoothedAssetShare =
-                                    from.apiCall (_.px_PostOpeningRegression, %unsmoothedSelector)
+                                    from.apiCall (_.xl_PostOpeningRegression, %unsmoothedSelector)
                                 SmoothedAssetShare =
-                                    from.apiCall (_.px_PostOpeningRegression, %smoothedSelector)
+                                    from.apiCall (_.xl_PostOpeningRegression, %smoothedSelector)
                         }
                 @>
 
@@ -162,7 +162,27 @@ module OBWholeOfLife =
                         else
                             return None
                     }
-                    
+                  
+               
+        // --- API COLLECTION ---
+
+        // DD - We've chosen to define the API collection itself within the walk.
+        // This was just so that we can keep everything together.
+        let excelDispatcherConfig : ExcelApi.ExcelDispatcherConfig =
+            {
+                OpeningRunDate = config.OpeningRunDate
+                ClosingRunDate = config.ClosingRunDate
+            }
+
+        // We want this to be publicly available.
+        member val ApiCollection =
+            {
+                xl_OpeningRegression =
+                    ExcelApi.createOpeningDispatcher excelDispatcherConfig
+
+                xl_PostOpeningRegression =
+                    ExcelApi.createPostOpeningDispatcher excelDispatcherConfig
+            }
 
 
         // --- CONTROL CREATION ---
@@ -170,27 +190,6 @@ module OBWholeOfLife =
         static member create (logger, config) =
             result {
                 return new Walk (logger, config)
-            }
-
-
-        // --- API COLLECTION ---
-
-        // DD - We've chosen to define the API collection itself within the walk.
-        // This was just so that we can keep everything together.
-        member val ApiCollection =
-            {
-                px_OpeningRegression =
-                    ExcelApi.createOpeningDispatcher {
-                        OpeningRunDate =
-                            config.OpeningRunDate
-                    }
-                px_PostOpeningRegression =
-                    ExcelApi.createPostOpeningDispatcher {
-                        OpeningRunDate =
-                            config.OpeningRunDate
-                        ClosingRunDate =
-                            config.ClosingRunDate
-                    }
             }
              
 
@@ -202,21 +201,21 @@ module OBWholeOfLife =
                     fun from _ _ ->
                         {                    
                             UnsmoothedAssetShare =
-                                from.apiCall (_.px_OpeningRegression, _.UnsmoothedAssetShare)
+                                from.apiCall (_.xl_OpeningRegression, _.UnsmoothedAssetShare)
                             SmoothedAssetShare =
-                                from.apiCall (_.px_OpeningRegression, _.SmoothedAssetShare)
+                                from.apiCall (_.xl_OpeningRegression, _.SmoothedAssetShare)
                             GuaranteedDeathBenefit =
-                                from.apiCall (_.px_OpeningRegression, _.GuaranteedDeathBenefit)
+                                from.apiCall (_.xl_OpeningRegression, _.GuaranteedDeathBenefit)
                             ExitBonusRate =
-                                from.apiCall (_.px_OpeningRegression, _.ExitBonusRate)
+                                from.apiCall (_.xl_OpeningRegression, _.ExitBonusRate)
                             UnpaidPremiums =
-                                from.apiCall (_.px_OpeningRegression, _.UnpaidPremiums)
+                                from.apiCall (_.xl_OpeningRegression, _.UnpaidPremiums)
                             SurrenderBenefit =
-                                from.apiCall (_.px_OpeningRegression, _.CashSurrenderBenefit)
+                                from.apiCall (_.xl_OpeningRegression, _.CashSurrenderBenefit)
                             DeathUpliftFactor =
-                                from.apiCall (_.px_OpeningRegression, _.DeathUpliftFactor)
+                                from.apiCall (_.xl_OpeningRegression, _.DeathUpliftFactor)
                             DeathBenefit =
-                                from.apiCall (_.px_OpeningRegression, _.DeathBenefit)
+                                from.apiCall (_.xl_OpeningRegression, _.DeathBenefit)
                         } : OBWholeOfLife.StepResults @>
 
                 Validator = function
@@ -271,9 +270,9 @@ module OBWholeOfLife =
                             {
                                 prior with
                                     UnsmoothedAssetShare =
-                                        from.apiCall (_.px_PostOpeningRegression, _.Step0_Opening_UAS)
+                                        from.apiCall (_.xl_PostOpeningRegression, _.Step0_Opening_UAS)
                                     SmoothedAssetShare =
-                                        from.apiCall (_.px_PostOpeningRegression, _.Step0_Opening_SAS)
+                                        from.apiCall (_.xl_PostOpeningRegression, _.Step0_Opening_SAS)
                                     SurrenderBenefit =
                                         current.SmoothedAssetShare * (1.0f + current.ExitBonusRate)
                                             - current.UnpaidPremiums
@@ -434,7 +433,7 @@ module OBWholeOfLife =
                             {
                                 prior with
                                     GuaranteedDeathBenefit =
-                                        from.apiCall (_.px_PostOpeningRegression, _.GuaranteedDeathBenefit)
+                                        from.apiCall (_.xl_PostOpeningRegression, _.GuaranteedDeathBenefit)
                             } : OBWholeOfLife.StepResults @>
 
                     Validator =
@@ -450,7 +449,7 @@ module OBWholeOfLife =
                             {
                                 prior with
                                     DeathUpliftFactor =
-                                        from.apiCall (_.px_PostOpeningRegression, _.DeathUpliftFactor)
+                                        from.apiCall (_.xl_PostOpeningRegression, _.DeathUpliftFactor)
                             } : OBWholeOfLife.StepResults @>
 
                     Validator =
@@ -466,7 +465,7 @@ module OBWholeOfLife =
                             {
                                 prior with
                                     ExitBonusRate =
-                                        from.apiCall (_.px_PostOpeningRegression, _.ExitBonusRate)
+                                        from.apiCall (_.xl_PostOpeningRegression, _.ExitBonusRate)
                             } : OBWholeOfLife.StepResults @>
 
                     Validator =
@@ -482,21 +481,21 @@ module OBWholeOfLife =
                         fun from _ _ _ ->
                             {                    
                                 UnsmoothedAssetShare =
-                                    from.apiCall (_.px_PostOpeningRegression, _.UnsmoothedAssetShare)
+                                    from.apiCall (_.xl_PostOpeningRegression, _.UnsmoothedAssetShare)
                                 SmoothedAssetShare =
-                                    from.apiCall (_.px_PostOpeningRegression, _.SmoothedAssetShare)
+                                    from.apiCall (_.xl_PostOpeningRegression, _.SmoothedAssetShare)
                                 GuaranteedDeathBenefit =
-                                    from.apiCall (_.px_PostOpeningRegression, _.GuaranteedDeathBenefit)
+                                    from.apiCall (_.xl_PostOpeningRegression, _.GuaranteedDeathBenefit)
                                 ExitBonusRate =
-                                    from.apiCall (_.px_PostOpeningRegression, _.ExitBonusRate)
+                                    from.apiCall (_.xl_PostOpeningRegression, _.ExitBonusRate)
                                 UnpaidPremiums =
-                                    from.apiCall (_.px_PostOpeningRegression, _.UnpaidPremiums)
+                                    from.apiCall (_.xl_PostOpeningRegression, _.UnpaidPremiums)
                                 SurrenderBenefit =
-                                    from.apiCall (_.px_PostOpeningRegression, _.CashSurrenderBenefit)
+                                    from.apiCall (_.xl_PostOpeningRegression, _.CashSurrenderBenefit)
                                 DeathUpliftFactor =
-                                    from.apiCall (_.px_PostOpeningRegression, _.DeathUpliftFactor)
+                                    from.apiCall (_.xl_PostOpeningRegression, _.DeathUpliftFactor)
                                 DeathBenefit =
-                                    from.apiCall (_.px_PostOpeningRegression, _.DeathBenefit)
+                                    from.apiCall (_.xl_PostOpeningRegression, _.DeathBenefit)
                             } : OBWholeOfLife.StepResults @>
 
                     Validator =
@@ -524,5 +523,6 @@ module OBWholeOfLife =
  
         override val AddNewRecords =
             createStep.addNewRecords {
-                Validator = noValidator
+                Validator =
+                    noValidator
             }

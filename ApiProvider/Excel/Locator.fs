@@ -55,8 +55,11 @@ module internal Locator =
             Process.GetProcesses ()
             |> Array.choose tryGetExcelApplicationForProcess
 
+        // We will only include a workbook for a given application provided
+        // only one workbook within that application satisfies the selector predicate.
         excelApplications
         |> Array.choose (fun app ->
             app.Workbooks
             |> Seq.cast<Excel.Workbook>
-            |> Seq.tryFind (workbookSelector << _.Name))
+            |> Seq.filter (workbookSelector << _.Name)
+            |> Seq.tryExactlyOne)

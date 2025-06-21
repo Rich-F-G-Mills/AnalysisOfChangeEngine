@@ -11,15 +11,18 @@
     <Compile Include="Win32.fs" />
     <Compile Include="Locator.fs" />
     <Compile Include="DataTransfer.fs" />
+    <Compile Include="Dispatcher.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="FsToolkit.ErrorHandling" Version="5.0.0" />
+    <PackageReference Include="System.Threading.Tasks.Dataflow" Version="9.0.6" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\Common\TypeExtensions\Common.TypeExtensions.fsproj" />
     <ProjectReference Include="..\..\Common\TypePatterns\Common.TypePatterns.fsproj" />
+    <ProjectReference Include="..\..\Core\Core.fsproj" />
     <ProjectReference Include="..\Excel.NativeBindings\ApiProvider.Excel.NativeBindings.csproj" />
   </ItemGroup>
 

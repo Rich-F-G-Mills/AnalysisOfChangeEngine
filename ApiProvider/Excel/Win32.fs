@@ -2,6 +2,7 @@
 namespace AnalysisOfChangeEngine.ApiProvider.Excel
 
 
+// Idiomatic F# wrappers around the native Win32 bindings provided by C#.
 module internal Win32 =
 
     open System

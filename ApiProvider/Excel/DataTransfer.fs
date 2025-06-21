@@ -14,16 +14,19 @@ open AnalysisOfChangeEngine.Common
 
 
 [<AutoOpen>]
+// More of a philosophical decision... However, given these do not depend
+// on the record type used to contain the various inputs, I didn't want to include
+// these in the generic pseudo-static class below.
 module private Common =
 
-    let cellRangeVarDef =
+    let internal cellRangeVarDef =
         Var("cellRange", typeof<Excel.Range>)
 
-    let cellRangeVar =
+    let internal cellRangeVar =
         Expr.Var cellRangeVarDef
         |> Expr.Cast<Excel.Range>
 
-    let primitiveTypes = [
+    let internal primitiveTypes = [
         typeof<int>
         typeof<float>
         typeof<float32>
@@ -32,7 +35,7 @@ module private Common =
         typeof<DateTime>
     ]
 
-    let (|Primitive|_|) (t: Type) =
+    let internal (|Primitive|_|) (t: Type) =
         primitiveTypes |> List.contains t
 
 
@@ -40,13 +43,19 @@ module private Common =
 Design Decision:
     Why use a pseudo-static class rather than a module?
     Certain methods need to be invoked via reflection. As such,
-    it is easier to achieve this for vanially static methods rather
+    it is easier to achieve this using vanilla static methods rather
     than let bindings within a module.
+
+    Why the need for reflection?
+    If nothing else, it allows us to enforce type-safety within a particular
+    aspect of our logic. I recognise there could be a performance penalty from
+    this, however, this logic is called only once up-front, so will to accept it. 
 
     Also... As part of the Postgres logic, transferable types were cached
     for later re-use. Why not here? Frankly, there was a lot more complexity
-    inherent in the Postgres logic. It just doesn't feel like it would
-    be of material benefit here.
+    inherent in the Postgres logic. Furthermore, a given type could be used
+    a significant number of times within a given product. We don't have
+    that level of complexity here. As such, didn't seem worth the effort!
 *)
 [<AbstractClass; Sealed>]
 type internal DataTransfer<'TCellInputs> private () =
@@ -57,9 +66,6 @@ type internal DataTransfer<'TCellInputs> private () =
     static let cellInputsVar =
         Expr.Var cellInputsVarDef
         |> Expr.Cast<'TCellInputs> 
-        
-    static let cellInputsType =
-        typeof<'TCellInputs>
 
     static let cellInputMembers =
         FSharpType.GetRecordFields
@@ -114,6 +120,8 @@ type internal DataTransfer<'TCellInputs> private () =
                 .MakeGenericMethod(innerValueType)
                 .Invoke(null, [| inputPI |])
 
+    // I know... Some definite duplication compared to the non-union version above.
+    // However, willing to accept on aeshtetic grounds!
     static member private CreateWriterForOptionalUnionInput<'TInnerValue>
         (inputPI: PropertyInfo)
         : Excel.Range -> 'TCellInputs -> unit =
@@ -183,28 +191,38 @@ type internal DataTransfer<'TCellInputs> private () =
                 .MakeGenericMethod(inputPI.PropertyType)
                 .Invoke(null, [| inputPI |])
 
-    static member MakeInputsWriter (workbook: Excel.Workbook)
-        : 'TCellInputs -> unit =                   
+    static member val private deferredWriters =
+        // I'm struggling to imagine a situation where this output of this
+        // would never be needed. However, didn't want to assume and 
+        // neglgible impact of wrapping as a lazy value.
+        lazy(
+            cellInputMembers
+            |> Array.map (fun pi ->
+                let excelRangeName =
+                    pi.GetCustomAttribute<ExcelRangeAliasAttribute>()
+                    |> Option.ofNull
+                    |> function
+                        | None -> pi.Name
+                        | Some attr -> attr.RangeName
 
-            let writers =
-                cellInputMembers
-                |> Array.map (fun pi ->
-                    let excelRangeName =
-                        pi.GetCustomAttribute<ExcelRangeAliasAttribute>()
-                        |> Option.ofNull
-                        |> function
-                            | None -> pi.Name
-                            | Some attr -> attr.RangeName
+                // Create this in advance and pass-in via a closure.
+                let cellWriter =
+                    DataTransfer<'TCellInputs>.InvokeCreateWriterForInput pi 
 
+                fun (workbook: Excel.Workbook) ->
                     let excelRange =
-                        workbook.Names[excelRangeName].RefersToRange
-
-                    let cellWriter =
-                        DataTransfer<'TCellInputs>.InvokeCreateWriterForInput pi                        
+                        workbook.Names[excelRangeName].RefersToRange                       
 
                     cellWriter excelRange
-                )
+            )
+        )
+
+    static member MakeInputsWriter (workbook: Excel.Workbook)
+        : 'TCellInputs -> unit = 
+            let writers =
+                DataTransfer<'TCellInputs>.deferredWriters.Value
+                |> Array.map (fun dw -> dw workbook)
 
             fun (cellInputs: 'TCellInputs) ->
                 for writer in writers do
-                    do writer cellInputs
+                    do writer cellInputs            

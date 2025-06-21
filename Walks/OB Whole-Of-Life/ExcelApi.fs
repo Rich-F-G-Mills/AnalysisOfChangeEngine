@@ -14,27 +14,70 @@ module ExcelApi =
 
 
     [<NoEquality; NoComparison>]
-    type ExcelPremiumFrequency =
+    type private ExcelPremiumFrequency =
         | MONTHLY
         | YEARLY
 
+    [<RequireQualifiedAccess>]
+    module private ExcelPremiumFrequency =
+        
+        let internal ofUnderlying = function
+            | OBWholeOfLife.PremiumFrequency.Monthly ->
+                ExcelPremiumFrequency.MONTHLY
+            | OBWholeOfLife.PremiumFrequency.Yearly ->
+                ExcelPremiumFrequency.YEARLY
+
+
     [<NoEquality; NoComparison>]
-    type ExcelLivesBasis =
+    type private ExcelLivesBasis =
         | SINGLE
         | JOINT
 
+    [<RequireQualifiedAccess>]
+    module private ExcelLivesBasis =
+
+        let internal ofUnderlying = function
+            | OBWholeOfLife.LivesBasis.SingleLife _ ->
+                ExcelLivesBasis.SINGLE
+            | OBWholeOfLife.LivesBasis.JointLife _ ->
+                ExcelLivesBasis.JOINT
+
+
     [<NoEquality; NoComparison>]
-    type ExcelGender =
+    type private ExcelGender =
         | MALE
         | FEMALE
 
-    [<NoEquality; NoComparison>]
-    type ExcelPolicyStatus =
-        | PP
-        | PUP
+    [<RequireQualifiedAccess>]
+    module private ExcelGender =
+
+        let internal ofUnderlying = function
+            | OBWholeOfLife.Gender.Male ->
+                ExcelGender.MALE
+            | OBWholeOfLife.Gender.Female ->
+                ExcelGender.FEMALE
+
 
     [<NoEquality; NoComparison>]
-    type ExcelStepRelatedInputs =
+    type private ExcelPolicyStatus =
+        | PP
+        | PUP
+        | AP
+
+    [<RequireQualifiedAccess>]
+    module private ExcelPolicyStatus =
+
+        let internal ofUnderlying = function
+            | OBWholeOfLife.PolicyStatus.PremiumPaying ->
+                ExcelPolicyStatus.PP
+            | OBWholeOfLife.PolicyStatus.PaidUp ->
+                ExcelPolicyStatus.PUP
+            | OBWholeOfLife.PolicyStatus.AllPaid ->
+                ExcelPolicyStatus.AP
+
+
+    [<NoEquality; NoComparison>]
+    type private ExcelStepRelatedInputs =
         {
             [<ExcelRangeAlias("INPUT_OPENING_CALC_DATE")>]
             OpeningCalculationDate          : DateOnly option
@@ -44,7 +87,7 @@ module ExcelApi =
         }
 
     [<NoEquality; NoComparison>]
-    type ExcelPolicyRelatedInputs =
+    type private ExcelPolicyRelatedInputs =
         {
             [<ExcelRangeAlias("INPUT_IS_TAXABLE?")>]
             IsTaxable                       : bool
@@ -62,7 +105,7 @@ module ExcelApi =
             ModalPremium                   : float32
 
             [<ExcelRangeAlias("INPUT_LTD_PAYMENT_TERM")>]
-            LimitedPaymentPremium         : float32
+            LimitedPaymentPremium         : int
 
             [<ExcelRangeAlias("INPUT_SUM_ASSURED")>]
             SumAssured                     : float32
@@ -80,14 +123,41 @@ module ExcelApi =
             Gender1                         : ExcelGender
 
             [<ExcelRangeAlias("INPUT_ENTRY_AGE_2")>]
-            EntryAge2                       : int
+            EntryAge2                       : int option
 
             [<ExcelRangeAlias("INPUT_GENDER_2")>]
-            Gender2                         : ExcelGender
+            Gender2                         : ExcelGender option
 
             [<ExcelRangeAlias("INPUT_JVA")>]
-            JointValuationAge               : int
+            JointValuationAge               : int option
         }
+
+    [<RequireQualifiedAccess>]
+    module private ExcelPolicyRelatedInputs =
+        
+        let internal ofUnderlying (OBWholeOfLife.PolicyRecord polRecord)
+            : ExcelPolicyRelatedInputs =
+                {
+                    IsTaxable               = polRecord.Taxable
+                    EntryDate               = polRecord.EntryDate
+                    NextPremiumDueDate      = polRecord.NextPremiumDueDate
+                    PremiumFrequency        =
+                        ExcelPremiumFrequency.ofUnderlying polRecord.PremiumFrequency
+                    ModalPremium            = polRecord.ModalPremium
+                    LimitedPaymentPremium   = polRecord.LimitedPaymentTerm
+                    SumAssured              = polRecord.SumAssured
+                    PolicyStatus            =
+                        ExcelPolicyStatus.ofUnderlying polRecord.Status
+                    LivesBasis              =
+                        ExcelLivesBasis.ofUnderlying polRecord.Lives
+                    EntryAge1               = polRecord.Lives.EntryAgeLife1
+                    Gender1                 =
+                        ExcelGender.ofUnderlying polRecord.Lives.GenderLife1
+                    EntryAge2               = polRecord.Lives.EntryAgeLife2
+                    Gender2                 =
+                        polRecord.Lives.GenderLife2 |> Option.map ExcelGender.ofUnderlying
+                    JointValuationAge       = polRecord.Lives.JointValuationAge
+                }
 
     [<NoEquality; NoComparison>]
     type ExcelOutputs =
@@ -179,14 +249,7 @@ module ExcelApi =
 
 
     [<NoEquality; NoComparison>]
-    type OpeningDispatcherConfig =
-        {
-            OpeningRunDate: DateOnly
-        }
-
-
-    [<NoEquality; NoComparison>]
-    type PostOpeningDispatcherConfig =
+    type ExcelDispatcherConfig =
         {
             OpeningRunDate: DateOnly
             ClosingRunDate: DateOnly
@@ -194,8 +257,14 @@ module ExcelApi =
 
 
     let createOpeningDispatcher
-        (config: OpeningDispatcherConfig)
+        (config: ExcelDispatcherConfig)
         : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs> =
+            let stepRelatedInputs: ExcelStepRelatedInputs =
+                {
+                    OpeningCalculationDate = None
+                    ClosingCalculationDate = config.OpeningRunDate
+                }
+
             WrappedApiRequestor {
                 new IApiRequestor<_> with
                     member _.Name =
@@ -206,8 +275,15 @@ module ExcelApi =
 
 
     let createPostOpeningDispatcher<'TPolicyRecord>
-        (config: PostOpeningDispatcherConfig)
+        (dispatcher: Dispatcher.IExcelDispatcher<ExcelStepRelatedInputs, ExcelPolicyRelatedInputs> )
+        (config: ExcelDispatcherConfig)
         : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs> =
+            let stepRelatedInputs: ExcelStepRelatedInputs =
+                {
+                    OpeningCalculationDate = Some config.OpeningRunDate
+                    ClosingCalculationDate = config.ClosingRunDate
+                }
+
             WrappedApiRequestor {
                 new IApiRequestor<_> with
                     member _.Name =
@@ -215,3 +291,7 @@ module ExcelApi =
                     member _.Execute field record =
                         AsyncResult.error "FAILED"
             }
+
+
+    let createWriter workookSelector =
+        Provider.createExcelProvider<ExcelStepRelatedInputs, ExcelPolicyRelatedInputs> workookSelector

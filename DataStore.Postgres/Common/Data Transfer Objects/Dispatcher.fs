@@ -38,7 +38,8 @@ module internal RecordParser =
 
             let dataReaderVar =
                 // Cannot use downcast as this throws an exception at runtime.
-                Expr.Cast<DbDataReader> (Expr.Var dataReaderVarDef)
+                Expr.Var dataReaderVarDef
+                |> Expr.Cast<DbDataReader>
 
             let columnParsers =
                 columnIdxs
@@ -652,6 +653,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
 
 
 [<Sealed>]
+// By definition, it wouldn't make sense for this to be used outside of this assembly.
 type internal PostgresCommonTableDispatcher<'TBaseRow, 'TAugRow> internal (tableName, dataSource) =
     inherit PostgresTableDispatcher<'TBaseRow, 'TAugRow>
         (tableName, "common", dataSource)

@@ -8,7 +8,7 @@ module internal HResultType =
     // Sourced from...
     // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-erref/705fb797-2175-4a90-b5a3-3918024b10b8
 
-
+    [<RequireQualifiedAccess>]
     type internal HResult =
         | [<MapFromInt(0x00030200)>] STG_S_CONVERTED
         | [<MapFromInt(0x00030201)>] STG_S_BLOCK

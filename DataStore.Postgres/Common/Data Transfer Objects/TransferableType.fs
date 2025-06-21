@@ -43,7 +43,7 @@ type internal ITransferableType<'TValue> =
 [<RequireQualifiedAccess>]
 module private CachedByProductSchema =
 
-    let make (fn: ProductSchemaName -> 'T) =
+    let internal make (fn: ProductSchemaName -> 'T) =
         // In theory, we could make this non-concurrent as this code is most likely to
         // be called via assembly start-up logic, which is single-threaded.
         // However, with this minor change, can make it easily support parallel execution.
@@ -72,7 +72,7 @@ type internal TransferableType private () =
 
     static let (|NonOptionalNonParameterizedPostgresUnion|_|) (t: Type) =
         match t with
-        | NonOptionalNonParameterizedUnion unionCases ->
+        | NonOptionalNonParameterizedUnion _ ->
             option {
                 let! pgEnumAttrib =
                     t.GetCustomAttribute<PostgresEnumerationAttribute> (true)
@@ -162,6 +162,7 @@ type internal TransferableType private () =
             @>
 
         TransferableType.CreateFor<'TNonOptionalValue>
+            // Note that there is no dependency on the prevailing product schema.
             id colReaderExpr (fun _ -> toSqlParamValueExpr') (fun _ -> toSqlParamValueArrayExpr')
 
     static member private CreateForNonOptionalUnion<'TNonOptionalUnion> (PgTypeName pgTypeName', mapper) =
@@ -176,7 +177,8 @@ type internal TransferableType private () =
             recordColumns
             |> Array.map (fun uc ->
                 let unionName =
-                    Expr.Cast<string> <| Expr.Value uc.Name            
+                    Expr.Value uc.Name
+                    |> Expr.Cast<string>
 
                 {|
                     StringComparer =
@@ -187,16 +189,19 @@ type internal TransferableType private () =
                     ValueComparer =
                         // As above.
                         fun (unionValVar: Expr<'TNonOptionalUnion>) ->
-                            Expr.Cast<bool> <| Expr.UnionCaseTest (unionValVar, uc)
+                            Expr.UnionCaseTest (unionValVar, uc)
+                            |> Expr.Cast<bool>
                     CaseFactory =
-                        Expr.Cast<'TNonOptionalUnion> <| Expr.NewUnionCase (uc, [])
+                        Expr.NewUnionCase (uc, [])
+                        |> Expr.Cast<'TNonOptionalUnion>
                 |})
 
         let strRepVarDef =
             Var ("strRep", typeof<string>)            
 
         let strRepVar =
-            Expr.Cast<string> <| Expr.Var strRepVarDef
+            Expr.Var strRepVarDef
+            |> Expr.Cast<string>
 
         let colReaderExpr (r: Expr<DbDataReader>) colIdx =
             Expr.Let(

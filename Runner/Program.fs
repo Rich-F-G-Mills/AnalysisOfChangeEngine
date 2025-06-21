@@ -8,6 +8,7 @@ module Runner =
     open FsToolkit.ErrorHandling
     open Npgsql
     open AnalysisOfChangeEngine
+    open AnalysisOfChangeEngine.ApiProvider
     open AnalysisOfChangeEngine.Controller.WalkAnalyser
     open AnalysisOfChangeEngine.DataStore
     open AnalysisOfChangeEngine.DataStore.Postgres
@@ -24,16 +25,7 @@ module Runner =
         | WARNING   = 2
         | INFO      = 3
         | DEBUG     = 4
-
-
-    (*
-    [<NoEquality; NoComparison>]
-    type RecordRunStatus =
-        {
-            
-        }
-    *)
-      
+     
 
     let logger (logLevel: LogLevel) =
         {
@@ -194,12 +186,18 @@ module Runner =
             let somePolicyRecords =
                 dataStore.GetPolicyRecords currentExtractionUid somePolicyIds
 
-            do printfn "%A" somePolicyRecords
+            //do printfn "%A" somePolicyRecords
 
             //let res =
             //    uas.WrappedInvoker (polRecord, [|1.0f|], [||])
 
             //do printfn "Result: %A" res
+
+            let xlProvder =
+                Excel.Provider.createExcelProvider (fun s -> s.StartsWith "as")
+
+            for wb in foundWorkbooks do
+                do printfn "%s" wb.Path
 
             return 0
         }
