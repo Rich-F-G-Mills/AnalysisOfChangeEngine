@@ -8,7 +8,6 @@ module Runner =
     open FsToolkit.ErrorHandling
     open Npgsql
     open AnalysisOfChangeEngine
-    open AnalysisOfChangeEngine.ApiProvider
     open AnalysisOfChangeEngine.Controller.WalkAnalyser
     open AnalysisOfChangeEngine.DataStore
     open AnalysisOfChangeEngine.DataStore.Postgres
@@ -101,7 +100,6 @@ module Runner =
 
             let walkConfig: OBWholeOfLife.WalkConfiguration =
                 {
-                    PxDispatcher            = new obj ()
                     StepFactory             = new StepFactory (stepUidResolver)
                     IgnoreOpeningMismatches = false
                     OpeningRunDate          = openingRunDate
@@ -193,11 +191,10 @@ module Runner =
 
             //do printfn "Result: %A" res
 
-            let xlProvder =
-                Excel.Provider.createExcelProvider (fun s -> s.StartsWith "as")
+            let openingRequestor : IApiRequestor<_> =
+                upcast walk.ApiCollection.xl_OpeningRegression
 
-            for wb in foundWorkbooks do
-                do printfn "%s" wb.Path
+            openingRequestor.
 
             return 0
         }

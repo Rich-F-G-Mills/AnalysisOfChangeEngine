@@ -66,7 +66,7 @@ module Dispatcher =
             do stepRelatedInputsWriter stepRelatedInputs
             do policyRelatedInputsWriter policyRelatedInputs
 
-    let createExcelDispatcher<'TPolicyRecord, 'TStepRelatedInputs, 'TPolicyRelatedInputs>
+    let createExcelDispatcher<'TStepRelatedInputs, 'TPolicyRelatedInputs>
         workbookSelector =
             let workbooksFound =
                 Locator.locateOpenWorkbooks workbookSelector

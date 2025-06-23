@@ -19,9 +19,9 @@ module Core =
             /// Note that API requestors with the SAME NAME will be grouped together!
             abstract Name: string
             abstract Execute:
-                Map<string, PropertyInfo>
+                PropertyInfo array
                     -> 'TPolicyRecord
-                    -> Async<Result<Map<string, obj>, string>>
+                    -> Async<Result<obj array, string>>
         end
 
     (*

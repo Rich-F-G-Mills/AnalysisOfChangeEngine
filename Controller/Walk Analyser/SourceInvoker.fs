@@ -7,7 +7,6 @@ module SourceInvoker =
     open FSharp.Linq.RuntimeHelpers
     open FSharp.Quotations
     open FSharp.Reflection
-    open AnalysisOfChangeEngine
 
 
     let private unitObj =

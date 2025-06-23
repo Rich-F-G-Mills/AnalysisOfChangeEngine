@@ -125,7 +125,7 @@ module OBWholeOfLife =
             | [] ->
                 Ok (PolicyRecord r)
 
-            | xs ->
+            | _ ->
                 let joinedReasons =
                     String.Join (Environment.NewLine, validationFailures)
 

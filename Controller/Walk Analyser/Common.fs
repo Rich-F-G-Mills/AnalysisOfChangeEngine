@@ -54,40 +54,6 @@ type SourceElementApiCallDependency<'TPolicyRecord> =
                 failwith "Cannot compare different types of source element dependencies."
 
 
-// Used to track dependencies between members of the current step results.
-[<CustomEquality; CustomComparison>]
-type SourceElementResultDependency<'TPolicyRecord> =
-    {
-        ElementProperty: PropertyInfo
-    }
-
-    override this.Equals (other) =
-        match other with
-        | :? SourceElementResultDependency<'TPolicyRecord> as other' ->
-                (this :> IEquatable<_>).Equals other'
-            | _ ->
-                false
-
-    override this.GetHashCode () =
-        this.ElementProperty.GetHashCode ()
-
-    interface IEquatable<SourceElementResultDependency<'TPolicyRecord>> with
-        member this.Equals (other) =
-            this.ElementProperty = other.ElementProperty
-
-    interface IComparable<SourceElementResultDependency<'TPolicyRecord>> with
-        member this.CompareTo (other) =
-            this.ElementProperty.Name.CompareTo other.ElementProperty.Name
-
-    interface IComparable with
-        member this.CompareTo (other) =
-            match other with
-            | :? SourceElementResultDependency<'TPolicyRecord> as other' ->
-                (this :> IComparable<_>).CompareTo other'
-            | _ ->
-                failwith "Cannot compare different types of source element dependencies."
-
-
 // Used to track all of the dependencies for a given step element.
 [<NoEquality; NoComparison>]
 type SourceElementDependencies<'TPolicyRecord> =
@@ -97,13 +63,13 @@ type SourceElementDependencies<'TPolicyRecord> =
     }
 
 module internal SourceElementDependencies =
-    let empty =
+    let internal empty =
         {
-            ApiCalls = Set.empty
-            CurrentResults = Set.empty
+            ApiCalls        = Set.empty
+            CurrentResults  = Set.empty
         }
 
-    let registerApiCall (endpoint, outputProperty) =
+    let internal registerApiCall (endpoint, outputProperty) =
         stateful {
             let! (apiCallVarDefs, elementDependencies) =
                 Stateful.get
@@ -166,7 +132,7 @@ module internal SourceElementDependencies =
             return varDef
         }
 
-    let registerCurrentResult elementName =
+    let internal registerCurrentResult elementName =
         stateful {
             let! (apiCallVarDefs, elementDependencies) =
                 Stateful.get
@@ -246,7 +212,7 @@ Design decision:
     For new records, we only care about:
         * The new records step; which is just the final element of the parsed steps tuple below.
 
-    In both
+    In both cases, we extract the relevant "bit" from the members below.
 *)
 
 [<NoEquality; NoComparison>]

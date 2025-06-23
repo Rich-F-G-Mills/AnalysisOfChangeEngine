@@ -1,5 +1,7 @@
 ﻿
 open System
+open System.Reactive
+open FSharp.Control.Reactive
 open System.Threading
 open System.Threading.Tasks
 open System.Threading.Tasks.Dataflow
@@ -7,66 +9,163 @@ open System.Threading.Tasks.Dataflow
 
 module internal Program =
 
-    type CalcRequest =
+    [<NoEquality; NoComparison>]
+    type RawPolicyRecord =
         {
-            WaitTime    : int
-            Message     : string
+            PolicyId    : string
+            EntryAge    : int        
         }
 
+    [<NoEquality; NoComparison>]
+    type PolicyRecord =
+        PolicyRecord of RawPolicyRecord
 
-    let taskQueue =
-        new BufferBlock<CalcRequest> ()
+    [<RequireQualifiedAccess>]
+    module PolicyRecord =
+        let validate = function
+            | { EntryAge = age } when age % 10 = 0 ->
+                Error "Invalid entry age"
+            | raw ->
+                Ok (PolicyRecord raw)
 
-    let actionBlockOptions =
-        new ExecutionDataflowBlockOptions(
-            MaxDegreeOfParallelism = 1,
-            BoundedCapacity = 1,
-            SingleProducerConstrained = true
+
+    let loggingSubject =
+        new Subjects.Subject<string> ()
+
+    let logStr =
+        loggingSubject.OnNext
+
+    let outstandingPolicyIdsBuffer =
+        new BufferBlock<string> (
+            new DataflowBlockOptions (
+                BoundedCapacity = 100 ,
+                EnsureOrdered = true
+            )
         )
 
-    let actionDelegate idx (req: CalcRequest) =
-        do printfn "Beginning request '%s' on processor #%i." req.Message idx
+    let policyIdsBatcher =
+        new BatchBlock<_> (
+            batchSize = 25,
+            dataflowBlockOptions =
+                new GroupingDataflowBlockOptions (
+                    BoundedCapacity = 100,
+                    Greedy = true
+                )
+        )
 
-        do Thread.Sleep req.WaitTime
+    let databaseReaderDelegate (recordIds: string array) =
+        do logStr "Reading policy batch from database."
 
-        do printfn "Finishing request '%s' on processor #%i." req.Message idx
+        recordIds
+        |> Seq.indexed
+        |> Seq.map (fun (idx, recId) ->
+            PolicyRecord.validate { PolicyId = recId; EntryAge = idx })
 
-    let processor1 =
-        new ActionBlock<CalcRequest> (actionDelegate 0, actionBlockOptions)
+    let databaseReaderBlock =
+        new TransformManyBlock<_, _> (
+            databaseReaderDelegate,
+            new ExecutionDataflowBlockOptions (
+                BoundedCapacity = 2,
+                SingleProducerConstrained = true
+            )
+        )
 
-    let processor2 =
-        new ActionBlock<CalcRequest> (actionDelegate 1, actionBlockOptions)
+    let parsedRecordProcessorBlock =
+        let parsedRecordProcessorDelegate : _ -> Task = function
+            | Ok (PolicyRecord polId) ->
+                upcast backgroundTask {
+                    do logStr $"Processing record '{polId}'."
+
+                    do! Task.Delay (TimeSpan.FromMilliseconds 50)
+                }
+
+            | _ ->
+                failwith "Unexpected error."
+
+        new ActionBlock<Result<PolicyRecord, string>> (
+            parsedRecordProcessorDelegate,
+            new ExecutionDataflowBlockOptions(
+                MaxDegreeOfParallelism = 5,
+                SingleProducerConstrained = true,
+                BoundedCapacity = 100
+            )
+        )
+
+    let failedRecordParseSinkBlock =
+        let failedRecordSinkDelegate = function
+            | Error msg ->
+                do logStr $"PARSE ERROR: {msg}"
+
+            | _ ->
+                failwith "Unexpected error."
+
+        new ActionBlock<_> (
+            failedRecordSinkDelegate
+        )
 
     let linkOptions =
-        new DataflowLinkOptions(
+        new DataflowLinkOptions (
             PropagateCompletion = true
         )
+
+    let _ =
+        outstandingPolicyIdsBuffer.LinkTo (policyIdsBatcher, linkOptions)
+
+    let _ =
+        policyIdsBatcher.LinkTo (databaseReaderBlock, linkOptions)
+
+    let _ =
+        databaseReaderBlock.LinkTo (parsedRecordProcessorBlock, linkOptions, _.IsOk)
+
+    let _ =
+        databaseReaderBlock.LinkTo (failedRecordParseSinkBlock, linkOptions, _.IsError)
 
 
     [<EntryPoint>]
     let main _ = 
-        use _ =
-            taskQueue.LinkTo (processor1, linkOptions)
+        use cts =
+            new CancellationTokenSource ()
 
         use _ =
-            taskQueue.LinkTo (processor2, linkOptions)
+            loggingSubject
+            |> Observable.synchronize
+            |> Observable.subscribe (printfn "LOG: %s")
 
-        let requests =
-            Array.init 10 (fun idx ->
-                {
-                    WaitTime = 1000
-                    Message = $"Request #{idx}"
-                })
+        let outstandingPolicyIds =
+            Seq.init 250 (sprintf "#%i")
 
-        for r in requests do
-            do ignore <| taskQueue.Post r
+        let insertionLoop =
+            backgroundTask {
+                do logStr "Starting insertion loop..."
 
-        do taskQueue.Completion.ContinueWith(fun t -> do printfn "Queue Completed").
-        do processor1.Completion.ContinueWith(fun t -> do printfn "P1 Completed").Start()
-        do processor2.Completion.ContinueWith(fun t -> do printfn "P2 Completed").Start()
+                for polId in outstandingPolicyIds do                        
+                    let! _ =
+                        outstandingPolicyIdsBuffer.SendAsync polId
 
-        do taskQueue.Complete ()
+                    ()
 
-        do Thread.Sleep 5000
+                do outstandingPolicyIdsBuffer.Complete ()
+            }
+
+        let blockDescPairs : (IDataflowBlock * string) list =
+            [
+                outstandingPolicyIdsBuffer, "Outstanding policy ids"
+                policyIdsBatcher, "Policy ID batcher"
+                databaseReaderBlock, "Database reader"
+                parsedRecordProcessorBlock, "Parsed record processor"
+                failedRecordParseSinkBlock, "Failed record parses"
+            ]
+
+        blockDescPairs
+        |> List.map (fun (block, desc) ->
+            block.Completion.ContinueWith (fun _ ->
+                do logStr $"{desc} completed."))
+        |> ignore
+
+        do  Task.WhenAll(
+                parsedRecordProcessorBlock.Completion,
+                failedRecordParseSinkBlock.Completion
+            )
+            |> _.Wait()
 
         0

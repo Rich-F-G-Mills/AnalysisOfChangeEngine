@@ -1,8 +1,8 @@
 ﻿
-namespace AnalysisOfChangeEngine.Walks
+namespace AnalysisOfChangeEngine.Walks.OBWholeOfLife
 
 
-[<RequireQualifiedAccess>]
+[<AutoOpen>]
 module ExcelApi =
 
     open System
@@ -248,6 +248,19 @@ module ExcelApi =
         }
 
 
+    // Allows us to pass a private type in a pseudo-public manner.
+    [<NoEquality; NoComparison>]
+    type ExcelDispatcher =
+        private ExcelDispatcher of IExcelDispatcher<ExcelStepRelatedInputs, ExcelPolicyRelatedInputs>
+
+    let createExcelDispatcher workbookSelector =
+        let dispatcher =
+            ApiProvider.Excel.Dispatcher.createExcelDispatcher<ExcelStepRelatedInputs, ExcelPolicyRelatedInputs>
+                workbookSelector
+
+        ExcelDispatcher dispatcher
+
+
     [<NoEquality; NoComparison>]
     type ExcelDispatcherConfig =
         {
@@ -255,14 +268,13 @@ module ExcelApi =
             ClosingRunDate: DateOnly
         }
 
-
     let createOpeningDispatcher
-        (config: ExcelDispatcherConfig)
+        (ExcelDispatcher dispatcher, openRunDate)
         : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs> =
             let stepRelatedInputs: ExcelStepRelatedInputs =
                 {
                     OpeningCalculationDate = None
-                    ClosingCalculationDate = config.OpeningRunDate
+                    ClosingCalculationDate = openRunDate
                 }
 
             WrappedApiRequestor {
@@ -275,13 +287,12 @@ module ExcelApi =
 
 
     let createPostOpeningDispatcher<'TPolicyRecord>
-        (dispatcher: Dispatcher.IExcelDispatcher<ExcelStepRelatedInputs, ExcelPolicyRelatedInputs> )
-        (config: ExcelDispatcherConfig)
+        (ExcelDispatcher dispatcher, openingRunDate, closingRunDate)
         : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs> =
             let stepRelatedInputs: ExcelStepRelatedInputs =
                 {
-                    OpeningCalculationDate = Some config.OpeningRunDate
-                    ClosingCalculationDate = config.ClosingRunDate
+                    OpeningCalculationDate = Some openingRunDate
+                    ClosingCalculationDate = closingRunDate
                 }
 
             WrappedApiRequestor {
@@ -291,7 +302,3 @@ module ExcelApi =
                     member _.Execute field record =
                         AsyncResult.error "FAILED"
             }
-
-
-    let createWriter workookSelector =
-        Provider.createExcelProvider<ExcelStepRelatedInputs, ExcelPolicyRelatedInputs> workookSelector
