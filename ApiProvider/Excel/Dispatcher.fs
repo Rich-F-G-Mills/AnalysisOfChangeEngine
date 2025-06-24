@@ -7,6 +7,7 @@ module Dispatcher =
 
     open System
     open System.Reflection
+    open System.Threading.Tasks
     open System.Threading.Tasks.Dataflow
     open Microsoft.Office.Interop
 
@@ -15,24 +16,26 @@ module Dispatcher =
         interface
             inherit IDisposable
 
-            abstract member Execute :
-                Map<string, PropertyInfo>
+            abstract member ExecuteAsync :
+                PropertyInfo array
                     -> 'TStepRelatedInputs * 'TPolicyRelatedInputs
-                    -> Async<Result<Map<string, obj>, string>>
+                    -> Task<Result<obj array, string>>
         end
 
 
     [<NoEquality; NoComparison>]
-    type internal ExcelCalcRequest<'TStepRelatedInputs, 'TPolicyRelatedInputs> =
+    type private ExcelCalcRequest<'TStepRelatedInputs, 'TPolicyRelatedInputs> =
         {
             StepRelatedInputs   : 'TStepRelatedInputs
             PolicyRelatedInputs : 'TPolicyRelatedInputs
-            RequiredOutputs     : Map<string, PropertyInfo>
-            Callback            : Result<Map<string, obj>, string> -> unit
+            RequiredOutputs     : PropertyInfo array
+            Callback            : Result<obj array, string> -> unit
         }
 
 
     let private bufferBlockOptions =
+        // This must remain unbounded or we'll have to rework the
+        // calc. submission logic below to be SendAsync instead.
         new DataflowBlockOptions(
             EnsureOrdered = true
         )
@@ -92,14 +95,13 @@ module Dispatcher =
                 writers
                 |> Array.zip excelApps
                 |> Array.map (fun (app, writer) ->
-                        new ActionBlock<_> (
-                            fun request ->
-                                // This will be a blocking action (albeit negligible).
-                                do writer (request.StepRelatedInputs, request.PolicyRelatedInputs)
-                                // This will be another, more onerous, blocking action.
-                                do app.Calculate ()
-                                do request.Callback (Ok Map.empty)
-                        )
+                        let action request =
+                            do writer (request.StepRelatedInputs, request.PolicyRelatedInputs)
+                            // This will be another, more onerous, blocking action.
+                            do app.Calculate ()
+                            do request.Callback (Ok Array.empty)
+
+                        new ActionBlock<_> (action, actionBlockOptions)
                     )
 
             let blockLinks =
@@ -116,17 +118,22 @@ module Dispatcher =
                         // Sever our links as these will be no longer needed.
                         do blockLinks |> Array.iter _.Dispose()
         
-                    member _.Execute requiredOutputs (stepRelatedInputs, policyRelatedInputs) =                    
-                        Async.FromContinuations(
-                            fun (onSuccess, _, _) ->
-                                let newCalcRequest =
-                                    {
-                                        StepRelatedInputs   = stepRelatedInputs
-                                        PolicyRelatedInputs = policyRelatedInputs
-                                        RequiredOutputs     = requiredOutputs
-                                        Callback            = onSuccess
-                                    }
+                    member _.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) =
+                        let tcs =
+                            new TaskCompletionSource<_> ()  
+                            
+                        let newCalcRequest =
+                            {
+                                StepRelatedInputs   = stepRelatedInputs
+                                PolicyRelatedInputs = policyRelatedInputs
+                                RequiredOutputs     = requiredOutputs
+                                Callback            = tcs.SetResult
+                            }
 
-                                do ignore <| bufferBlock.Post newCalcRequest
-                        )       
+                        // This is non-blocking.
+                        if not (bufferBlock.Post newCalcRequest) then
+                            // Given the buffer block is unbounded, this _should_ never fail.
+                            failwith "Unable to submit Excel request."
+
+                        tcs.Task
             }

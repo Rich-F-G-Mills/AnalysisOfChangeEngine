@@ -23,7 +23,7 @@ module AbstractDataStore =
         
 
     [<AbstractClass>]
-    type AbstractDataStore<'TPolicyRecord, 'TPolicyRecordDTO, 'TStepResults, 'TStepResultsDTO>
+    type AbstractPostgresDataStore<'TPolicyRecord, 'TPolicyRecordDTO, 'TStepResults, 'TStepResultsDTO>
         (sessionContext: SessionContext, dataSource: NpgsqlDataSource, schema: string) =
 
         // --- DISPATCHERS ---
@@ -38,7 +38,7 @@ module AbstractDataStore =
             RunHeaderDTO.buildDispatcher (schema, dataSource)
 
         let runStepDispatcher =
-            DataTransferObjects.RunStepDTO.buildDispatcher (schema, dataSource)
+            RunStepDTO.buildDispatcher (schema, dataSource)
 
         let stepHeaderDispatcher =
             StepHeaderDTO.buildDispatcher (dataSource)
@@ -73,28 +73,9 @@ module AbstractDataStore =
 
         // --- EXTRACTION HEADERS ---
 
-        member _.CreateExtractionHeader (extractionDate: DateOnly) =
-            let newUid =
-                Guid.NewGuid ()
-
-            let newRow =
-                {
-                    Uid = ExtractionUid newUid
-                    ExtractionDate = extractionDate
-                }
-
-            let newRowDTO =                
-                DataTransferObjects.ExtractionHeaderDTO.fromUnderlying newRow
-
-            extractionHeaderDispatcher.InsertRow newRowDTO
-
         member _.TryGetExtractionHeader runUid =
             extractionHeaderDispatcher.TryGetByUid runUid
             |> Option.map DataTransferObjects.ExtractionHeaderDTO.toUnderlying
-
-        member _.GetAllExtractionHeaders () =
-            extractionHeaderDispatcher.SelectAll ()
-            |> List.map DataTransferObjects.ExtractionHeaderDTO.toUnderlying
 
 
         // --- POLICY DATA ---
@@ -110,11 +91,7 @@ module AbstractDataStore =
             runHeaderDispatcher.TryGetByUid runUid
             |> Option.map DataTransferObjects.RunHeaderDTO.toUnderlying
 
-        member _.GetAllRunHeaders () =
-            runHeaderDispatcher.SelectAll ()
-            |> List.map DataTransferObjects.RunHeaderDTO.toUnderlying
-
-        member this.CreateRun (title, comments, priorRunUid, closingRunDate, policyDataExtractionUid, walk: #AbstractWalk<_, _, _>) =
+        member this.CreateRun (title, comments, priorRunUid, closingRunDate, policyDataExtractionUid, walk: #IWalk) =
             let stepHeaders =
                 this.GetAllStepHeaders ()
                 |> Seq.map (fun hdr -> hdr.Uid.Value)
@@ -158,7 +135,7 @@ module AbstractDataStore =
                 do runStepDispatcher.InsertRow
                     { run_uid = newUid; step_idx = int16 idx; step_uid = step.Uid }
 
-            newRow
+            RunUid newUid
 
 
         // --- STEP HEADERS ---
@@ -201,9 +178,19 @@ module AbstractDataStore =
 
         // --- POLICY DATA ---
 
-        member this.GetPolicyRecords extractionUid policyIds =
-            policyDataDispatcher.GetPolicyRecords extractionUid policyIds
-            |> Map.map (fun _ -> this.dtoToPolicyRecord)
+        member this.GetPolicyRecordsAsync extractionUid policyIds =
+            backgroundTask {
+                // TODO - Should this raise an exception if any records weren't found?
+                let! records =
+                    policyDataDispatcher.GetPolicyRecordsAsync extractionUid policyIds
+
+                let records' =
+                    records
+                    |> Map.map (fun _ -> this.dtoToPolicyRecord)
+
+                return records'
+            }
+            
 
         /// Returns a tuple of exited, remaining and new policy IDs. In each case, the IDs
         /// are returned as a set of strings.
@@ -395,3 +382,15 @@ module AbstractDataStore =
                         yield recordParser dbReader
                 ]
             }
+
+
+        interface IDataStore<'TPolicyRecord, 'TStepResults> with
+            
+            member this.CreateRun (title, comments, priorRunUid, closingRunDate, policyDataExtractionUid, walk) = 
+                this.CreateRun (title, comments, priorRunUid, closingRunDate, policyDataExtractionUid, walk)
+
+            member this.TryGetOutstandingRecords runUid =
+                this.TryGetOutstandingRecords runUid
+
+            member this.GetPolicyRecordsAsync extractionUid policyIds =
+                this.GetPolicyRecordsAsync extractionUid policyIds

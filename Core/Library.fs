@@ -9,6 +9,7 @@ module Core =
     open System
     open System.Collections.Generic
     open System.Reflection
+    open System.Threading.Tasks
     open FSharp.Quotations
       
 
@@ -351,6 +352,12 @@ module Core =
             member this.Description = this.Description
 
 
+    type IWalk =
+        interface
+            abstract member AllSteps : IStepHeader seq
+        end
+
+
     /// Abstract base class for all user defined walks. Provides 'slots' for required steps
     /// and a mechanism by which additional (ie. user supplied) steps can be registered.
     [<AbstractClass>]
@@ -358,10 +365,7 @@ module Core =
         (logger: ILogger) as this =
 
             let _interiorSteps =
-                new List<IStepHeader> ()
-
-            member val InteriorSteps =
-                _interiorSteps.AsReadOnly () with get           
+                new List<IStepHeader> ()       
 
 
             /// Required step.
@@ -410,7 +414,79 @@ module Core =
                 seq {
                     yield this.OpeningReRun :> IStepHeader
                     yield this.RemoveExitedRecords :> IStepHeader
-                    yield! this.InteriorSteps
+                    yield! _interiorSteps
                     yield this.MoveToClosingData :> IStepHeader
                     yield this.AddNewRecords :> IStepHeader
                 } with get
+
+            interface IWalk with
+                member  this.AllSteps = this.AllSteps
+
+
+        (*
+    Design Decision:
+        Why would we need these you ask?
+        Given that the Guid type is used throughout, it's not impossible that (for example) an
+        extraction uid suddently finds itself being used a run uid. This should (!) reduce the
+        chance of that happening.
+        Why not put these in Common? Because other implementations may not even use Guids to
+        locate items within a datastore.
+    *)
+    type RunUid =
+        | RunUid of Guid
+
+        member this.Value =
+            match this with
+            | RunUid uid -> uid
+
+    type ExtractionUid =
+        | ExtractionUid of Guid
+
+        member this.Value =
+            match this with
+            | ExtractionUid uid -> uid
+
+    type StepUid =
+        | StepUid of Guid
+
+        member this.Value =
+            match this with
+            | StepUid uid -> uid
+
+    // Implement equality logic so we can use GroupBy.
+    [<RequireQualifiedAccess; NoComparison>]
+    type CohortMembership =
+        | Exited
+        | Remaining
+        | New
+
+    [<NoEquality; NoComparison>]
+    type OutstandingRecord =
+        {
+            PolicyId                    : string
+            HasRunError                 : bool
+            Cohort                      : CohortMembership
+        }
+
+
+    type IDataStore<'TPolicyRecord, 'TStepResults> =
+        interface
+            abstract member CreateRun :
+                title                       : string
+                * comments                  : string option
+                * priorRunUid               : RunUid option
+                * closingRunDate            : DateOnly
+                * policyDataExtractionUid   : ExtractionUid
+                * walk                      : IWalk
+                    -> RunUid
+
+            abstract member TryGetOutstandingRecords :
+                runUid                      : RunUid 
+                    -> Result<OutstandingRecord list, string>
+
+            abstract member GetPolicyRecordsAsync :
+                extractionUid               : ExtractionUid
+                -> policyIds                : string array
+                    -> Task<Map<string, Result<'TPolicyRecord, string>>>
+                
+        end

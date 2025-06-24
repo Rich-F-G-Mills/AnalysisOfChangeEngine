@@ -4,6 +4,7 @@ namespace AnalysisOfChangeEngine.DataStore.Postgres.DataTransferObjects
 open System
 open System.Data.Common
 open System.Reflection
+open System.Threading.Tasks
 open FSharp.Reflection
 open Npgsql
 open AnalysisOfChangeEngine
@@ -42,10 +43,10 @@ module internal StepHeaderDTO =
             abstract member PgTableName     : string with get
         end
 
-    let internal buildDispatcher connection =
+    let internal buildDispatcher dataSource =
         let dispatcher =
             new PostgresCommonTableDispatcher<StepHeaderDTO, Unit>
-                (pgTableName, connection)
+                (pgTableName, dataSource)
 
         let selectByUid =
             // Could we have used lazy instantiation here?
@@ -62,7 +63,7 @@ module internal StepHeaderDTO =
                     dispatcher.SelectAllBaseRecords ()
                         
                 member _.TryGetByUid (StepUid stepUid') =
-                    match selectByUid stepUid' with
+                    match selectByUid.Execute stepUid' with
                     | []    -> None
                     | [x]   -> Some x
                     | _     -> failwith "Multiple step headers found."
@@ -111,10 +112,10 @@ module internal ExtractionHeaderDTO =
             abstract member PgTableName     : string with get
         end
         
-    let internal buildDispatcher (schema, connection) =
+    let internal buildDispatcher (schema, dataSource) =
         let dispatcher =
             new PostgresTableDispatcher<ExtractionHeaderDTO, Unit>
-                (pgTableName, schema, connection)
+                (pgTableName, schema, dataSource)
 
         let selectByUid =
             dispatcher.MakeBaseEquality1Selector
@@ -129,7 +130,7 @@ module internal ExtractionHeaderDTO =
                     dispatcher.SelectAllBaseRecords ()
 
                 member _.TryGetByUid (ExtractionUid extractionUid') =
-                    match selectByUid extractionUid' with
+                    match selectByUid.Execute extractionUid' with
                     | []    -> None
                     | [x]   -> Some x
                     | _     -> failwith "Multiple extraction headers found."
@@ -169,14 +170,14 @@ module internal PolicyDataDTO =
 
     type internal IDispatcher<'TAugRowDTO> =
         interface
-            abstract member GetPolicyRecords    : ExtractionUid -> string array -> Map<string, 'TAugRowDTO>
-            abstract member PgTableName         : string with get
+            abstract member GetPolicyRecordsAsync   : ExtractionUid -> string array -> Task<Map<string, 'TAugRowDTO>>
+            abstract member PgTableName             : string with get
         end
 
-    let internal builderDispatcher<'TAugRowDTO> (schema, connection) =
+    let internal builderDispatcher<'TAugRowDTO> (schema, dataSource) =
         let dispatcher =
             new PostgresTableDispatcher<PolicyDataBaseDTO, 'TAugRowDTO>
-                (pgTableName, schema, connection)
+                (pgTableName, schema, dataSource)
 
         let recordGetter =
             dispatcher.MakeCombinedEquality1Multiple1Selector
@@ -185,10 +186,18 @@ module internal PolicyDataDTO =
         {
             new IDispatcher<'TAugRowDTO> with
 
-                member _.GetPolicyRecords (ExtractionUid extractionUid') policyIds =
-                    recordGetter extractionUid' policyIds
-                    |> Seq.map (fun (baseRec, augRec) -> baseRec.policy_id, augRec)
-                    |> Map.ofSeq
+                member _.GetPolicyRecordsAsync (ExtractionUid extractionUid') policyIds =
+                    backgroundTask {
+                        let! records =
+                            recordGetter.ExecuteAsync extractionUid' policyIds
+
+                        let records' =
+                            records
+                            |> Seq.map (fun (baseRec, augRec) -> baseRec.policy_id, augRec)
+                            |> Map.ofSeq
+                            
+                        return records'
+                    }
 
                 member _.PgTableName
                     with get () = pgTableName                  
@@ -223,10 +232,10 @@ module internal RunHeaderDTO =
             abstract member PgTableName     : string with get
         end
         
-    let internal buildDispatcher (schema, connection) =
+    let internal buildDispatcher (schema, dataSource) =
         let dispatcher =
             new PostgresTableDispatcher<RunHeaderDTO, Unit>
-                (pgTableName, schema, connection)
+                (pgTableName, schema, dataSource)
 
         let selectByUid =
             dispatcher.MakeBaseEquality1Selector    
@@ -241,7 +250,7 @@ module internal RunHeaderDTO =
                     dispatcher.SelectAllBaseRecords ()
 
                 member _.TryGetByUid (RunUid runUid') =
-                    match selectByUid runUid' with
+                    match selectByUid.Execute runUid' with
                     | []    -> None
                     | [x]   -> Some x
                     | _     -> failwith "Multiple run headers found."
@@ -299,10 +308,10 @@ module internal RunStepDTO =
             abstract member PgTableName     : string with get
         end
 
-    let internal buildDispatcher (schema, connection) =
+    let internal buildDispatcher (schema, dataSource) =
         let dispatcher =
             new PostgresTableDispatcher<RunStepDTO, Unit>
-                (pgTableName, schema, connection)
+                (pgTableName, schema, dataSource)
 
         let selectByRunUid =
             dispatcher.MakeBaseEquality1Selector
@@ -314,7 +323,7 @@ module internal RunStepDTO =
         {
             new IDispatcher with
                 member _.GetByRunUid (RunUid runUid') =
-                    selectByRunUid runUid'
+                    selectByRunUid.Execute runUid'
 
                 member _.InsertRow row =
                     ignore <| rowInserter.ExecuteNonQuery (row, ())
@@ -344,10 +353,10 @@ module internal RunFailuresDTO =
             abstract member PgTableName     : string with get
         end
 
-    let internal buildDispatcher (schema, connection) =
+    let internal buildDispatcher (schema, dataSource) =
         let dispatcher =
             new PostgresTableDispatcher<RunFailuresDTO, Unit>
-                (pgTableName, schema, connection)
+                (pgTableName, schema, dataSource)
 
         {
             new IDispatcher with
@@ -382,11 +391,11 @@ module internal StepResultsDTO =
             abstract member PgTableName     : string with get
         end
 
-    let internal buildDispatcher<'TAugRowDTO> (schema, connection) =
+    let internal buildDispatcher<'TAugRowDTO> (schema, dataSource) =
 
         let dispatcher =
             PostgresTableDispatcher<StepResultsBaseDTO, 'TAugRowDTO>
-                (pgTableName, schema, connection)
+                (pgTableName, schema, dataSource)
 
         let deleteRunResults =
             dispatcher.MakeEquality1Remover
@@ -450,10 +459,10 @@ module internal StepValidationIssuesDTO =
             abstract member PgTableName     : string with get
         end
 
-    let internal buildDispatcher (schema, connection) =
+    let internal buildDispatcher (schema, dataSource) =
         let dispatcher =
             new PostgresTableDispatcher<StepValidationIssuesDTO, Unit>
-                (pgTableName, schema, connection)
+                (pgTableName, schema, dataSource)
 
         let deleteValidationIssues =
             dispatcher.MakeEquality1Remover
@@ -483,8 +492,7 @@ module internal StepValidationIssuesDTO =
                     ignore <| deleteValidationIssuesForPolicy.AsBatchCommand runUid' policyId
 
                 member _.PgTableName
-                    with get () = pgTableName
-                    
+                    with get () = pgTableName                    
         }
 
 
