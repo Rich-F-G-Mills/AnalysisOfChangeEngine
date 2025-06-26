@@ -6,6 +6,30 @@ namespace AnalysisOfChangeEngine.Common
 module TypeExtensions =
 
     open System
+    open System.Collections.Generic
+
+
+    type IDictionary<'K, 'V> with
+        member this.GetOrAdd (key: 'K, valueFactory: unit -> 'V) =
+            match this.TryGetValue key with
+            | true, value ->
+                value
+
+            | false, _ ->
+                let value =
+                    valueFactory ()
+
+                do this.[key] <- value
+
+                value
+
+
+    let private midnightTimeOnly =
+        TimeOnly.FromTimeSpan (TimeSpan.FromSeconds 0)
+
+    type DateOnly with
+        member this.ToDateTimeMidnight () =
+            this.ToDateTime (midnightTimeOnly)            
 
 
     [<RequireQualifiedAccess>]

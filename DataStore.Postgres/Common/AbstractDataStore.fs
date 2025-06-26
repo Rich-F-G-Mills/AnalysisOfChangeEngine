@@ -29,28 +29,36 @@ module AbstractDataStore =
         // --- DISPATCHERS ---
 
         let extractionHeaderDispatcher =
-            ExtractionHeaderDTO.buildDispatcher (schema, dataSource)
+            ExtractionHeaderDTO.buildDispatcher
+                (schema, dataSource)
 
         let policyDataDispatcher =
-            PolicyDataDTO.builderDispatcher<'TPolicyRecordDTO> (schema, dataSource)
+            PolicyDataDTO.builderDispatcher<'TPolicyRecordDTO>
+                (schema, dataSource)
 
         let runHeaderDispatcher =
-            RunHeaderDTO.buildDispatcher (schema, dataSource)
+            RunHeaderDTO.buildDispatcher
+                (schema, dataSource)
 
         let runStepDispatcher =
-            RunStepDTO.buildDispatcher (schema, dataSource)
+            RunStepDTO.buildDispatcher
+                (schema, dataSource)
 
         let stepHeaderDispatcher =
-            StepHeaderDTO.buildDispatcher (dataSource)
+            StepHeaderDTO.buildDispatcher
+                (dataSource)
 
         let stepResultsDispatcher =
-            StepResultsDTO.buildDispatcher<'TStepResultsDTO> (schema, dataSource)
+            StepResultsDTO.buildDispatcher<'TStepResultsDTO>
+                (schema, dataSource)
 
         let stepValidationIssuesDispatcher =
-            StepValidationIssuesDTO.buildDispatcher (schema, dataSource)
+            StepValidationIssuesDTO.buildDispatcher
+                (schema, dataSource)
 
         let runFailuresDispatcher =
-            RunFailuresDTO.buildDispatcher (schema, dataSource)
+            RunFailuresDTO.buildDispatcher
+                (schema, dataSource)
 
 
         // --- UID RESOLVER ---
@@ -375,7 +383,7 @@ module AbstractDataStore =
                     dbCommand.ExecuteReader ()
 
                 let recordParser =
-                    OutstandingRecordDTO.recordParser >> OutstandingRecordDTO.toUnderlying
+                    OutstandingPolicyIdDTO.recordParser >> OutstandingPolicyIdDTO.toUnderlying
 
                 return [
                     while dbReader.Read () do

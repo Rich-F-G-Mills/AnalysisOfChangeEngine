@@ -526,7 +526,7 @@ module internal CohortMembershipDTO =
             CohortMembership.New
 
 [<NoEquality; NoComparison>]
-type internal OutstandingRecordDTO =
+type internal OutstandingPolicyIdDTO =
     {
         policy_id               : string
         had_run_error           : bool
@@ -534,24 +534,24 @@ type internal OutstandingRecordDTO =
     }
 
 [<RequireQualifiedAccess>]
-module internal OutstandingRecordDTO =
+module internal OutstandingPolicyIdDTO =
     // Because we're not wrapping this DTO in a dispatcher, we have to create the record
     // parser ourselves.
     let private recordFields =
         FSharpType.GetRecordFields
             // We know the type is private, so we can be specific about our binding flags.
-            (typeof<OutstandingRecordDTO>, BindingFlags.NonPublic)
+            (typeof<OutstandingPolicyIdDTO>, BindingFlags.NonPublic)
 
     let private recordTransferableTypes =
         recordFields
         |> Array.map (fun pi -> TransferableType.InvokeGetFor pi.PropertyType)
 
     // Type inferencing can't seem to cope without the type hint.
-    let internal recordParser : DbDataReader -> OutstandingRecordDTO =
-        RecordParser.Create<OutstandingRecordDTO>
+    let internal recordParser : DbDataReader -> OutstandingPolicyIdDTO =
+        RecordParser.Create<OutstandingPolicyIdDTO>
             (recordTransferableTypes, [| 0 .. recordFields.Length - 1 |])
 
-    let internal toUnderlying (osRecord: OutstandingRecordDTO): OutstandingRecord =
+    let internal toUnderlying (osRecord: OutstandingPolicyIdDTO): OutstandingPolicyId =
         {
             PolicyId    = osRecord.policy_id
             Cohort      = CohortMembershipDTO.toUnderlying osRecord.cohort

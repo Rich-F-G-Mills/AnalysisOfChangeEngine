@@ -5,6 +5,8 @@ namespace AnalysisOfChangeEngine
 module Runner =
 
     open System
+    open System.Threading
+    open FSharp.Quotations
     open FsToolkit.ErrorHandling
     open Npgsql
     open AnalysisOfChangeEngine
@@ -102,7 +104,7 @@ module Runner =
                 {
                     StepFactory             = new StepFactory (stepUidResolver)
                     IgnoreOpeningMismatches = false
-                    OpeningRunDate          = openingRunDate
+                    OpeningRunDate          = Some openingRunDate
                     ClosingRunDate          = closingRunDate
                 }
 
@@ -182,19 +184,38 @@ module Runner =
                 |> Seq.toArray
 
             let somePolicyRecords =
-                dataStore.GetPolicyRecords currentExtractionUid somePolicyIds
+                dataStore.GetPolicyRecordsAsync currentExtractionUid somePolicyIds
+                |> _.Result
 
-            //do printfn "%A" somePolicyRecords
+            do printfn "%A" somePolicyRecords
 
             //let res =
             //    uas.WrappedInvoker (polRecord, [|1.0f|], [||])
 
             //do printfn "Result: %A" res
 
-            let openingRequestor : IApiRequestor<_> =
+            let apiReq : IApiRequestor<_> =
                 upcast walk.ApiCollection.xl_OpeningRegression
 
-            openingRequestor.
+            let getOutputPI (selector: Expr<OBWholeOfLife.ExcelApi.ExcelOutputs -> 'T>) =
+                match selector with
+                | Patterns.Lambda(_, Patterns.PropertyGet (_, pi, _)) -> pi
+                | _ -> failwith "Unexpected pattern."
+
+            let reqdOutputs =
+                [|
+                    getOutputPI <@ _.DeathBenefit @>
+                    getOutputPI <@ _.SmoothedAssetShare @>
+                |]
+
+            
+            let deathValues =
+                somePolicyRecords
+                |> Map.map (fun _ -> Result.map (apiReq.ExecuteAsync reqdOutputs))
+                |> Map.map (fun _ -> Result.bind _.Result)
+
+            do printfn "%A" deathValues
+            
 
             return 0
         }

@@ -6,7 +6,9 @@ namespace AnalysisOfChangeEngine.ApiProvider.Excel
 module Attributes =
 
     open System
+    open System.Reflection
     open FSharp.Reflection
+    open FsToolkit.ErrorHandling
 
 
     [<AbstractClass>]
@@ -29,6 +31,14 @@ module Attributes =
 
         member val RangeName =
             rangeName with get
+
+
+    let internal getRangeNameFromPI (pi: PropertyInfo) =        
+        pi.GetCustomAttribute<ExcelRangeAliasAttribute>()
+        |> Option.ofNull
+        |> function
+            | None -> pi.Name
+            | Some attr -> attr.RangeName
 
 
     let internal getMappingsForType<'TSource, 'TTarget when 'TSource:comparison and 'TTarget:comparison> =

@@ -8,7 +8,6 @@ open FSharp.Linq.RuntimeHelpers
 open FSharp.Quotations
 open FSharp.Reflection
 open Microsoft.Office.Interop
-open FsToolkit.ErrorHandling
 
 open AnalysisOfChangeEngine.Common
 
@@ -32,11 +31,28 @@ module private Common =
         typeof<float32>
         typeof<string>
         typeof<bool>
-        typeof<DateTime>
+        // Interop marshalling documentation suggests that DateOnly cannot be marshalled, whereas DateTime can.
+        typeof<DateTime>        
     ]
 
     let internal (|Primitive|_|) (t: Type) =
         primitiveTypes |> List.contains t
+
+
+[<AbstractClass; Sealed>]
+type QuotationHelpers private () =
+    // We cannot have a code quotation containing just a 'do' statement.
+    // It needs to return something as done here.
+    // More bizarely, if this retuns Unit, it is treated as System.Void
+    // which wreaks havoc when compiling the quotation. The work-around
+    // is to return something which can be ignored at the call-site.
+    static member SetCellValue (cell: Excel.Range, value: obj) =
+        do cell.Value null <- value
+        cell
+
+    static member ClearCellContents (cell: Excel.Range)  =
+        do ignore <| cell.ClearContents ()
+        cell
 
 
 (*
@@ -49,7 +65,7 @@ Design Decision:
     Why the need for reflection?
     If nothing else, it allows us to enforce type-safety within a particular
     aspect of our logic. I recognise there could be a performance penalty from
-    this, however, this logic is called only once up-front, so will to accept it. 
+    this, however, this logic is called only once up-front, so willing to accept it. 
 
     Also... As part of the Postgres logic, transferable types were cached
     for later re-use. Why not here? Frankly, there was a lot more complexity
@@ -94,9 +110,10 @@ type internal DataTransfer<'TCellInputs> private () =
                         <@
                         match %inputGetter with
                         | Some value ->
-                            do (%cellRangeVar).Value null <- value
+                            // Refer to the blurb in QuotationHelpers as to why this is needed.
+                            ignore <| QuotationHelpers.SetCellValue (%cellRangeVar, value)                            
                         | None ->
-                            do ignore <| (%cellRangeVar).ClearContents ()
+                            ignore <| QuotationHelpers.ClearCellContents (%cellRangeVar)
                         @>
                     )
                 )
@@ -106,7 +123,10 @@ type internal DataTransfer<'TCellInputs> private () =
     static member val private mi_CreateWriterForOptionalPrimitiveInput =
         typeof<DataTransfer<'TCellInputs>>
             .GetMethod(
-                nameof(DataTransfer<_>.CreateWriterForOptionalPrimitiveInput),
+                // Fun fact... If we don't specify a property type parameter here,
+                // it defaults to obj which then leads to an exception because
+                // obj is NOT a record type!
+                nameof(DataTransfer<'TCellInputs>.CreateWriterForOptionalPrimitiveInput),
                 BindingFlags.Static ||| BindingFlags.NonPublic
             )
 
@@ -137,9 +157,9 @@ type internal DataTransfer<'TCellInputs> private () =
                         <@
                         match %inputGetter with
                         | Some value ->
-                            do (%cellRangeVar).Value null <- sprintf "%A" value
+                            ignore <| QuotationHelpers.SetCellValue (%cellRangeVar, sprintf "%A" value)
                         | None ->
-                            do ignore <| (%cellRangeVar).ClearContents ()
+                            ignore <| QuotationHelpers.ClearCellContents (%cellRangeVar)
                         @>
                     )
                 )
@@ -149,7 +169,7 @@ type internal DataTransfer<'TCellInputs> private () =
     static member val private mi_CreateWriterForOptionalUnionInput =
         typeof<DataTransfer<'TCellInputs>>
             .GetMethod(
-                nameof(DataTransfer<_>.CreateWriterForOptionalUnionInput),
+                nameof(DataTransfer<'TCellInputs>.CreateWriterForOptionalUnionInput),
                 BindingFlags.Static ||| BindingFlags.NonPublic
             )
 
@@ -166,20 +186,20 @@ type internal DataTransfer<'TCellInputs> private () =
     static member private CreateWriterForInput<'TValue> (inputPI: PropertyInfo) =
         match typeof<'TValue> with
         | Primitive ->
-            DataTransfer.CreateWriterForPrimitiveInput inputPI
+            DataTransfer<'TCellInputs>.CreateWriterForPrimitiveInput inputPI
         | NonOptionalNonParameterizedUnion _ ->
-            DataTransfer.CreateWriterForNonOptionalUnionInput inputPI
+            DataTransfer<'TCellInputs>.CreateWriterForNonOptionalUnionInput inputPI
         | Optional (Primitive as innerType) ->
-            DataTransfer.InvokeCreateWriterForOptionalPrimitiveInput (innerType, inputPI)
+            DataTransfer<'TCellInputs>.InvokeCreateWriterForOptionalPrimitiveInput (innerType, inputPI)
         | Optional (NonOptionalNonParameterizedUnion _ as innerType) ->
-            DataTransfer.InvokeCreateWriterForOptionalUnionInput (innerType, inputPI)
+            DataTransfer<'TCellInputs>.InvokeCreateWriterForOptionalUnionInput (innerType, inputPI)
         | _ ->
             failwithf "Unable to create writer for type '%s'." typeof<'TValue>.FullName           
 
     static member val private mi_CreateWriterForInput =
         typeof<DataTransfer<'TCellInputs>>
             .GetMethod(
-                nameof(DataTransfer<_>.CreateWriterForInput),
+                nameof(DataTransfer<'TCellInputs>.CreateWriterForInput),
                 BindingFlags.Static ||| BindingFlags.NonPublic
             )
 
@@ -199,11 +219,7 @@ type internal DataTransfer<'TCellInputs> private () =
             cellInputMembers
             |> Array.map (fun pi ->
                 let excelRangeName =
-                    pi.GetCustomAttribute<ExcelRangeAliasAttribute>()
-                    |> Option.ofNull
-                    |> function
-                        | None -> pi.Name
-                        | Some attr -> attr.RangeName
+                    getRangeNameFromPI pi
 
                 // Create this in advance and pass-in via a closure.
                 let cellWriter =
@@ -213,7 +229,7 @@ type internal DataTransfer<'TCellInputs> private () =
                     let excelRange =
                         workbook.Names[excelRangeName].RefersToRange                       
 
-                    cellWriter excelRange
+                    cellWriter excelRange                
             )
         )
 

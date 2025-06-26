@@ -3,6 +3,10 @@ namespace AnalysisOfChangeEngine.ApiProvider.Excel.NativeBindings
 {
     using System.Runtime.InteropServices;
 
+
+    // Here we delve into the murky depths of C# which, ignoring its faults,
+    // is useful when needing managed wrappers around native calls.
+
     public static class Win32
     {
         [DllImport("oleacc.dll")]

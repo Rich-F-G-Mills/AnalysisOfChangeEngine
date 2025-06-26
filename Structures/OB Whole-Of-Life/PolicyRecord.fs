@@ -83,7 +83,8 @@ module OBWholeOfLife =
 
     [<NoComparison>]
     type PolicyRecord =
-        internal | PolicyRecord of RawPolicyRecord
+        // Restrict the construction of this type to the validation function.
+        private | PolicyRecord of RawPolicyRecord
 
 
     // Allows the inner policy record to be accessed via pattern matching.

@@ -22,6 +22,9 @@ module Stateful =
     let inline returnM value =
         Stateful (fun state -> value, state)
 
+    // One might comment as to why we're not using the InlineIfLambda attribute here...
+    // Well... It's unlikely to make any meaningful difference whatsoever given how
+    // infrequently this logic will be used.
     let inline mapM f (Stateful transformer) =
         Stateful (fun state ->
             let value, newState =
@@ -82,13 +85,15 @@ type StatefulBuilder internal () =
 [<AutoOpen>]
 module StatefulBuilder =
     let stateful =
-        StatefulBuilder ()
+        new StatefulBuilder ()
 
 
 [<RequireQualifiedAccess>]
 module List =
 
     // TODO - Could this be made tail-recursive?
+    // Possibly if we allowed for some kind of mutable state. However, not worth
+    // optimising given the use-case.
     let rec mapStateM f = function
         | [] ->
             Stateful.returnM List.empty

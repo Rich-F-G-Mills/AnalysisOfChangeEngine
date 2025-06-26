@@ -38,11 +38,11 @@ module internal Win32 =
             // Return true to continue enumeration.
             true
 
-        let cbDelegate =
+        let callbackDelegate =
             new NativeBindings.Win32.EnumWindowProc (recordWindowHwnd)
 
         let _ =
-            NativeBindings.Win32.EnumChildWindows (hWndParent, cbDelegate, 0n)
+            NativeBindings.Win32.EnumChildWindows (hWndParent, callbackDelegate, 0n)
 
         seq childHWnds
 

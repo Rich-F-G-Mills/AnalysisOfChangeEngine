@@ -19,10 +19,10 @@ module Core =
         interface
             /// Note that API requestors with the SAME NAME will be grouped together!
             abstract Name: string
-            abstract Execute:
+            abstract ExecuteAsync:
                 PropertyInfo array
                     -> 'TPolicyRecord
-                    -> Async<Result<obj array, string>>
+                    -> Task<Result<Result<obj, string> array, string>>
         end
 
     (*
@@ -45,10 +45,10 @@ module Core =
                 | WrappedApiRequestor inner ->
                     inner.Name
 
-            member this.Execute pis policyRecord =
+            member this.ExecuteAsync pis policyRecord =
                 match this with
                 | WrappedApiRequestor inner ->
-                    inner.Execute pis policyRecord
+                    inner.ExecuteAsync pis policyRecord
             
 
     type ILogger =
@@ -461,7 +461,7 @@ module Core =
         | New
 
     [<NoEquality; NoComparison>]
-    type OutstandingRecord =
+    type OutstandingPolicyId =
         {
             PolicyId                    : string
             HasRunError                 : bool
@@ -482,11 +482,10 @@ module Core =
 
             abstract member TryGetOutstandingRecords :
                 runUid                      : RunUid 
-                    -> Result<OutstandingRecord list, string>
+                    -> Result<OutstandingPolicyId list, string>
 
             abstract member GetPolicyRecordsAsync :
                 extractionUid               : ExtractionUid
                 -> policyIds                : string array
-                    -> Task<Map<string, Result<'TPolicyRecord, string>>>
-                
+                    -> Task<Map<string, Result<'TPolicyRecord, string>>>                
         end

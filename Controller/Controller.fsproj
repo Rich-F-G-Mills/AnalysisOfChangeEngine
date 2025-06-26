@@ -6,11 +6,16 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="CalculationLoop.fs" />
     <Compile Include="Walk Analyser\Common.fs" />
     <Compile Include="Walk Analyser\ElementInvoker.fs" />
     <Compile Include="Walk Analyser\SourceInvoker.fs" />
     <Compile Include="Walk Analyser\SourceParser.fs" />
     <Compile Include="Walk Analyser\WalkParser.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Threading.Tasks.Dataflow" Version="9.0.6" />
   </ItemGroup>
 
   <ItemGroup>

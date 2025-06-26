@@ -147,11 +147,11 @@ module OBWholeOfLife =
 
 
     type DataStore (sessionContext: SessionContext, dataSource: NpgsqlDataSource) =
-        inherit AbstractDataStore<OBWholeOfLife.PolicyRecord, PolicyRecordDTO, OBWholeOfLife.StepResults, StepResultsDTO>
+        inherit AbstractPostgresDataStore<OBWholeOfLife.PolicyRecord, PolicyRecordDTO, OBWholeOfLife.StepResults, StepResultsDTO>
             (sessionContext, dataSource, schema)
 
         let tableCodeDispatcher =
-            TableCodeDTO.buildDispatcher dataSource
+            TableCodeDTO.buildDispatcher (dataSource)
 
         let tableCodes =
             tableCodeDispatcher.SelectAll ()

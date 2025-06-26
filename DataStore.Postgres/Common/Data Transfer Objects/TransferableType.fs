@@ -93,17 +93,17 @@ type internal TransferableType private () =
 
     // We cannot re-use this... If a query results in multiple null parameters,
     // NPGSQL complains if we use the same object instance more than once.
-    static member inline makeNullParameter () =
+    static member makeNullParameter () =
         new NpgsqlParameter (Value = DBNull.Value)
 
-    static member inline makeTypedParameter<'T> (value) : NpgsqlParameter =
+    static member makeTypedParameter<'T> (value) : NpgsqlParameter =
         // Previously, the code below was being used directly within a code quotation.
         // However, the runtime expression compiler could not cope with the resulting logic.
         // A simple solution was to wrap the logic in a static member that CAN be
         // included and compiled within a quotation.
         upcast new NpgsqlParameter<'T> (TypedValue = value)
 
-    static member inline makeTypedParameter<'T> (value, dataTypeName) : NpgsqlParameter =
+    static member makeTypedParameter<'T> (value, dataTypeName) : NpgsqlParameter =
         // As above. Using multiple dispatch for those instances where a data type name is needed.
         upcast new NpgsqlParameter<'T> (TypedValue = value, DataTypeName = dataTypeName)
 

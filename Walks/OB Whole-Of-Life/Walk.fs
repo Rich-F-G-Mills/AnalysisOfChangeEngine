@@ -3,6 +3,7 @@ namespace AnalysisOfChangeEngine.Walks.OBWholeOfLife
 
 
 open System
+open System.Threading
 open FSharp.Quotations
 open FsToolkit.ErrorHandling
 open AnalysisOfChangeEngine
@@ -11,6 +12,7 @@ open AnalysisOfChangeEngine.Structures.PolicyRecords
 open AnalysisOfChangeEngine.Structures.StepResults
 open AnalysisOfChangeEngine.Walks
 open AnalysisOfChangeEngine.Walks.Common
+open AnalysisOfChangeEngine.ApiProvider
 
 
 
@@ -19,7 +21,7 @@ type WalkConfiguration =
     {        
         StepFactory                 : StepFactory
         IgnoreOpeningMismatches     : bool
-        OpeningRunDate              : DateOnly
+        OpeningRunDate              : DateOnly option
         ClosingRunDate              : DateOnly
     }
 
@@ -169,18 +171,19 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
     *)
 
     let excelDispatcher =
-        createExcelDispatcher _.StartsWith("as_calc")
+        createExcelDispatcher
+            _.StartsWith("as_calc") CancellationToken.None
 
     // We want this to be publicly available.
     member val ApiCollection =
         {
             xl_OpeningRegression =
-                createOpeningDispatcher
-                    (excelDispatcher, config.OpeningRunDate)
+                ExcelApi.createOpeningExcelRequestor
+                    excelDispatcher config.OpeningRunDate
 
             xl_PostOpeningRegression =
-                createPostOpeningDispatcher
-                    (excelDispatcher, config.OpeningRunDate, config.ClosingRunDate)
+                ExcelApi.createPostOpeningExcelRequestor
+                    excelDispatcher (config.OpeningRunDate, config.ClosingRunDate)
         }
 
 
