@@ -28,6 +28,9 @@ EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Walks.OBWholeOfLife", "Walks\OB Whole-Of-Life\Walks.OBWholeOfLife.fsproj", "{D7640CDC-35B2-0406-8CFC-1AE43068C7BE}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Api Providers", "Api Providers", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
+	ProjectSection(SolutionItems) = preProject
+		ApiProvider\README.md = ApiProvider\README.md
+	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Common", "Common", "{E7387996-9670-4D22-9F41-FE7FAF133AD1}"
 EndProject

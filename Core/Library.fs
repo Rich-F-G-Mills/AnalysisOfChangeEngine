@@ -423,69 +423,36 @@ module Core =
                 member  this.AllSteps = this.AllSteps
 
 
-        (*
-    Design Decision:
-        Why would we need these you ask?
-        Given that the Guid type is used throughout, it's not impossible that (for example) an
-        extraction uid suddently finds itself being used a run uid. This should (!) reduce the
-        chance of that happening.
-        Why not put these in Common? Because other implementations may not even use Guids to
-        locate items within a datastore.
-    *)
-    type RunUid =
-        | RunUid of Guid
-
+    type ExitedPolicyId =
+        | ExitedPolicyId of string
+        
         member this.Value =
             match this with
-            | RunUid uid -> uid
+            | ExitedPolicyId id -> id
 
-    type ExtractionUid =
-        | ExtractionUid of Guid
-
+    type RemainingPolicyId =
+        | RemainingPolicyId of string
+        
         member this.Value =
             match this with
-            | ExtractionUid uid -> uid
+            | RemainingPolicyId id -> id
 
-    type StepUid =
-        | StepUid of Guid
-
+    type NewPolicyId =
+        | NewPolicyId of string
+        
         member this.Value =
             match this with
-            | StepUid uid -> uid
+            | NewPolicyId id -> id
 
-    // Implement equality logic so we can use GroupBy.
-    [<RequireQualifiedAccess; NoComparison>]
-    type CohortMembership =
-        | Exited
-        | Remaining
-        | New
-
-    [<NoEquality; NoComparison>]
     type OutstandingPolicyId =
-        {
-            PolicyId                    : string
-            HasRunError                 : bool
-            Cohort                      : CohortMembership
-        }
+        Choice<ExitedPolicyId, RemainingPolicyId, NewPolicyId>
 
 
-    type IDataStore<'TPolicyRecord, 'TStepResults> =
+    // We could just use a simple function signature here. However,
+    // if we need this to be disposable, easier if it's an interface.
+    type IPolicyGetter<'TPolicyRecord> =
         interface
-            abstract member CreateRun :
-                title                       : string
-                * comments                  : string option
-                * priorRunUid               : RunUid option
-                * closingRunDate            : DateOnly
-                * policyDataExtractionUid   : ExtractionUid
-                * walk                      : IWalk
-                    -> RunUid
-
-            abstract member TryGetOutstandingRecords :
-                runUid                      : RunUid 
-                    -> Result<OutstandingPolicyId list, string>
-
             abstract member GetPolicyRecordsAsync :
-                extractionUid               : ExtractionUid
-                -> policyIds                : string array
-                    -> Task<Map<string, Result<'TPolicyRecord, string>>>                
+                policyIds : string array
+                    -> Task<Map<string, Result<'TPolicyRecord, string> option>>
         end

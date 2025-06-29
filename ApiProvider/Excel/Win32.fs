@@ -41,15 +41,9 @@ module internal Win32 =
         let callbackDelegate =
             new NativeBindings.Win32.EnumWindowProc (recordWindowHwnd)
 
+        // Given this is blocking, we don't need to worry about the delegate above being GC'd
+        // before we return.
         let _ =
             NativeBindings.Win32.EnumChildWindows (hWndParent, callbackDelegate, 0n)
 
         seq childHWnds
-
-    
-
-
-    
-
-
-        

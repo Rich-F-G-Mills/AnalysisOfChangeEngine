@@ -12,8 +12,6 @@ open AnalysisOfChangeEngine.Structures.PolicyRecords
 open AnalysisOfChangeEngine.Structures.StepResults
 open AnalysisOfChangeEngine.Walks
 open AnalysisOfChangeEngine.Walks.Common
-open AnalysisOfChangeEngine.ApiProvider
-
 
 
 [<NoEquality; NoComparison>]

@@ -14,6 +14,7 @@ module Dispatcher =
     open AnalysisOfChangeEngine.Common
 
 
+    // See the README.md for what's going on here!
     type IExcelDispatcher<'TStepRelatedInputs, 'TPolicyRelatedInputs> =
         interface
             inherit IDisposable
@@ -57,10 +58,16 @@ module Dispatcher =
     // Again, more of a philosophical decision. A dispatcher is tied to a specific
     // set of input types. This is because logic is generated upfront to update the
     // underlying workbook once input instances are supplied for processing.
+    /// Creates a load-balancing wrapper around one or more Excel instances. Via the
+    /// provided interface, calculation requests can be submitted to the underling Excel
+    /// instances.
     let createExcelDispatcher<'TStepRelatedInputs, 'TPolicyRelatedInputs>
         workbookSelector cancellationToken =
             let workbooksFound =
                 Locator.locateOpenWorkbooks workbookSelector
+
+            if workbooksFound.Length = 0 then
+                failwith "No workbooks found. Please ensure the workbook is open."
 
             let excelApps =
                 workbooksFound

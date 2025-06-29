@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="README.md" />
     <Compile Include="Attributes.fs" />
     <Compile Include="HResultType.fs" />
     <Compile Include="Win32.fs" />
@@ -13,6 +14,8 @@
     <Compile Include="DataTransfer.fs" />
     <Compile Include="Dispatcher.fs" />
   </ItemGroup>
+
+  <ItemGroup />
 
   <ItemGroup>
     <PackageReference Include="FsToolkit.ErrorHandling" Version="5.0.0" />

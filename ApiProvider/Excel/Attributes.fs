@@ -26,6 +26,7 @@ module Attributes =
 
     [<Sealed>]
     [<AttributeUsage(AttributeTargets.Property, AllowMultiple = false)>]
+    /// Allows the user to specify a different name for the range in the Excel file.
     type ExcelRangeAliasAttribute (rangeName: string) =
         inherit Attribute ()
 

@@ -509,27 +509,16 @@ type internal StepValidationRunFailuresDTO =
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
 [<PostgresCommonEnumeration("cohort_membership")>]
-type internal CohortMembershipDTO =
+type CohortMembershipDTO =
     | EXITED
     | REMAINING
     | NEW
 
-[<RequireQualifiedAccess>]
-module internal CohortMembershipDTO =
-
-    let internal toUnderlying = function
-        | CohortMembershipDTO.EXITED ->
-            CohortMembership.Exited
-        | CohortMembershipDTO.REMAINING ->
-            CohortMembership.Remaining
-        | CohortMembershipDTO.NEW ->
-            CohortMembership.New
-
 [<NoEquality; NoComparison>]
-type internal OutstandingPolicyIdDTO =
+type OutstandingPolicyIdDTO =
     {
         policy_id               : string
-        had_run_error           : bool
+        // had_run_error           : bool
         cohort                  : CohortMembershipDTO
     }
 
@@ -551,9 +540,10 @@ module internal OutstandingPolicyIdDTO =
         RecordParser.Create<OutstandingPolicyIdDTO>
             (recordTransferableTypes, [| 0 .. recordFields.Length - 1 |])
 
-    let internal toUnderlying (osRecord: OutstandingPolicyIdDTO): OutstandingPolicyId =
-        {
-            PolicyId    = osRecord.policy_id
-            Cohort      = CohortMembershipDTO.toUnderlying osRecord.cohort
-            HasRunError = osRecord.had_run_error
-        }
+    let internal toUnderlying (osRecord: OutstandingPolicyIdDTO) = function
+        | { policy_id = pid; cohort = CohortMembershipDTO.EXITED } ->
+            Choice1Of3 (ExitedPolicyId pid)
+        | { policy_id = pid; cohort = CohortMembershipDTO.REMAINING } ->
+            Choice2Of3 (RemainingPolicyId pid)
+        | { policy_id = pid; cohort = CohortMembershipDTO.NEW } ->
+            Choice3Of3 (NewPolicyId pid)

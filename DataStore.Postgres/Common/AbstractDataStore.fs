@@ -188,15 +188,19 @@ module AbstractDataStore =
 
         member this.GetPolicyRecordsAsync extractionUid policyIds =
             backgroundTask {
-                // TODO - Should this raise an exception if any records weren't found?
                 let! records =
                     policyDataDispatcher.GetPolicyRecordsAsync extractionUid policyIds
 
                 let records' =
                     records
-                    |> Map.map (fun _ -> this.dtoToPolicyRecord)
+                    |> Map.map (fun _ -> Some << this.dtoToPolicyRecord)
 
-                return records'
+                let records'' =
+                    policyIds
+                    |> Seq.filter (not << records'.ContainsKey)
+                    |> Seq.fold (fun map pid -> map |> Map.add pid None) records'
+
+                return records''
             }
             
 
@@ -392,13 +396,11 @@ module AbstractDataStore =
             }
 
 
-        interface IDataStore<'TPolicyRecord, 'TStepResults> with
-            
-            member this.CreateRun (title, comments, priorRunUid, closingRunDate, policyDataExtractionUid, walk) = 
-                this.CreateRun (title, comments, priorRunUid, closingRunDate, policyDataExtractionUid, walk)
+        // --- INTERFACE FACTORIES ---
 
-            member this.TryGetOutstandingRecords runUid =
-                this.TryGetOutstandingRecords runUid
-
-            member this.GetPolicyRecordsAsync extractionUid policyIds =
-                this.GetPolicyRecordsAsync extractionUid policyIds
+        member this.CreatePolicyGetter (extractionUid: ExtractionUid) =
+            {
+                new IPolicyGetter<'TPolicyRecord> with
+                    member _.GetPolicyRecordsAsync policyIds =
+                        this.GetPolicyRecordsAsync extractionUid policyIds
+            }

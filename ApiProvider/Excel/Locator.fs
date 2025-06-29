@@ -14,6 +14,7 @@ open AnalysisOfChangeEngine.Common
 module internal Locator =
 
     let private IID_IExcelWindow =
+        // See https://learn.microsoft.com/en-us/dotnet/api/microsoft.office.interop.excel.iwindow?view=excel-pia#:~:text=%5BSystem.Runtime.InteropServices.Guid(%2200020893%2D0001%2D0000%2DC000%2D000000000046%22)%5D
         Guid.Parse("00020893-0000-0000-C000-000000000046")
 
     let private OBJID_NATIVEOM =
@@ -25,6 +26,11 @@ module internal Locator =
 
         String.Equals (className, className', StringComparison.InvariantCultureIgnoreCase)
 
+
+    // There are various articles on the web about how to get a COM object for a running
+    // application that exposes itself in this way. However, some seemed to be extracting
+    // IID_IDispatch from the window, which is not what we want. Instead, I just went straight
+    // for the IID_IExcelWindow. Once we have that, we can get everything else that we need.
     let private tryGetExcelApplicationForProcess (``process``: Process) =
         option {
             do! Option.requireTrue 
@@ -44,6 +50,9 @@ module internal Locator =
                 Win32.accessibleObjectFromWindow OBJID_NATIVEOM IID_IExcelWindow excel7ChildWindowHandle
                 |> Option.ofResult
 
+            // Let's cast and hope for the best! In all fairness, if we've gotten this far,
+            // the logic above was able to find an object with the require COM IID.
+            // It would be surprising if it then failed at this point.
             let (excelWindow: Excel.Window) =
                 downcast excelWindowObj
 

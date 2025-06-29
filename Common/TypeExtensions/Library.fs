@@ -28,6 +28,7 @@ module TypeExtensions =
         TimeOnly.FromTimeSpan (TimeSpan.FromSeconds 0)
 
     type DateOnly with
+        // Useful for Excel interop where only DateTimes can (seemingly) be marshalled across.
         member this.ToDateTimeMidnight () =
             this.ToDateTime (midnightTimeOnly)            
 
