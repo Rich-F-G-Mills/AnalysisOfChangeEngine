@@ -5,13 +5,13 @@
 namespace AnalysisOfChangeEngine.Controller.WalkAnalyser
 
 
-module ElementInvoker =
+[<RequireQualifiedAccess>]
+module internal ElementInvoker =
 
     open System.Reflection
     open FSharp.Linq.RuntimeHelpers
     open FSharp.Quotations
     open FSharp.Reflection
-    open AnalysisOfChangeEngine
 
 
     let private unitObj =

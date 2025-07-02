@@ -334,16 +334,56 @@ module internal RunStepDTO =
 
 
 [<NoEquality; NoComparison>]
-type internal RunFailuresDTO =
-    {    
+type internal RunErrorTypeDTO =
+    | OPENING_RECORD_NOT_FOUND
+    | CLOSING_RECORD_NOT_FOUND
+    | OPENING_RECORD_PARSE_FAILURE
+    | CLOSING_RECORD_PARSE_FAILURE
+    | DATA_CHANGE_RECORD_FAILURE
+    | VALIDATION_ABORTED
+    | VALIDATION_FAILURE
+    | API_CALL_FAILURE
+    | API_CALCULATION_FAILURE
+
+[<NoEquality; NoComparison>]
+type internal RunErrorsDTO =
+    {   
+        error_type              : RunErrorTypeDTO
         run_uid                 : Guid
         policy_id               : string
-        run_when                : DateTime
-        reason                  : string
+        step_uid                : Guid option
+        reason                  : string option
+        timestamp               : DateTime        
     }
 
-[<RequireQualifiedAccess>]
-module internal RunFailuresDTO =
+    static member ofUnderlying
+        (error: Errors.ApiCalculationFailure, RunUid runUid, policyId, timestamp) =
+            {
+                error_type              = RunErrorTypeDTO.API_CALCULATION_FAILURE
+                run_uid                 = runUid
+                policy_id               = policyId
+                step_uid                = None
+                reason                  = Some error.Reason
+                timestamp               = timestamp
+            }
+
+    static member ofUnderlying
+        (error: Errors.ApiCallFailure, RunUid runUid, policyId, timestamp) =
+            {
+                error_type              = RunErrorTypeDTO.API_CALL_FAILURE
+                run_uid                 = runUid
+                policy_id               = policyId
+                step_uid                = None
+                reason                  = Some error.Reason
+                timestamp               = timestamp
+            }
+
+    static member 
+
+    
+
+[<AbstractClass>]
+module internal RunErrorsDTO =
     
     let [<Literal>] private pgTableName =
         "run_failures"
@@ -355,7 +395,7 @@ module internal RunFailuresDTO =
 
     let internal buildDispatcher (schema, dataSource) =
         let dispatcher =
-            new PostgresTableDispatcher<RunFailuresDTO, Unit>
+            new PostgresTableDispatcher<RunErrorsDTO, Unit>
                 (pgTableName, schema, dataSource)
 
         {
@@ -363,6 +403,8 @@ module internal RunFailuresDTO =
                 member _.PgTableName
                     with get () = pgTableName                  
         }
+
+    
 
 
 [<NoEquality; NoComparison>]
@@ -416,95 +458,6 @@ module internal StepResultsDTO =
                 member _.PgTableName
                     with get () = pgTableName                   
         }
-
-
-[<RequireQualifiedAccess; NoEquality; NoComparison>]
-[<PostgresCommonEnumeration("validation_issue_classification")>]
-type internal ValidationIssueClassificationDTO =
-    | WARNING
-    | ERROR
-
-[<RequireQualifiedAccess>]
-module internal ValidationIssueClassificationDTO =
-    
-    let internal fromUnderlying = function
-        | ValidationIssueClassification.Error ->
-            ValidationIssueClassificationDTO.ERROR
-        | ValidationIssueClassification.Warning ->
-            ValidationIssueClassificationDTO.WARNING
-
-
-[<NoEquality; NoComparison>]
-type internal StepValidationIssuesDTO =
-    {
-        run_uid                 : Guid
-        step_uid                : Guid
-        policy_id               : string
-        run_when                : DateTime
-        classification          : ValidationIssueClassificationDTO
-        message                 : string
-    }
-
-[<RequireQualifiedAccess>]
-module internal StepValidationIssuesDTO =
-
-    let [<Literal>] private pgTableName =
-        "step_validation_issues"
-
-    type internal IDispatcher =
-        interface
-            abstract member InsertRows      : StepValidationIssuesDTO list -> unit
-            abstract member DeleteRows      : RunUid -> unit
-            abstract member DeleteRows      : RunUid * policyId: string -> unit
-            abstract member PgTableName     : string with get
-        end
-
-    let internal buildDispatcher (schema, dataSource) =
-        let dispatcher =
-            new PostgresTableDispatcher<StepValidationIssuesDTO, Unit>
-                (pgTableName, schema, dataSource)
-
-        let deleteValidationIssues =
-            dispatcher.MakeEquality1Remover
-                <@ _.run_uid @>
-
-        let deleteValidationIssuesForPolicy =
-            dispatcher.MakeEquality2Remover
-                (<@ _.run_uid @>, <@ _.policy_id @>)
-
-        let rowsInserter =
-            dispatcher.MakeRowsInserter ()
-
-        {
-            new IDispatcher with
-                member _.InsertRows rows =
-                    // It's a shame this step is needed. However, without further specialisation
-                    // of the rows inserter logic, this is the best we can do.
-                    let rows' =
-                        rows |> List.map (fun r -> r, ())
-
-                    do ignore <| rowsInserter.AsBatchCommand rows'
-
-                member _.DeleteRows (RunUid runUid') = 
-                    ignore <| deleteValidationIssues.ExecuteNonQuery runUid'
-
-                member _.DeleteRows (RunUid runUid', policyId) = 
-                    ignore <| deleteValidationIssuesForPolicy.AsBatchCommand runUid' policyId
-
-                member _.PgTableName
-                    with get () = pgTableName                    
-        }
-
-
-[<NoEquality; NoComparison>]
-type internal StepValidationRunFailuresDTO =
-    {
-        run_uid                 : Guid
-        step_uid                : Guid
-        policy_id               : string
-        run_when                : DateTime
-        reason                  : string
-    }
 
 
 [<RequireQualifiedAccess; NoEquality; NoComparison>]

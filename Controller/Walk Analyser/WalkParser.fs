@@ -3,7 +3,7 @@ namespace AnalysisOfChangeEngine.Controller.WalkAnalyser
 
 
 [<RequireQualifiedAccess>]
-module WalkParser =
+module internal WalkParser =
 
     open FSharp.Reflection
     open FSharp.Quotations
@@ -182,8 +182,9 @@ module WalkParser =
         | _ -> false
         
 
-    let execute<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord : equality>
-        (apiCollection: 'TApiCollection) (walk: AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
+    let internal execute<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord : equality>
+        (walk: AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection>)
+        (apiCollection: 'TApiCollection) =
             let currentResultsVarDefMapping =
                 FSharpType.GetRecordFields (typeof<'TStepResults>)
                 |> Seq.map (fun pi ->

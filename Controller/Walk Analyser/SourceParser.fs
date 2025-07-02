@@ -10,7 +10,7 @@ namespace AnalysisOfChangeEngine.Controller.WalkAnalyser
 
 
 [<RequireQualifiedAccess>]
-module SourceParser =
+module internal SourceParser =
 
     open System.Reflection
     open FSharp.Quotations

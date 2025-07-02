@@ -2,9 +2,12 @@
 namespace AnalysisOfChangeEngine.Controller
 
 open System
+open System.Threading
 open System.Threading.Tasks
 open System.Threading.Tasks.Dataflow
-open AnalysisOfChangeEngine
+open AnalysisOfChangeEngine    
+        
+
 
 
 [<RequireQualifiedAccess>]
@@ -20,7 +23,7 @@ type internal CohortedPolicyRecords<'TPolicyRecord> =
     CohortMembership<'TPolicyRecord, 'TPolicyRecord * 'TPolicyRecord>
 
 
-type internal CalculationLoop<'TPolicyRecord> internal
+type internal CalculationLoop<'TPolicyRecord>
     (openingPolicyGetter: IPolicyGetter<'TPolicyRecord> option,
      closingPolicyGetter: IPolicyGetter<'TPolicyRecord>) =
         

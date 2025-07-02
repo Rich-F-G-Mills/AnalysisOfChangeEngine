@@ -11,7 +11,53 @@ module Core =
     open System.Reflection
     open System.Threading.Tasks
     open FSharp.Quotations
-      
+
+
+    (*
+    Design Decision:
+        Why would we need these you ask?
+        Given that the Guid type is used throughout, it's not impossible that (for example) an
+        extraction uid suddently finds itself being used a run uid. This should (!) reduce the
+        chance of that happening.
+        Why not put these in Common? Because other implementations may not even use Guids to
+        locate items within a datastore.
+    *)
+    [<NoEquality; NoComparison>]
+    type RunUid =
+        | RunUid of Guid
+
+        member this.Value =
+            match this with
+            | RunUid uid -> uid
+
+    [<NoEquality; NoComparison>]
+    type ExtractionUid =
+        | ExtractionUid of Guid
+
+        member this.Value =
+            match this with
+            | ExtractionUid uid -> uid
+
+    [<NoEquality; NoComparison>]
+    type StepUid =
+        | StepUid of Guid
+
+        member this.Value =
+            match this with
+            | StepUid uid -> uid
+
+
+    [<RequireQualifiedAccess>]
+    [<NoEquality; NoComparison>]
+    type ApiRequestOutcome =
+        | Successful of obj array
+        /// Indicates that, although an API response was received, one or
+        /// elements within it were erroneous. This _could_ have (for example)
+        /// been due to a malformed request.
+        | CalculationFailure of Reason: string
+        /// Indicates that an API call failed to execute. This would,
+        /// for example, be the case if the API was not available.
+        | CallFailure of Reason: string
 
     // Do NOT change this to IApiEndpoint. Again. The same endpoint could have
     // multiple requestors mapping to it. Calling it 'endpoint' would be misleading.
@@ -22,7 +68,7 @@ module Core =
             abstract ExecuteAsync:
                 PropertyInfo array
                     -> 'TPolicyRecord
-                    -> Task<Result<Result<obj, string> array, string>>
+                    -> Task<ApiRequestOutcome>
         end
 
     (*
@@ -119,14 +165,6 @@ module Core =
                 Expr.Cast<_> expr
 
 
-    /// Possible issues identified when applying step validation logic.
-    [<RequireQualifiedAccess; NoEquality; NoComparison>]
-    type ValidationIssueClassification =
-        /// Although an identified issue, it is tolerable.
-        | Warning
-        /// Indicates a (serious) issue has been identified.
-        | Error
-
     (*
     Design Decision:
         Why not just use a Result type for this?
@@ -136,14 +174,14 @@ module Core =
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
     type StepValidationOutcome =
         /// Indicates that the validation logic was successfully applied, regardless of
-        /// whether this led to validation issues being recognised (or not).
-        | Completed of (ValidationIssueClassification * string) list
+        /// whether this led to validation errors being recognised (or not).
+        | Completed of Errors: string array
         /// Indicates that the validation logic was unable to run for a specified reason.
-        | Failed of Reason: string
+        | Aborted of Reason: string
 
         /// Alias for a completed validation without any issues raised.
         static member val Empty =
-            Completed [] with get
+            Completed [||] with get
 
     /// Step validator that receives the current policy record followed by
     /// the prior (where available) and current step results.
@@ -166,7 +204,7 @@ module Core =
 
     /// Helper function that provides no validation at all.
     let noValidator _ : StepValidationOutcome=
-        StepValidationOutcome.Completed []
+        StepValidationOutcome.Completed [||]
 
 
     /// Type definition for a data changer that takes the policy record as at the opening step,
@@ -374,8 +412,11 @@ module Core =
 
             /// Required step.
             abstract member RemoveExitedRecords :
-                RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> with get 
+                RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> with get
 
+            // User defined interior steps will be defined within the
+            // derived class and tracked via the 'registerInteriorStep'
+            // function below.
             
             /// Required step.
             abstract member MoveToClosingData :
@@ -420,9 +461,11 @@ module Core =
                 } with get
 
             interface IWalk with
-                member  this.AllSteps = this.AllSteps
+                member this.AllSteps =
+                    this.AllSteps
 
 
+    [<NoEquality; NoComparison>]
     type ExitedPolicyId =
         | ExitedPolicyId of string
         
@@ -430,6 +473,7 @@ module Core =
             match this with
             | ExitedPolicyId id -> id
 
+    [<NoEquality; NoComparison>]
     type RemainingPolicyId =
         | RemainingPolicyId of string
         
@@ -437,6 +481,7 @@ module Core =
             match this with
             | RemainingPolicyId id -> id
 
+    [<NoEquality; NoComparison>]
     type NewPolicyId =
         | NewPolicyId of string
         
@@ -444,15 +489,71 @@ module Core =
             match this with
             | NewPolicyId id -> id
 
-    type OutstandingPolicyId =
-        Choice<ExitedPolicyId, RemainingPolicyId, NewPolicyId>
 
+    [<NoEquality; NoComparison>]
+    type PolicyGetterOutcome<'TPolicyRecord> =
+        | Successful of 'TPolicyRecord
+        | ParseFailure of Reason: string
+        | NotFound
 
     // We could just use a simple function signature here. However,
     // if we need this to be disposable, easier if it's an interface.
-    type IPolicyGetter<'TPolicyRecord> =
+    type PolicyGetter<'TPolicyRecord> =
         interface
             abstract member GetPolicyRecordsAsync :
                 policyIds : string array
-                    -> Task<Map<string, Result<'TPolicyRecord, string> option>>
+                    -> Task<Map<string, PolicyGetterOutcome<'TPolicyRecord>>>
+        end
+
+
+    [<NoEquality; NoComparison>]
+    type ExitedPolicy<'TPolicyRecord> =
+        | ExitedPolicy of 'TPolicyRecord
+
+    [<NoEquality; NoComparison>]
+    type RemainingPolicy<'TPolicyRecord> =
+        | RemainingPolicy of Opening: 'TPolicyRecord * Closing: 'TPolicyRecord
+        
+    [<NoEquality; NoComparison>]
+    type NewPolicy<'TPolicyRecord> =
+        | NewPolicy of 'TPolicyRecord
+
+
+    [<NoEquality; NoComparison>]
+    type EvaluationFailure<'TStepResults> =
+        | ApiCalculationFailure of RequestorName: string * Reason: string
+        | ApiCallFailure of RequestorName: string * Reason: string
+        | DataChangeFailure of StepHeader: IStepHeader * Reason: string
+        | ValidationAborted of StepHeader: IStepHeader * Reason: string
+        | ValidationFailure of StepHeader: IStepHeader * Reason: string
+        | StepConstructionFailure of StepHeader: IStepHeader * Reason: string
+
+
+    type ExitedPolicyOutcome<'TStepResults> =
+        Choice<'TStepResults, EvaluationFailure<'TStepResults>>
+
+    type RemainingPolicyOutcome<'TStepResults> =
+        Choice<'TStepResults array, EvaluationFailure<'TStepResults>>
+
+    type NewPolicyOutcome<'TStepResults> =
+        Choice<'TStepResults, EvaluationFailure<'TStepResults>>
+
+
+    type IPolicyEvaluator<'TPolicyRecord, 'TStepResults> =
+        interface
+            /// Only a single result will be provided for the initial
+            /// (ie. opening re-run) step.
+            abstract member execute:
+                ExitedPolicy<'TPolicyRecord>
+                    -> Task<ExitedPolicyOutcome<'TStepResults>>
+
+            abstract member execute:
+                RemainingPolicy<'TPolicyRecord>
+                    -> Task<RemainingPolicyOutcome<'TStepResults>>
+
+            /// Only a single result will be provided for the final
+            /// (ie. add new records) step.
+            abstract member execute:
+                NewPolicy<'TPolicyRecord>
+                    -> Task<NewPolicyOutcome<'TStepResults>>
         end

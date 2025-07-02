@@ -2,7 +2,7 @@
 namespace AnalysisOfChangeEngine.Controller.WalkAnalyser
 
 
-module SourceInvoker =
+module internal SourceInvoker =
 
     open FSharp.Linq.RuntimeHelpers
     open FSharp.Quotations
