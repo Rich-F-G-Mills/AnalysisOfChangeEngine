@@ -16,7 +16,7 @@ module internal WalkParser =
     
     type private SourceParser<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
         SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-            -> Stateful<WalkState<'TPolicyRecord>, ParsedSource<'TPolicyRecord>>
+            -> Stateful<WalkState<'TPolicyRecord>, ParsedSource<'TPolicyRecord, 'TStepResults>>
 
 
     (*
@@ -175,11 +175,6 @@ module internal WalkParser =
             |> List.map toDataStage
 
         postOpeningDataStages
-
-    let private checkStepType<'TStep when 'TStep :> IStepHeader> (hdr: IStepHeader) =
-        match hdr with
-        | :? 'TStep -> true
-        | _ -> false
         
 
     let internal execute<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord : equality>

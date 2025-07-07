@@ -16,11 +16,9 @@ module Core =
     (*
     Design Decision:
         Why would we need these you ask?
-        Given that the Guid type is used throughout, it's not impossible that (for example) an
-        extraction uid suddently finds itself being used a run uid. This should (!) reduce the
-        chance of that happening.
-        Why not put these in Common? Because other implementations may not even use Guids to
-        locate items within a datastore.
+        Given that the Guid type is used throughout, it's not impossible
+        that (for example) an extraction UID suddently finds itself being
+        used as a run UID. This should (!) reduce the chance of that happening.
     *)
     [<NoEquality; NoComparison>]
     type RunUid =
@@ -49,15 +47,16 @@ module Core =
 
     [<RequireQualifiedAccess>]
     [<NoEquality; NoComparison>]
-    type ApiRequestOutcome =
-        | Successful of obj array
-        /// Indicates that, although an API response was received, one or
-        /// elements within it were erroneous. This _could_ have (for example)
-        /// been due to a malformed request.
-        | CalculationFailure of Reason: string
+    type ApiRequestFailure =
+        /// Indicates that, although a response was received from the API,
+        /// it failed either in part or in entirety.
+        | CalculationFailure of Reasons: string array
         /// Indicates that an API call failed to execute. This would,
         /// for example, be the case if the API was not available.
-        | CallFailure of Reason: string
+        | CallFailure of Reasons: string array
+
+    type ApiRequestOutcome =
+        Result<obj array, ApiRequestFailure>
 
     // Do NOT change this to IApiEndpoint. Again. The same endpoint could have
     // multiple requestors mapping to it. Calling it 'endpoint' would be misleading.
@@ -65,11 +64,79 @@ module Core =
         interface
             /// Note that API requestors with the SAME NAME will be grouped together!
             abstract Name: string
+
             abstract ExecuteAsync:
                 PropertyInfo array
                     -> 'TPolicyRecord
                     -> Task<ApiRequestOutcome>
         end
+
+
+    // Allows us to define custom equality and comparison operations.
+    // TODO - Is it risk only considering the Name for this operations?
+    [<AbstractClass>]
+    type AbstractApiRequestor<'TPolicyRecord> () =
+        /// Note that API requestors with the SAME NAME will be grouped together!
+        abstract member Name: string
+
+        abstract member ExecuteAsync:
+            PropertyInfo array
+                -> 'TPolicyRecord
+                -> Task<ApiRequestOutcome>
+        
+        override this.Equals other =
+            match other with
+            | :? AbstractApiRequestor<'TPolicyRecord> as other' ->
+                (this :> IEquatable<_>).Equals other'
+            | _ ->
+                false
+
+        override this.GetHashCode () =
+            this.Name.GetHashCode ()
+
+        interface IEquatable<AbstractApiRequestor<'TPolicyRecord>> with
+            member this.Equals (other) =
+                this.Name = other.Name
+
+        interface IComparable<AbstractApiRequestor<'TPolicyRecord>> with
+            member this.CompareTo other =
+                this.Name.CompareTo other.Name
+
+        interface IComparable with
+            member this.CompareTo other =
+                match other with
+                | :? AbstractApiRequestor<'TPolicyRecord> as other' ->
+                    (this :> IComparable<_>).CompareTo other'
+                | _ ->
+                    failwith "Cannot compare different types of API requestors."
+                    
+
+        interface IApiRequestor<'TPolicyRecord> with
+            member this.Name =
+                this.Name
+
+            member this.ExecuteAsync requiredOutputs policyRecord =
+                this.ExecuteAsync requiredOutputs policyRecord
+
+
+    [<RequireQualifiedAccess>]
+    module AbstractApiRequestor =
+        
+        [<Sealed>]
+        // No-one, and I mean no-one, should be deriving from this.
+        type EncapsulatedApiRequestor<'TPolicyRecord> internal (name, asyncExecutor) =
+            inherit AbstractApiRequestor<'TPolicyRecord> ()
+
+            override _.Name =
+                name
+
+            override _.ExecuteAsync requiredOutputs policyRecord =
+                asyncExecutor requiredOutputs policyRecord
+
+
+        let create (name, asyncExecutor) : AbstractApiRequestor<'TPolicyRecord> =
+            upcast new EncapsulatedApiRequestor<'TPolicyRecord> (name, asyncExecutor)
+
 
     (*
     Design Decision:
@@ -82,7 +149,7 @@ module Core =
     /// a strongly typed link to possible responses.
     [<NoEquality; NoComparison>]
     type WrappedApiRequestor<'TPolicyRecord, 'TResponse> =
-        | WrappedApiRequestor of IApiRequestor<'TPolicyRecord>
+        | WrappedApiRequestor of AbstractApiRequestor<'TPolicyRecord>
 
         // Allows us to extract the underlying endpoint without caring about the response type.
         interface IApiRequestor<'TPolicyRecord> with
@@ -521,22 +588,24 @@ module Core =
 
     [<NoEquality; NoComparison>]
     type EvaluationFailure<'TStepResults> =
-        | ApiCalculationFailure of RequestorName: string * Reason: string
-        | ApiCallFailure of RequestorName: string * Reason: string
-        | DataChangeFailure of StepHeader: IStepHeader * Reason: string
-        | ValidationAborted of StepHeader: IStepHeader * Reason: string
-        | ValidationFailure of StepHeader: IStepHeader * Reason: string
-        | StepConstructionFailure of StepHeader: IStepHeader * Reason: string
+        | ApiCalculationFailure of RequestorName: string * Reasons: string array
+        | ApiCallFailure of RequestorName: string * Reasons: string array
+        | DataChangeFailure of StepHeader: IStepHeader * Reasons: string array
+        | ValidationAborted of StepHeader: IStepHeader * Reasons: string array
+        | ValidationFailure of StepHeader: IStepHeader * Reasons: string array
+        | StepConstructionFailure of StepHeader: IStepHeader * Reasons: string array
 
 
+    // We use lists for the failures as they can be more easily constructed
+    // in a cumulative manner.
     type ExitedPolicyOutcome<'TStepResults> =
-        Choice<'TStepResults, EvaluationFailure<'TStepResults>>
+        Result<'TStepResults, EvaluationFailure<'TStepResults> list>
 
     type RemainingPolicyOutcome<'TStepResults> =
-        Choice<'TStepResults array, EvaluationFailure<'TStepResults>>
+        Result<'TStepResults array, EvaluationFailure<'TStepResults> list>
 
     type NewPolicyOutcome<'TStepResults> =
-        Choice<'TStepResults, EvaluationFailure<'TStepResults>>
+        Result<'TStepResults, EvaluationFailure<'TStepResults> list>
 
 
     type IPolicyEvaluator<'TPolicyRecord, 'TStepResults> =

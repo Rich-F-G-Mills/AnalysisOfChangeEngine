@@ -12,6 +12,9 @@ module internal SourceInvoker =
     let private unitObj =
         () :> obj
 
+    // Note that, on a number of occassions we are iterating over sets.
+    // The documentation states that elements within F# sets are ordered
+    // according to their value, not insertion order.
     let internal create<'TPolicyRecord, 'TStepResults>
         (policyRecordVarDef: Var, currentResultsVarDefMapping: Map<_, Var>) =
             let policyRecordType =
@@ -91,8 +94,6 @@ module internal SourceInvoker =
                 let invoker =
                     LeafExpressionConverter.EvaluateQuotation rebuiltSourceExpr
 
-                // Similar situation as for the element invoker where we are trying
-                // to get a callable to access our compiled logic above.
                 let fsharpFuncType =
                     typedefof<OptimizedClosures.FSharpFunc<_, _, _>>
                         .MakeGenericType(
@@ -105,23 +106,21 @@ module internal SourceInvoker =
                     fsharpFuncType.GetMethod("Adapt").Invoke(null, [|invoker|])
 
                 let invokerArgTypes =
-                    [| policyRecordType; apiCallsTupleType; |]
+                    [| policyRecordType; apiCallsTupleType |]
 
                 let invokerMI =                
                     fsharpFuncType.GetMethod("Invoke", invokerArgTypes)
 
-                // Whereas, for the element invoker, this was only expected to be used
-                // for testing purposes. That is NOT the case here. The resulting invoker
-                // will be called in order to populate the step result for a given record.
-                let wrappedInvoker (policyRecord: 'TPolicyRecord, apiCallResults) =
-                    let apiCallResults' =
-                        if apiCallsTupleType = typeof<unit> then
-                            unitObj
-                        else
-                            FSharpValue.MakeTuple (apiCallResults, apiCallsTupleType)
+                let wrappedInvoker (policyRecord: 'TPolicyRecord, apiCallResults: obj array)
+                    : 'TStepResults =
+                        let apiCallResults' =
+                            if apiCallsTupleType = typeof<unit> then
+                                unitObj
+                            else
+                                FSharpValue.MakeTuple (apiCallResults, apiCallsTupleType)
 
-                    invokerMI.Invoke
-                        (fsharpFunc, [| policyRecord; apiCallResults' |])
+                        downcast invokerMI.Invoke
+                            (fsharpFunc, [| policyRecord; apiCallResults' |])
 
                 {|
                     ApiCallsTupleType       = apiCallsTupleType

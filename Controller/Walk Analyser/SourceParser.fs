@@ -114,10 +114,6 @@ module internal SourceParser =
             let stepResultMemberNamesSet =
                 Set stepResultMemberNames
 
-            let elementInvokerFactory =
-                ElementInvoker.create<'TPolicyRecord>
-                    (newPolicyRecordVarDef, currentResultsVarDefMapping)
-
             let sourceInvokerFactory =
                 SourceInvoker.create<'TPolicyRecord, 'TStepResults>
                     (newPolicyRecordVarDef, currentResultsVarDefMapping)
@@ -213,7 +209,7 @@ module internal SourceParser =
 
                                 | ApiRequest (requestPI, selectorPI) ->
                                     stateful {
-                                        let (apiRequest: IApiRequestor<'TPolicyRecord>) =
+                                        let (apiRequest: AbstractApiRequestor<'TPolicyRecord>) =
                                             downcast requestPI.GetValue apiCollection                                           
 
                                         let! varDef =
@@ -268,17 +264,10 @@ module internal SourceParser =
 
                             do! Stateful.put newApiCallVarDefMapping
 
-                            let invokerDetails =
-                                elementInvokerFactory
-                                    (newApiCallVarDefMapping, elementPI, newCalcBody, elementDependencies)
-
                             return {
                                 Dependencies            = elementDependencies
                                 OriginalExprBody        = calcDefn
                                 RebuiltExprBody         = newCalcBody
-                                ApiCallsTupleType       = invokerDetails.ApiCallsTupleType
-                                CurrentResultsTupleType = invokerDetails.CurrentResultsTupleType                                
-                                WrappedInvoker          = invokerDetails.WrappedInvoker
                             }
                         }                        
 

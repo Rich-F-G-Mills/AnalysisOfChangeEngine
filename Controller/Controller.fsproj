@@ -7,7 +7,6 @@
 
   <ItemGroup>
     <Compile Include="Walk Analyser\Common.fs" />
-    <Compile Include="Walk Analyser\ElementInvoker.fs" />
     <Compile Include="Walk Analyser\SourceInvoker.fs" />
     <Compile Include="Walk Analyser\SourceParser.fs" />
     <Compile Include="Walk Analyser\WalkParser.fs" />

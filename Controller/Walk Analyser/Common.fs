@@ -10,10 +10,18 @@ open AnalysisOfChangeEngine
 open AnalysisOfChangeEngine.Common.StateMonad
 
 
+[<AutoOpen>]
+module internal Helpers =
+    let internal checkStepType<'TStep when 'TStep :> IStepHeader> (hdr: IStepHeader) =
+        match hdr with
+        | :? 'TStep -> true
+        | _ -> false
+
+
 [<CustomEquality; CustomComparison>]
 type SourceElementApiCallDependency<'TPolicyRecord> =
     {
-        Requestor       : IApiRequestor<'TPolicyRecord>
+        Requestor       : AbstractApiRequestor<'TPolicyRecord>
         OutputProperty  : PropertyInfo
     }
 
@@ -157,44 +165,38 @@ type SourceElementDefinition<'TPolicyRecord> =
         Dependencies            : SourceElementDependencies<'TPolicyRecord>
         OriginalExprBody        : Expr
         RebuiltExprBody         : Expr
-        // Only intended to be used for testing purposes. The first and
-        // second object arrays correspond to the API and current result
-        // tuples respectively.
-        ApiCallsTupleType       : Type
-        CurrentResultsTupleType : Type
-        WrappedInvoker          : ('TPolicyRecord * obj array * obj array) -> obj
     }
 
 [<NoEquality; NoComparison>]
-type ParsedSource<'TPolicyRecord> =
+type ParsedSource<'TPolicyRecord, 'TStepResults> =
     {
         ElementDefinitions  : Map<string, SourceElementDefinition<'TPolicyRecord>>
         ApiCallsTupleType   : Type
         ApiCalls            : SourceElementApiCallDependency<'TPolicyRecord> Set
         RebuiltSourceExpr   : Expr
-        WrappedInvoker      : ('TPolicyRecord * obj array) -> obj
+        WrappedInvoker      : ('TPolicyRecord * obj array) -> 'TStepResults
     }
 
 [<NoEquality; NoComparison>]
-type OpeningDataStage<'TPolicyRecord> =
+type OpeningDataStage<'TPolicyRecord, 'TStepResults> =
     {        
         // This does include the exited records step.
-        WithinStageSteps            : (IStepHeader * ParsedSource<'TPolicyRecord>) list
+        WithinStageSteps            : (IStepHeader * ParsedSource<'TPolicyRecord, 'TStepResults>) list
         // These are the API calls arising from the within stage steps above.
         WithinStageApiCalls         : SourceElementApiCallDependency<'TPolicyRecord> Set
     }
 
 [<NoEquality; NoComparison>]
-type PostOpeningDataStage<'TPolicyRecord> =
+type PostOpeningDataStage<'TPolicyRecord, 'TStepResults> =
     {
         // Note that NOT all data changes occur at a DataChangeStep!
         // Data changes can also ocurr at the penultimate step.
         DataChangeStep              : IDataChangeStep<'TPolicyRecord>
         // Although a data change step has no source, it inherits that
         // as used for the previous step.
-        DataChangeStepParsedSource  : ParsedSource<'TPolicyRecord>
+        DataChangeStepParsedSource  : ParsedSource<'TPolicyRecord, 'TStepResults>
         // This does NOT include the data change step header above.
-        WithinStageSteps            : (IStepHeader * ParsedSource<'TPolicyRecord>) list
+        WithinStageSteps            : (IStepHeader * ParsedSource<'TPolicyRecord, 'TStepResults>) list
         // These are the API calls arising from steps within this data stage.
         // This will INCLUDE those arising from the data change step itself
         // which will have inherited the source from the previous step.
@@ -216,9 +218,9 @@ Design decision:
 *)
 
 [<NoEquality; NoComparison>]
-type ParsedWalk<'TPolicyRecord> =
+type ParsedWalk<'TPolicyRecord, 'TStepResults> =
     {
-        ParsedSteps             : (IStepHeader * ParsedSource<'TPolicyRecord>) list
-        OpeningDataStage        : OpeningDataStage<'TPolicyRecord>
-        PostOpeningDataStages   : PostOpeningDataStage<'TPolicyRecord> list
+        ParsedSteps             : (IStepHeader * ParsedSource<'TPolicyRecord, 'TStepResults>) list
+        OpeningDataStage        : OpeningDataStage<'TPolicyRecord, 'TStepResults>
+        PostOpeningDataStages   : PostOpeningDataStage<'TPolicyRecord, 'TStepResults> list
     }

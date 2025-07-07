@@ -11,6 +11,8 @@ module Dispatcher =
     open System.Threading.Tasks
     open System.Threading.Tasks.Dataflow
     open Microsoft.Office.Interop
+    open FsToolkit.ErrorHandling
+    open AnalysisOfChangeEngine
     open AnalysisOfChangeEngine.Common
 
 
@@ -22,7 +24,7 @@ module Dispatcher =
             abstract member ExecuteAsync :
                 PropertyInfo array
                     -> 'TStepRelatedInputs * 'TPolicyRelatedInputs
-                    -> Task<Result<Result<obj, string> array, string>>
+                    -> Task<ApiRequestOutcome>
         end
 
 
@@ -32,7 +34,7 @@ module Dispatcher =
             StepRelatedInputs   : 'TStepRelatedInputs
             PolicyRelatedInputs : 'TPolicyRelatedInputs
             RequiredOutputs     : PropertyInfo array
-            Callback            : Result<Result<obj, string> array, string> -> unit
+            Callback            : ApiRequestOutcome -> unit
         }
 
 
@@ -135,7 +137,7 @@ module Dispatcher =
                         // primitive types (eg. int, bool, ...)
                         match excelValue with
                             | _ when app.WorksheetFunction.IsError excelValue ->
-                                Error "Value not available."
+                                Error (ApiRequestFailure.CalculationFailure [| "Value not available." |])
 
                             | :? float32 when pi.PropertyType = typeof<float32> ->
                                 Ok excelValue
@@ -148,7 +150,9 @@ module Dispatcher =
                                 Ok (upcast float32 v)
 
                             | _ when pi.PropertyType = typeof<float32> ->
-                                Error "Unable to cast value to float32."
+                                Error
+                                    (ApiRequestFailure.CalculationFailure
+                                        [| "Unable to cast value to float32." |])
 
                             | _ ->
                                 // If we're here, the developer has done something daft and
@@ -163,8 +167,9 @@ module Dispatcher =
                         let outputs =
                             request.RequiredOutputs
                             |> Array.map outputReader
+                            |> Array.sequenceResultM
 
-                        do request.Callback (Ok outputs)
+                        do request.Callback outputs
 
                     new ActionBlock<_> (action, actionBlockOptions))
 
@@ -196,7 +201,10 @@ module Dispatcher =
                         // This is non-blocking. Given the buffer block is unbounded,
                         // this _should_ never fail.
                         if not (bufferBlock.Post newCalcRequest) then
-                            tcs.SetResult (Error "Unable to submit Excel request.")
+                            tcs.SetResult 
+                                (Error
+                                    (ApiRequestFailure.CallFailure
+                                        [| "Unable to submit Excel request." |]))
 
                         tcs.Task
             }
