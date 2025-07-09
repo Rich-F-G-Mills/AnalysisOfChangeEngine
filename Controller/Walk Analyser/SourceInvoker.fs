@@ -123,7 +123,7 @@ module internal SourceInvoker =
                             (fsharpFunc, [| policyRecord; apiCallResults' |])
 
                 {|
-                    ApiCallsTupleType       = apiCallsTupleType
+                    //ApiCallsTupleType       = apiCallsTupleType
                     CombinedApiCalls        = combinedApiCalls
                     RebuiltSourceExpr       = rebuiltSourceExpr
                     WrappedInvoker          = wrappedInvoker

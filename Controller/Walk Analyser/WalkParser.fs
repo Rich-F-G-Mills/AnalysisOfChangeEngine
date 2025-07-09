@@ -3,7 +3,7 @@ namespace AnalysisOfChangeEngine.Controller.WalkAnalyser
 
 
 [<RequireQualifiedAccess>]
-module internal WalkParser =
+module (*internal*) WalkParser =
 
     open FSharp.Reflection
     open FSharp.Quotations
@@ -177,7 +177,7 @@ module internal WalkParser =
         postOpeningDataStages
         
 
-    let internal execute<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord : equality>
+    let (*internal*) execute<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord : equality>
         (walk: AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection>)
         (apiCollection: 'TApiCollection) =
             let currentResultsVarDefMapping =
@@ -204,7 +204,6 @@ module internal WalkParser =
             // TODO - Use 'from-end' indexing?            
             assert checkStepType<MoveToClosingDataStep<'TPolicyRecord, 'TStepResults>> allStepsRev[1]
             assert checkStepType<AddNewRecordsStep<'TPolicyRecord, 'TStepResults>> allStepsRev[0]
-
 
             let uniqueStepUids =
                 allSteps

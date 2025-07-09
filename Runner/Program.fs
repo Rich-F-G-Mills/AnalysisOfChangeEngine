@@ -128,11 +128,6 @@ module Runner =
             let! outstandingRecords =
                 dataStore.TryGetOutstandingRecords currentRun.Uid
 
-            outstandingRecords
-            |> List.groupBy _.Cohort
-            |> List.iter (fun (cohort, records) ->
-                do printfn "Cohort: %A (%i records)" cohort records.Length)
-
             do printfn "\n\nOutstanding records: %i\n\n" outstandingRecords.Length
 
             do printfn "Opening run UID: %O" priorRun.Uid.Value
@@ -162,7 +157,7 @@ module Runner =
             do printf "\n\nParsing walk... "
 
             let parsedWalk =
-                WalkParser.execute walk.ApiCollection walk            
+                WalkParser.execute walk walk.ApiCollection             
 
             do printfn "Done."
 
@@ -175,9 +170,7 @@ module Runner =
             let somePolicyIds =
                 outstandingRecords
                 |> Seq.choose (function
-                    | { PolicyId = pid; Cohort = CohortMembership.Remaining }
-                    | { PolicyId = pid; Cohort = CohortMembership.New } ->
-                        Some pid
+                    | Choice1Of3 exitedPolicyId -> Some exitedPolicyId
                     | _ ->
                         None) 
                 |> Seq.take 5

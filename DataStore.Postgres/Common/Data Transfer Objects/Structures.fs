@@ -356,8 +356,8 @@ type internal RunErrorsDTO =
         timestamp               : DateTime        
     }
 
-    static member ofUnderlying
-        (error: Errors.ApiCalculationFailure, RunUid runUid, policyId, timestamp) =
+    (*static member ofUnderlying
+        (error: EvaluationFailure, RunUid runUid, policyId, timestamp) =
             {
                 error_type              = RunErrorTypeDTO.API_CALCULATION_FAILURE
                 run_uid                 = runUid
@@ -376,10 +376,7 @@ type internal RunErrorsDTO =
                 step_uid                = None
                 reason                  = Some error.Reason
                 timestamp               = timestamp
-            }
-
-    static member 
-
+            }*)
     
 
 [<AbstractClass>]

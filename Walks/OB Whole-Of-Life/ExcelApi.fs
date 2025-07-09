@@ -275,35 +275,30 @@ module ExcelApi =
         (dispatcher: IExcelDispatcher<_, _>) (openingRunDate: DateOnly option)
         : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs> =
 
-            match openingRunDate with
-            | Some openingRunDate' ->
-                let stepRelatedInputs: TransferTypes.ExcelStepRelatedInputs =
-                    {
-                        OpeningCalculationDate = None
-                        ClosingCalculationDate = openingRunDate'.ToDateTimeMidnight ()
-                    }
+            let apiRequestor =
+                match openingRunDate with
+                | Some openingRunDate' ->
+                    let stepRelatedInputs: TransferTypes.ExcelStepRelatedInputs =
+                        {
+                            OpeningCalculationDate = None
+                            ClosingCalculationDate = openingRunDate'.ToDateTimeMidnight ()
+                        }
 
-                WrappedApiRequestor {
-                    new IApiRequestor<_> with
-                        member _.Name =
-                            "Excel API [Opening]"
+                    let executor requiredOutputs policyRecord =
+                        let policyRelatedInputs =
+                            TransferTypes.ExcelPolicyRelatedInputs.ofUnderlying policyRecord
 
-                        member _.ExecuteAsync requiredOutputs policyRecord =
-                            let policyRelatedInputs =
-                                TransferTypes.ExcelPolicyRelatedInputs.ofUnderlying policyRecord
+                        dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs)                 
 
-                            dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs)                 
-                }
+                    AbstractApiRequestor.create ("Excel API [Opening]", executor)
 
-            | None ->
-                WrappedApiRequestor {
-                    new IApiRequestor<_> with
-                        member _.Name =
-                            "Excel API [Opening]"
+                | None ->
+                    let executor _ _ =
+                        failwith "Cannot call the opening requestor when no prior run date is provided."                
 
-                        member _.ExecuteAsync _ _ =
-                            failwith "Cannot call the opening requestor when no prior run date is provided."
-                }
+                    AbstractApiRequestor.create ("Excel API [Opening]", executor)
+
+            WrappedApiRequestor apiRequestor
 
 
     let createPostOpeningExcelRequestor
@@ -317,14 +312,13 @@ module ExcelApi =
                         closingRunDate.ToDateTimeMidnight ()
                 }
 
-            WrappedApiRequestor {
-                new IApiRequestor<_> with
-                    member _.Name =
-                        "PX API [Post-Opening Regression]"
+            let executor requiredOutputs policyRecord =
+                let policyRelatedInputs =
+                    TransferTypes.ExcelPolicyRelatedInputs.ofUnderlying policyRecord
 
-                    member _.ExecuteAsync requiredOutputs policyRecord =
-                        let policyRelatedInputs =
-                            TransferTypes.ExcelPolicyRelatedInputs.ofUnderlying policyRecord
+                dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) 
 
-                        dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) 
-            }
+            let apiRequestor =
+                AbstractApiRequestor.create ("PX API [Post-Opening Regression]", executor)
+
+            WrappedApiRequestor apiRequestor

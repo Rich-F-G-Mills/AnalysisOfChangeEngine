@@ -226,15 +226,13 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                     StepValidationOutcome.Empty
 
                 | (_, Some _, _) ->                            
-                    StepValidationOutcome.Completed [
-                        ValidationIssueClassification.Warning, "Regression mis-match."
-                    ]
+                    StepValidationOutcome.Completed [| "Regression mis-match." |]
 
                 | (_, None, _) when config.IgnoreOpeningMismatches ->
                     StepValidationOutcome.Empty
 
                 | (_, None, _) ->
-                    StepValidationOutcome.Failed "No opening results for comparison."
+                    StepValidationOutcome.Aborted "No opening results for comparison."
         }    
 
     override val RemoveExitedRecords =
@@ -289,12 +287,10 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                         StepValidationOutcome.Empty
 
                     | (_, Some _, _) ->                            
-                        StepValidationOutcome.Completed [
-                            ValidationIssueClassification.Warning, "Mismatch between opening position in AoC logic."
-                        ]
+                        StepValidationOutcome.Completed [| "Mismatch between opening position in AoC logic." |]
 
                     | (_, None, _) ->
-                        StepValidationOutcome.Failed "No prior results for comparison."
+                        StepValidationOutcome.Aborted "No prior results for comparison."
             }
         )          
 

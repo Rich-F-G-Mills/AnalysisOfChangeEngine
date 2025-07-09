@@ -167,7 +167,24 @@ module Dispatcher =
                         let outputs =
                             request.RequiredOutputs
                             |> Array.map outputReader
-                            |> Array.sequenceResultM
+                            |> Array.sequenceResultA
+                            |> function
+                                Ok results ->
+                                    Ok results
+
+                                | Error failures ->
+                                    // We need to convert an array of failures into a single
+                                    // failure of multiple reasons.
+                                    let combinedReasons =
+                                        failures
+                                        |> Array.collect (function
+                                            | ApiRequestFailure.CalculationFailure reasons ->
+                                                reasons
+                                            | _ ->
+                                                // This should not/cannot happen!
+                                                failwith "Unexpected failure.")
+
+                                    Error (ApiRequestFailure.CalculationFailure combinedReasons)
 
                         do request.Callback outputs
 

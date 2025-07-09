@@ -557,15 +557,18 @@ module Core =
             | NewPolicyId id -> id
 
 
+    [<RequireQualifiedAccess>]
     [<NoEquality; NoComparison>]
-    type PolicyGetterOutcome<'TPolicyRecord> =
-        | Successful of 'TPolicyRecord
+    type PolicyGetterFailure =
         | ParseFailure of Reason: string
         | NotFound
 
+    type PolicyGetterOutcome<'TPolicyRecord> =
+        Result<'TPolicyRecord, PolicyGetterFailure>
+
     // We could just use a simple function signature here. However,
-    // if we need this to be disposable, easier if it's an interface.
-    type PolicyGetter<'TPolicyRecord> =
+    // if this needs to be disposable, easier if it's an interface.
+    type IPolicyGetter<'TPolicyRecord> =
         interface
             abstract member GetPolicyRecordsAsync :
                 policyIds : string array
@@ -575,7 +578,7 @@ module Core =
 
     [<NoEquality; NoComparison>]
     type ExitedPolicy<'TPolicyRecord> =
-        | ExitedPolicy of 'TPolicyRecord
+        | ExitedPolicy of Opening: 'TPolicyRecord
 
     [<NoEquality; NoComparison>]
     type RemainingPolicy<'TPolicyRecord> =
@@ -583,29 +586,30 @@ module Core =
         
     [<NoEquality; NoComparison>]
     type NewPolicy<'TPolicyRecord> =
-        | NewPolicy of 'TPolicyRecord
+        | NewPolicy of Closing: 'TPolicyRecord
 
 
+    [<RequireQualifiedAccess>]
     [<NoEquality; NoComparison>]
-    type EvaluationFailure<'TStepResults> =
-        | ApiCalculationFailure of RequestorName: string * Reasons: string array
-        | ApiCallFailure of RequestorName: string * Reasons: string array
-        | DataChangeFailure of StepHeader: IStepHeader * Reasons: string array
-        | ValidationAborted of StepHeader: IStepHeader * Reasons: string array
-        | ValidationFailure of StepHeader: IStepHeader * Reasons: string array
-        | StepConstructionFailure of StepHeader: IStepHeader * Reasons: string array
+    type EvaluationFailure =
+        | ApiCalculationFailure     of RequestorName: string    * Reasons: string array
+        | ApiCallFailure            of RequestorName: string    * Reasons: string array
+        | DataChangeFailure         of StepHeader: IStepHeader  * Reasons: string array
+        | ValidationAborted         of StepHeader: IStepHeader  * Reasons: string array
+        | ValidationFailure         of StepHeader: IStepHeader  * Reasons: string array
+        | StepConstructionFailure   of StepHeader: IStepHeader  * Reasons: string array
 
 
     // We use lists for the failures as they can be more easily constructed
     // in a cumulative manner.
     type ExitedPolicyOutcome<'TStepResults> =
-        Result<'TStepResults, EvaluationFailure<'TStepResults> list>
+        Result<'TStepResults, EvaluationFailure list>
 
     type RemainingPolicyOutcome<'TStepResults> =
-        Result<'TStepResults array, EvaluationFailure<'TStepResults> list>
+        Result<'TStepResults array, EvaluationFailure list>
 
     type NewPolicyOutcome<'TStepResults> =
-        Result<'TStepResults, EvaluationFailure<'TStepResults> list>
+        Result<'TStepResults, EvaluationFailure list>
 
 
     type IPolicyEvaluator<'TPolicyRecord, 'TStepResults> =

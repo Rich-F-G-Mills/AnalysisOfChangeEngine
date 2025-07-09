@@ -52,14 +52,6 @@ module AbstractDataStore =
             StepResultsDTO.buildDispatcher<'TStepResultsDTO>
                 (schema, dataSource)
 
-        let stepValidationIssuesDispatcher =
-            StepValidationIssuesDTO.buildDispatcher
-                (schema, dataSource)
-
-        let runFailuresDispatcher =
-            RunFailuresDTO.buildDispatcher
-                (schema, dataSource)
-
 
         // --- UID RESOLVER ---
 
@@ -193,19 +185,19 @@ module AbstractDataStore =
 
                 let records' =
                     records
-                    |> Map.map (fun _ -> Some << this.dtoToPolicyRecord)
+                    |> Map.map (fun _ ->
+                        this.dtoToPolicyRecord >> Result.mapError PolicyGetterFailure.ParseFailure)
 
                 let records'' =
                     policyIds
                     |> Seq.filter (not << records'.ContainsKey)
-                    |> Seq.fold (fun map pid -> map |> Map.add pid None) records'
+                    |> Seq.fold (fun map pid ->
+                        map |> Map.add pid (Error PolicyGetterFailure.NotFound)) records'
 
                 return records''
             }
             
 
-        /// Returns a tuple of exited, remaining and new policy IDs. In each case, the IDs
-        /// are returned as a set of strings.
         member this.TryGetOutstandingRecords currentRunUid =
             result {
                 let! currentRunHeader =
@@ -235,9 +227,6 @@ module AbstractDataStore =
 
                 let stepResultsPgTableName =
                     stepResultsDispatcher.PgTableName
-
-                let runFailuresPgTableName =
-                    runFailuresDispatcher.PgTableName
 
                 (*
                 Design Decision:
@@ -303,13 +292,6 @@ module AbstractDataStore =
 		                    FROM opening_policy_ids
 	                    ),
 	
-	                    run_failure_policy_ids AS (
-		                    SELECT {fieldName<RunFailuresDTO, _> <@ _.policy_id @>} AS policy_id
-		                    FROM {schema}.{runFailuresPgTableName}
-		                    WHERE {fieldName<RunFailuresDTO, _> <@ _.run_uid @>} =
-                                @current_run_uid
-	                    ),
-	
 	                    steps_run AS (
 		                    SELECT
                                 {fieldName<StepResultsBaseDTO, _> <@ _.policy_id @>} AS policy_id,
@@ -343,7 +325,6 @@ module AbstractDataStore =
 
 		            SELECT
 			            policy_id,
-			            policy_id IN (SELECT policy_id FROM run_failure_policy_ids) AS had_run_failure,
                         CASE
 		                    WHEN policy_id IN (SELECT policy_id FROM exited_policy_ids)
 			                    THEN 'EXITED'::common.cohort_membership

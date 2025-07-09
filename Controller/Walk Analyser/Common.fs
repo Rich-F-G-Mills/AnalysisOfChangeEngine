@@ -171,10 +171,10 @@ type SourceElementDefinition<'TPolicyRecord> =
 type ParsedSource<'TPolicyRecord, 'TStepResults> =
     {
         ElementDefinitions  : Map<string, SourceElementDefinition<'TPolicyRecord>>
-        ApiCallsTupleType   : Type
+        //ApiCallsTupleType   : Type
         ApiCalls            : SourceElementApiCallDependency<'TPolicyRecord> Set
         RebuiltSourceExpr   : Expr
-        WrappedInvoker      : ('TPolicyRecord * obj array) -> 'TStepResults
+        Invoker             : ('TPolicyRecord * obj array) -> 'TStepResults
     }
 
 [<NoEquality; NoComparison>]

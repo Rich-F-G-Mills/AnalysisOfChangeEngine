@@ -325,10 +325,10 @@ module internal SourceParser =
 
                     return {
                         ElementDefinitions  = combinedElements
-                        ApiCallsTupleType   = invokerDetails.ApiCallsTupleType
+                        //ApiCallsTupleType   = invokerDetails.ApiCallsTupleType
                         ApiCalls            = invokerDetails.CombinedApiCalls
                         RebuiltSourceExpr   = invokerDetails.RebuiltSourceExpr
-                        WrappedInvoker      = invokerDetails.WrappedInvoker
+                        Invoker             = invokerDetails.WrappedInvoker
                     }
                 }
                             
