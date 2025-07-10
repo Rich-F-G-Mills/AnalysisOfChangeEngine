@@ -209,11 +209,12 @@ module internal SourceParser =
 
                                 | ApiRequest (requestPI, selectorPI) ->
                                     stateful {
-                                        let (apiRequest: AbstractApiRequestor<'TPolicyRecord>) =
+                                        let (wrappedApiRequest: IWrappedApiRequestor<'TPolicyRecord>) =
                                             downcast requestPI.GetValue apiCollection                                           
 
                                         let! varDef =
-                                            SourceElementDependencies.registerApiCall (apiRequest, selectorPI)                        
+                                            SourceElementDependencies.registerApiCall
+                                                (wrappedApiRequest.UnderlyingRequestor, selectorPI)                        
 
                                         return Expr.Var varDef
                                     }                                    

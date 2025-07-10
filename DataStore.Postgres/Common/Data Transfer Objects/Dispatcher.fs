@@ -34,6 +34,7 @@ module internal RecordParser =
     let internal Create<'TRecord>
         (transferableTypes: ITransferableType array, columnIdxs: int array)
         : DbDataReader  -> 'TRecord =
+
             let dataReaderVarDef =
                 Var ("dataReader", typeof<DbDataReader>)
 

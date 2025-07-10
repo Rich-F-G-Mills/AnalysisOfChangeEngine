@@ -108,8 +108,7 @@ module Core =
                 | :? AbstractApiRequestor<'TPolicyRecord> as other' ->
                     (this :> IComparable<_>).CompareTo other'
                 | _ ->
-                    failwith "Cannot compare different types of API requestors."
-                    
+                    failwith "Cannot compare different types of API requestors."                    
 
         interface IApiRequestor<'TPolicyRecord> with
             member this.Name =
@@ -138,6 +137,15 @@ module Core =
             upcast new EncapsulatedApiRequestor<'TPolicyRecord> (name, asyncExecutor)
 
 
+    // Allows us to extract the underlying requestor, even when we don't
+    // have the step result type.
+    type IWrappedApiRequestor<'TPolicyRecord> =
+        interface
+            abstract member UnderlyingRequestor:
+                AbstractApiRequestor<'TPolicyRecord> with get
+        end
+
+
     (*
     Design Decision:
         We also need to track the possible API responses... We cannot use
@@ -152,17 +160,13 @@ module Core =
         | WrappedApiRequestor of AbstractApiRequestor<'TPolicyRecord>
 
         // Allows us to extract the underlying endpoint without caring about the response type.
-        interface IApiRequestor<'TPolicyRecord> with
-            member this.Name =
-                match this with
-                | WrappedApiRequestor inner ->
-                    inner.Name
+        interface IWrappedApiRequestor<'TPolicyRecord> with
 
-            member this.ExecuteAsync pis policyRecord =
+            member this.UnderlyingRequestor =
                 match this with
-                | WrappedApiRequestor inner ->
-                    inner.ExecuteAsync pis policyRecord
-            
+                | WrappedApiRequestor abstractApiRequestor ->
+                    abstractApiRequestor
+
 
     type ILogger =
         interface
@@ -580,13 +584,28 @@ module Core =
     type ExitedPolicy<'TPolicyRecord> =
         | ExitedPolicy of Opening: 'TPolicyRecord
 
+        member this.PolicyRecord =
+            match this with
+            | ExitedPolicy policyRecord ->
+                policyRecord
+
     [<NoEquality; NoComparison>]
     type RemainingPolicy<'TPolicyRecord> =
         | RemainingPolicy of Opening: 'TPolicyRecord * Closing: 'TPolicyRecord
+
+        member this.PolicyRecords =
+            match this with
+            | RemainingPolicy (openingPolicyRecord, closingPolicyRecord) ->
+                openingPolicyRecord, closingPolicyRecord                
         
     [<NoEquality; NoComparison>]
     type NewPolicy<'TPolicyRecord> =
         | NewPolicy of Closing: 'TPolicyRecord
+
+        member this.PolicyRecord =
+            match this with
+            | NewPolicy policyRecord ->
+                policyRecord
 
 
     [<RequireQualifiedAccess>]
@@ -598,6 +617,7 @@ module Core =
         | ValidationAborted         of StepHeader: IStepHeader  * Reasons: string array
         | ValidationFailure         of StepHeader: IStepHeader  * Reasons: string array
         | StepConstructionFailure   of StepHeader: IStepHeader  * Reasons: string array
+        | Cancelled
 
 
     // We use lists for the failures as they can be more easily constructed

@@ -5,12 +5,10 @@ namespace AnalysisOfChangeEngine
 module Runner =
 
     open System
-    open System.Threading
-    open FSharp.Quotations
     open FsToolkit.ErrorHandling
     open Npgsql
     open AnalysisOfChangeEngine
-    open AnalysisOfChangeEngine.Controller.WalkAnalyser
+    open AnalysisOfChangeEngine.Controller
     open AnalysisOfChangeEngine.DataStore
     open AnalysisOfChangeEngine.DataStore.Postgres
     open AnalysisOfChangeEngine.Walks.Common
@@ -94,9 +92,6 @@ module Runner =
             let dataStore =
                 new Postgres.OBWholeOfLife.DataStore (sessionContext, dataSource)
 
-            //let runHeader =
-            //    dataStore.TryGetRunHeader openingRunUid
-
             let stepUidResolver =
                 dataStore.CreateStepUidResolver ()
 
@@ -153,62 +148,36 @@ module Runner =
                     (if isDataChange then "D" else " ")
                     (if isSourceChange then "S" else " ")
                     step.Description
-            
-            do printf "\n\nParsing walk... "
 
-            let parsedWalk =
-                WalkParser.execute walk walk.ApiCollection             
-
-            do printfn "Done."
-
-            let _, parsedStep =
-                parsedWalk.OpeningDataStage.WithinStageSteps.Head
-
-            let uasDefinition =
-                parsedStep.ElementDefinitions["UnsmoothedAssetShare"]
 
             let somePolicyIds =
                 outstandingRecords
                 |> Seq.choose (function
-                    | Choice1Of3 exitedPolicyId -> Some exitedPolicyId
+                    | Choice1Of3 (ExitedPolicyId policyId) ->
+                        Some policyId
                     | _ ->
                         None) 
                 |> Seq.take 5
                 |> Seq.toArray
 
-            let somePolicyRecords =
-                dataStore.GetPolicyRecordsAsync currentExtractionUid somePolicyIds
+            let someExitedPolicyRecords =
+                dataStore.GetPolicyRecordsAsync priorExtractionUid somePolicyIds
                 |> _.Result
+                |> Map.map (fun _ -> Result.map ExitedPolicy)
+                |> Map.map (fun _ -> Result.defaultWith (fun _ -> failwith "Failed"))
 
-            do printfn "%A" somePolicyRecords
-
-            //let res =
-            //    uas.WrappedInvoker (polRecord, [|1.0f|], [||])
-
-            //do printfn "Result: %A" res
-
-            let apiReq : IApiRequestor<_> =
-                upcast walk.ApiCollection.xl_OpeningRegression
-
-            let getOutputPI (selector: Expr<OBWholeOfLife.ExcelApi.ExcelOutputs -> 'T>) =
-                match selector with
-                | Patterns.Lambda(_, Patterns.PropertyGet (_, pi, _)) -> pi
-                | _ -> failwith "Unexpected pattern."
-
-            let reqdOutputs =
-                [|
-                    getOutputPI <@ _.DeathBenefit @>
-                    getOutputPI <@ _.SmoothedAssetShare @>
-                |]
+            do printfn "\n\n%A\n\n" someExitedPolicyRecords
 
             
-            let deathValues =
-                somePolicyRecords
-                |> Map.map (fun _ -> Result.map (apiReq.ExecuteAsync reqdOutputs))
-                |> Map.map (fun _ -> Result.bind _.Result)
-
-            do printfn "%A" deathValues
+            let exitedEvaluator =
+                Evaluator.exitedPolicyEvaluator walk walk.ApiCollection
             
+            let results =
+                someExitedPolicyRecords
+                |> Map.map (fun _ -> exitedEvaluator)
+                |> Map.map (fun _ -> _.Result)
+
+            do printfn "\n\n%A\n\n" results
 
             return 0
         }

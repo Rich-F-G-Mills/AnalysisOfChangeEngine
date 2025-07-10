@@ -2,12 +2,11 @@
 namespace AnalysisOfChangeEngine.Controller
 
 
-[<AutoOpen>]
+[<RequireQualifiedAccess>]
 module Evaluator =
 
     open System.Threading.Tasks
     open AnalysisOfChangeEngine
-    open AnalysisOfChangeEngine.Common
     open AnalysisOfChangeEngine.Controller.WalkAnalyser
 
 
@@ -141,6 +140,14 @@ module Evaluator =
 
                     return evaluationOutcome
                 }
+
+    let exitedPolicyEvaluator (walk: AbstractWalk<_, _, 'TApiCollection>) apiCollection =
+        let parsedWalk =
+            WalkParser.execute walk apiCollection
+
+        createExitedPolicyEvaluator<_, _, 'TApiCollection> parsedWalk
+
+
 
 
 

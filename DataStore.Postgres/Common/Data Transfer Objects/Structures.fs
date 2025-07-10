@@ -113,6 +113,7 @@ module internal ExtractionHeaderDTO =
         end
         
     let internal buildDispatcher (schema, dataSource) =
+
         let dispatcher =
             new PostgresTableDispatcher<ExtractionHeaderDTO, Unit>
                 (pgTableName, schema, dataSource)
@@ -474,12 +475,13 @@ type OutstandingPolicyIdDTO =
 
 [<RequireQualifiedAccess>]
 module internal OutstandingPolicyIdDTO =
+
     // Because we're not wrapping this DTO in a dispatcher, we have to create the record
     // parser ourselves.
     let private recordFields =
         FSharpType.GetRecordFields
             // We know the type is private, so we can be specific about our binding flags.
-            (typeof<OutstandingPolicyIdDTO>, BindingFlags.NonPublic)
+            (typeof<OutstandingPolicyIdDTO>)
 
     let private recordTransferableTypes =
         recordFields
@@ -490,7 +492,7 @@ module internal OutstandingPolicyIdDTO =
         RecordParser.Create<OutstandingPolicyIdDTO>
             (recordTransferableTypes, [| 0 .. recordFields.Length - 1 |])
 
-    let internal toUnderlying (osRecord: OutstandingPolicyIdDTO) = function
+    let internal toUnderlying = function
         | { policy_id = pid; cohort = CohortMembershipDTO.EXITED } ->
             Choice1Of3 (ExitedPolicyId pid)
         | { policy_id = pid; cohort = CohortMembershipDTO.REMAINING } ->

@@ -24,22 +24,15 @@ module internal SourceInvoker =
                 typeof<'TStepResults>
             
             let stepResultMembers =
-                FSharpType.GetRecordFields (stepResultsType)
-                |> Seq.map (fun pi -> pi.Name, pi)
-                |> Map.ofSeq   
-                
-            let stepResultMemberNames =
-                stepResultMembers
-                |> Map.keys
-                |> Seq.toList
+                FSharpType.GetRecordFields (stepResultsType) 
 
             let newRecordExpr =
                 Expr.NewRecord(
                     stepResultsType,
                     // Need to use the list of member names as ordering is critical!
-                    stepResultMemberNames
-                    |> Seq.map (fun name ->
-                        Expr.Var currentResultsVarDefMapping[name])
+                    stepResultMembers
+                    |> Seq.map (fun pi ->
+                        Expr.Var currentResultsVarDefMapping[pi.Name])
                     |> Seq.toList
                 )
 
