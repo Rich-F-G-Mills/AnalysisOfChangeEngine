@@ -34,7 +34,7 @@ module (*internal*) WalkParser =
 
         Rather than re-parse inherited element definitions, it seemed cleaner to track all API calls encountered
         across all steps encountered thus far, each associated with a corresponding variable. This is why, via
-        the state monad below, we also track an accumulated view for API call/variable mappings as well.
+        the state monad below, we track an accumulated view for API call/variable mappings.
     *)
 
     let private getParsedStepSources<'TPolicyRecord, 'TStepResults, 'TApiCollection>

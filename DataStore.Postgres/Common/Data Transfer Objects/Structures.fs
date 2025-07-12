@@ -345,40 +345,18 @@ type internal RunErrorTypeDTO =
     | VALIDATION_FAILURE
     | API_CALL_FAILURE
     | API_CALCULATION_FAILURE
+    | STEP_CONSTRUCTION_FAILURE    
 
 [<NoEquality; NoComparison>]
 type internal RunErrorsDTO =
-    {   
-        error_type              : RunErrorTypeDTO
+    {           
         run_uid                 : Guid
         policy_id               : string
         step_uid                : Guid option
+        error_type              : RunErrorTypeDTO
         reason                  : string option
         timestamp               : DateTime        
     }
-
-    (*static member ofUnderlying
-        (error: EvaluationFailure, RunUid runUid, policyId, timestamp) =
-            {
-                error_type              = RunErrorTypeDTO.API_CALCULATION_FAILURE
-                run_uid                 = runUid
-                policy_id               = policyId
-                step_uid                = None
-                reason                  = Some error.Reason
-                timestamp               = timestamp
-            }
-
-    static member ofUnderlying
-        (error: Errors.ApiCallFailure, RunUid runUid, policyId, timestamp) =
-            {
-                error_type              = RunErrorTypeDTO.API_CALL_FAILURE
-                run_uid                 = runUid
-                policy_id               = policyId
-                step_uid                = None
-                reason                  = Some error.Reason
-                timestamp               = timestamp
-            }*)
-    
 
 [<AbstractClass>]
 module internal RunErrorsDTO =
@@ -388,6 +366,7 @@ module internal RunErrorsDTO =
 
     type internal IDispatcher =
         interface
+
             abstract member PgTableName     : string with get
         end
 
@@ -425,7 +404,7 @@ module internal StepResultsDTO =
         interface
             abstract member DeleteRows      : RunUid -> unit
             // Cannot overload functions with curried arguments!
-            abstract member DeleteRows      : RunUid * policyId: string -> NpgsqlBatchCommand
+            abstract member DeleteRows      : RunUid * policyIds: string array -> NpgsqlBatchCommand
             // We don't allow deleting results for a specific step/policy combination as all steps
             // would need to be run regardless.
             abstract member PgTableName     : string with get
@@ -441,8 +420,8 @@ module internal StepResultsDTO =
             dispatcher.MakeEquality1Remover
                 <@ _.run_uid @>
 
-        let deleteRunResultsForPolicy =
-            dispatcher.MakeEquality2Remover
+        let deleteRunResultsForPolicies =
+            dispatcher.MakeEquality1Multiple1Remover
                 (<@ _.run_uid @>, <@ _.policy_id @>)
 
         {
@@ -450,8 +429,8 @@ module internal StepResultsDTO =
                 member _.DeleteRows (RunUid runUid') =
                     do ignore <| deleteRunResults.ExecuteNonQuery runUid'
 
-                member _.DeleteRows (RunUid runUid', policyId) =
-                    deleteRunResultsForPolicy.AsBatchCommand runUid' policyId
+                member _.DeleteRows (RunUid runUid', policyIds) =
+                    deleteRunResultsForPolicies.AsBatchCommand runUid' policyIds
 
                 member _.PgTableName
                     with get () = pgTableName                   

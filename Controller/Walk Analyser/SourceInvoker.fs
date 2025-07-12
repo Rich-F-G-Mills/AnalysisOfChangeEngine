@@ -9,8 +9,8 @@ module internal SourceInvoker =
     open FSharp.Reflection
 
 
-    let private unitObj =
-        () :> obj
+    let private unitObj: obj =
+        upcast ()
 
     // Note that, on a number of occassions we are iterating over sets.
     // The documentation states that elements within F# sets are ordered
@@ -23,9 +23,34 @@ module internal SourceInvoker =
             let stepResultsType =
                 typeof<'TStepResults>
             
+            // When we construct the step record, we need to supply values
+            // in the same order as the fields in this array.
             let stepResultMembers =
                 FSharpType.GetRecordFields (stepResultsType) 
 
+            (*
+            Ultimately, the step results record will be defined as:
+                fun policyRecord (apiCall1, apiCall2, ...) ->
+                    let `ApiCall.<SomeRequestor>.<UAS>` = apiCall1 
+                    let `ApiCall.<SomeRequestor>.<SAS>` = apiCall2
+                    ...
+                    let `CurrentResult.<UAS>` = ... `ApiCall.<SomeRequestor>.<UAS>` ...
+                    let `CurrentResult.<SAS>` = ... `ApiCall.<SomeRequestor>.<SAS>` ...
+                    ...
+                        {
+                            UAS = `CurrentResult.<UAS>`
+                            SAS = `CurrentResult.<SAS>`
+                            ...
+                        }
+
+            This allows us to more easily handle situations where step elements
+            depend on other elements within that same step. If (bizarely) it turned
+            out the UAS depended on SAS, the ordering of the let assignments would change:
+                ...                
+                let `CurrentResult.<SAS>` = ...
+                let `CurrentResult.<UAS>` = ... `CurrentResult.<SAS>` ...
+                ...
+            *)
             let newRecordExpr =
                 Expr.NewRecord(
                     stepResultsType,
@@ -39,6 +64,8 @@ module internal SourceInvoker =
             fun (apiCallVarDefMapping, combinedElements: Map<_, SourceElementDefinition<'TPolicyRecord>>, elementOrdering) ->         
                 assert (policyRecordType = policyRecordVarDef.Type)
 
+                // Combine the API calls for all element definitions within this step
+                // into a Set. Ensures that all API dependencies will be unique.
                 let combinedApiCalls =
                     combinedElements
                     |> Map.values
@@ -50,6 +77,8 @@ module internal SourceInvoker =
                     |> Seq.map _.OutputProperty.PropertyType
                     |> Seq.toArray
 
+                // This is the type of our argument that will receive all API output
+                // values for this specific step.
                 let apiCallsTupleType =
                     FSharpType.MakeTupleType apiCallsTypes
 
@@ -59,6 +88,9 @@ module internal SourceInvoker =
                 let apiCallsTupleVar =
                     Expr.Var apiCallsTupleVarDef
 
+                // For each API output, map this to the corresponding variable.
+                // Note that any given output for the same API requestor, will
+                // use the same variable throughout the walk.
                 let apiCallsVarDefs =
                     combinedApiCalls
                     |> Seq.map (fun apiCall ->
@@ -96,6 +128,7 @@ module internal SourceInvoker =
                         )
 
                 let fsharpFunc =
+                    // Note that Adapt is a static method.
                     fsharpFuncType.GetMethod("Adapt").Invoke(null, [|invoker|])
 
                 let invokerArgTypes =

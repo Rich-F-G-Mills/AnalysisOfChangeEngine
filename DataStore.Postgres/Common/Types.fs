@@ -46,6 +46,7 @@ module Types =
         }
 
 
+    // These should hopefully minimize chance of these getting mixed up.
     [<NoEquality; NoComparison>]
     type internal ProductSchemaName =
         ProductSchemaName of string

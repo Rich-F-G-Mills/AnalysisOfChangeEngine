@@ -1,6 +1,6 @@
 ﻿## Project `ApiProvider.Excel`
 
-The logic within this project does **not** directly provider `IApiRequestor` instances directly. Instead, it provides instances of an `IExcelDispatcher` which can be used to submit calculations to one or more Excel instances on a first-come-first-served basis.
+The logic within this project does **not** directly provide `IApiRequestor` instances. Instead, it provides instances of an `IExcelDispatcher` which can be used to submit calculations to one or more Excel instances on a first-come-first-served basis.
 
 The approach assumes that any inputs required for a given calculation can be split into those which are specific to either:
 
@@ -19,7 +19,7 @@ At this time, the logic is able to marshall the following types **into** Excel:
 
 Required outputs are specified via an array of `PropertyInfo` instances. Typically, when specifying the logic underlying a walk, the user will specify the required outputs by quoting members of a record type which is solely used to provide a 'menu' of available outputs. Given these quotations readily provide `PropertyInfo` instances for those specified items, we also use them here as well.
 
-At this time, only `float32` types can be read **from** Excel. Using anything else will lead to a runtime exception being raised.
+At this time, only `float32` and `float` (ie. 64-bit) types can be read **from** Excel. Using anything else will lead to a runtime exception being raised.
 
 The main output of interest is the publicly visible `IExcelDispatcher` interface, with instances provided by the `createExcelDispatcher` function. The primary function of this to provide a load-balanced way to submit calculation requests to one or more Excel instances.
 

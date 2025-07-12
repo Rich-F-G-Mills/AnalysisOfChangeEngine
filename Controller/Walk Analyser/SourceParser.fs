@@ -25,8 +25,8 @@ module internal SourceParser =
         let bindings which are then passed into the new record expression.
         This is (likely) just in case the member definitions have side-effects which can then
         be executed in the same order in which the member name-value pairings are supplied.
-        Given there are no side-effects to worry about here, we can collapse everything down
-        into the correctly ordered new record expression.
+        It is assumed that there are no side-effects to worry about here, as such we can
+        collapse everything down into the correctly ordered new record expression.
     *)
     let private flattenSourceBody (sourceBody: Expr<'TStepResults>) =
         let stepResultMembers =
@@ -128,13 +128,18 @@ module internal SourceParser =
                     let! (apiCallVarDefMapping, accruedElements) =
                         Stateful.get
 
+                    // Decompose our source definition into the various components.
                     let fromVarDef, policyRecordVarDef, priorResultsVarDef, currentResultsVarDef, sourceBody =
                         match source with
-                        | SourceExpr.Definition (fromVarDef', policyRecordVarDef', priorResultsVarDef', currentResultsVarDef', sourceBody') ->
-                            (fromVarDef', policyRecordVarDef', priorResultsVarDef', currentResultsVarDef', Expr.Cast<'TStepResults> sourceBody')
+                        | SourceExpr.Definition defn ->
+                            defn
                         | _ ->
                             failwith "Unexpected source lambda definition."
 
+                    // The following active patterns help us to inspect the underlying
+                    // source definition. Given they depend on variables defined within
+                    // the scope of this function, they cannot be defined up-front
+                    // and re-used across multiple steps.
                     let (|FromVarDef|_|) = function
                         | v when v = fromVarDef -> Some () | _ -> None
 
@@ -190,7 +195,7 @@ module internal SourceParser =
                         | _ ->
                             None
 
-                    let processElementCalculation (elementPI: PropertyInfo, calcDefn) =
+                    let processElementCalculation calcDefn =
                         stateful {
                             // Why use mutable state via a closure when you can use a state monad?!
                             let rec inner = function
@@ -207,6 +212,11 @@ module internal SourceParser =
                                     // Allows us to standardise the policy record variable across all sources.
                                     Stateful.returnM (Expr.Var newPolicyRecordVarDef)
 
+                                | Patterns.Var _ as expr ->
+                                    // Any other var is likely to be/hopefully one defined via a let assignment.
+                                    // within a given element definition. In which case, bring through as is.
+                                    Stateful.returnM expr
+
                                 | ApiRequest (requestPI, selectorPI) ->
                                     stateful {
                                         let (wrappedApiRequest: IWrappedApiRequestor<'TPolicyRecord>) =
@@ -221,15 +231,19 @@ module internal SourceParser =
                 
                                 | Patterns.PropertyGet (Some CurrentResultsVar, pi, []) ->
                                     stateful {
+                                        // Register the fact that we've encountered a dependency on a fellow element.
                                         do! SourceElementDependencies.registerCurrentResult pi.Name
 
                                         return Expr.Var (Map.find pi.Name currentResultsVarDefMapping)
                                     }
 
-                                // DD - Previously we were using ExprShape.ShapeCombination.
-                                // ...However, this was leading to unanticipated items being returned
-                                // within 'exprs'. Have decided to use specific patterns instead
-                                // so as to better control what expression elements can get used.
+                                (*
+                                Design Decision:
+                                    Previously we were using ExprShape.ShapeCombination.
+                                    ...However, this was leading to unanticipated items being returned
+                                    within 'exprs'. Have decided to use specific patterns instead
+                                    so as to better control what expression elements can get used.
+                                *)
                                 | Patterns.Call (Some obj, mi, exprs) ->                            
                                     stateful {
                                         let! newExprs =
@@ -248,8 +262,20 @@ module internal SourceParser =
 
                                 | Patterns.Value _ as valueExpr ->
                                     // I know, I know... Could just use Stateful.returnM!
+                                    Stateful.returnM valueExpr                                    
+
+                                | Patterns.Let (var, defn, body) ->
                                     stateful {
-                                        return valueExpr
+                                        // We need to process the underlying variable definition
+                                        // and assignment body.
+                                        let! defn' =
+                                            inner defn
+
+                                        let! body' =
+                                            inner body
+
+                                        // Return a reconstructed version of our let assignment node.
+                                        return Expr.Let(var, defn', body')
                                     }
 
                                 | expr ->
@@ -258,11 +284,14 @@ module internal SourceParser =
                             let! apiCallVarDefMapping' =
                                 Stateful.get
                             
+                            // Take our latest view of API dependencies for this step and update it based
+                            // on what we've encountered for this specific element.
                             let newCalcBody, (newApiCallVarDefMapping, elementDependencies) =
                                 Stateful.run
-                                    (apiCallVarDefMapping', SourceElementDependencies.empty)
-                                    (inner calcDefn)
+                                    (apiCallVarDefMapping', SourceElementDependencies.empty)    // Initial state.
+                                    (inner calcDefn)                                            // State transformer.
 
+                            // Ensure that our view of API calls to variable mappings is updated.
                             do! Stateful.put newApiCallVarDefMapping
 
                             return {
@@ -277,20 +306,44 @@ module internal SourceParser =
                         |> flattenSourceBody 
                         |> Map.toSeq
                         |> Seq.filter (function
-                            // Remove those elements which simply refer to that same element
-                            // from the previous step.
+                            (*
+                            Remove those elements which simply refer to that same element
+                            from the previous step.
+                            
+                            Note that the F# compiler re-writes:
+
+                                { someRecord with X = newX }
+
+                            ...as...
+
+                                {
+                                    X = newX
+                                    Y = someRecord.Y
+                                    Z = someRecord.Z
+                                    ...
+                                }
+
+                            Here we're trying to detect when this occurs as this
+                            indicates that the element's definition as of the previous
+                            step is to be reused.
+                            *)
                             | name, UsePrior elementPI' -> stepResultMembers[name] <> elementPI'
                             | _ -> true)
                         |> Seq.toList
 
+                    // Process each element in turn, updating our view of API
+                    // calls and their corresponding variable mappings as we go.
                     let (specifiedElements, newApiCallVarDefMapping) =
                         specifiedElementExprs
                         |> List.mapStateM (fun (name, expr) ->
-                            processElementCalculation (stepResultMembers[name], expr)
+                            processElementCalculation expr
                             |> Stateful.mapM (fun defn -> name, defn))
                         |> Stateful.mapM Map.ofList
+                        // Where we're tracking states within states, this is unavoidable.
                         |> Stateful.run apiCallVarDefMapping                  
                         
+                    // Take our inherited view of element definitions and update
+                    // these with any re-definitions above.
                     let combinedElements =
                         Map.merge accruedElements specifiedElements
 
@@ -299,10 +352,10 @@ module internal SourceParser =
                         |> Map.keys
                         |> Set
 
-                    // In theory, given the first sourceable step (ie. opening re-run) does not
-                    // allow the user to inherit prior elements, this should never happen!
-                    if combinedElementNamesSet <> stepResultMemberNamesSet then
-                        failwith "Not all step result members have been defined."
+                    // This failing suggests that we have an element that has yet to be defined.
+                    // Given the first sourceable step (ie. opening re-run) does not
+                    // allow the user to inherit prior elements, this SHOULD (!) never happen.
+                    assert (combinedElementNamesSet = stepResultMemberNamesSet)
 
                     // Update our state tracking both API dependencies and
                     // the accrued set of element definitions.
@@ -312,12 +365,13 @@ module internal SourceParser =
                     // current step.
                     let withinStepDependencies =
                         combinedElements
-                        |> Map.map (fun _ ->
-                            _.Dependencies.CurrentResults) 
+                        |> Map.map (fun _ -> _.Dependencies.CurrentResults) 
                         
+                    // Initialise our topological sorter.
                     let dependencySorter' =
                         dependencySorter (stepResultMemberNamesSet, withinStepDependencies)
 
+                    // Determine a suitable ordering for calculating our elements.
                     let elementOrdering =
                         List.unfold dependencySorter' List.empty     
                     
@@ -326,7 +380,6 @@ module internal SourceParser =
 
                     return {
                         ElementDefinitions  = combinedElements
-                        //ApiCallsTupleType   = invokerDetails.ApiCallsTupleType
                         ApiCalls            = invokerDetails.CombinedApiCalls
                         RebuiltSourceExpr   = invokerDetails.RebuiltSourceExpr
                         Invoker             = invokerDetails.WrappedInvoker

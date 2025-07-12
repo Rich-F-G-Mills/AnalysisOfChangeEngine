@@ -121,9 +121,9 @@ module Dispatcher =
                             Attributes.getRangeNameFromPI pi
 
                         // Furthermore, it's not exactly obvious whether this is needed.
-                        // Documentation on the RCW suggested the CLR caches wrapped around
+                        // Documentation on the RCW suggested the CLR caches wrappers around
                         // COM objects. However, this approach does avoid need to construct
-                        // the range object each time.   
+                        // the range object each time.
                         let excelRange =
                             cachedRanges.GetOrAdd
                                 (excelRangeName, fun _ ->
@@ -190,7 +190,7 @@ module Dispatcher =
 
                     new ActionBlock<_> (action, actionBlockOptions))
 
-            let blockLinks =
+            let _ =
                 dispatchers
                 |> Array.map (fun d -> bufferBlock.LinkTo (d, linkOptions))
         

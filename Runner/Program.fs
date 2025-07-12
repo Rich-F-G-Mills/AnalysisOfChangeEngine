@@ -11,8 +11,8 @@ module Runner =
     open AnalysisOfChangeEngine.Controller
     open AnalysisOfChangeEngine.DataStore
     open AnalysisOfChangeEngine.DataStore.Postgres
+    open AnalysisOfChangeEngine.Walks
     open AnalysisOfChangeEngine.Walks.Common
-    open AnalysisOfChangeEngine.Walks  
     open AnalysisOfChangeEngine.Structures.PolicyRecords
     open AnalysisOfChangeEngine.Structures.StepResults
 
@@ -166,18 +166,33 @@ module Runner =
                 |> Map.map (fun _ -> Result.map ExitedPolicy)
                 |> Map.map (fun _ -> Result.defaultWith (fun _ -> failwith "Failed"))
 
-            do printfn "\n\n%A\n\n" someExitedPolicyRecords
-
+            let someNewPolicyRecords =
+                dataStore.GetPolicyRecordsAsync priorExtractionUid somePolicyIds
+                |> _.Result
+                |> Map.map (fun _ -> Result.map NewPolicy)
+                |> Map.map (fun _ -> Result.defaultWith (fun _ -> failwith "Failed"))
             
-            let exitedEvaluator =
-                Evaluator.exitedPolicyEvaluator walk walk.ApiCollection
+            let evaluator =
+                Evaluator.create walk walk.ApiCollection
             
-            let results =
+            let exitedResults =
                 someExitedPolicyRecords
-                |> Map.map (fun _ -> exitedEvaluator)
+                |> Map.map (fun _ -> evaluator.Execute)
+
+            let newResults =
+                someNewPolicyRecords
+                |> Map.map (fun _ -> evaluator.Execute)
+
+            let exitedResults =
+                exitedResults
                 |> Map.map (fun _ -> _.Result)
 
-            do printfn "\n\n%A\n\n" results
+            let newResults =
+                newResults
+                |> Map.map (fun _ -> _.Result)
+
+
+            do printfn "\n\n%A\n\n" newResults
 
             return 0
         }

@@ -40,6 +40,8 @@ module private Common =
 
 
 [<AbstractClass; Sealed>]
+// TODO - Could this be internal/private? Suspect doing so might
+// cause issues when compiling dynamic code.
 type QuotationHelpers private () =
     // We cannot have a code quotation containing just a 'do' statement.
     // It needs to return something as done here.
@@ -110,7 +112,8 @@ type internal DataTransfer<'TCellInputs> private () =
                         <@
                         match %inputGetter with
                         | Some value ->
-                            // Refer to the blurb in QuotationHelpers as to why this is needed.
+                            // Refer to the blurb in QuotationHelpers above as
+                            // to why this is needed.
                             ignore <| QuotationHelpers.SetCellValue (%cellRangeVar, value)                            
                         | None ->
                             ignore <| QuotationHelpers.ClearCellContents (%cellRangeVar)

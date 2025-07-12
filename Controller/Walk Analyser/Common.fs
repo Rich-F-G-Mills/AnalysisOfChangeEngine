@@ -18,6 +18,7 @@ module internal Helpers =
         | _ -> false
 
 
+/// Represents a request for a specific output from a specific API requesto.
 [<CustomEquality; CustomComparison>]
 type SourceElementApiCallDependency<'TPolicyRecord> =
     {
@@ -62,7 +63,8 @@ type SourceElementApiCallDependency<'TPolicyRecord> =
                 failwith "Cannot compare different types of source element dependencies."
 
 
-// Used to track all of the dependencies for a given step element.
+/// For a specific element within a step, tracks all API dependencies and dependencies
+/// within the step itself.
 [<NoEquality; NoComparison>]
 type SourceElementDependencies<'TPolicyRecord> =
     {
@@ -84,7 +86,7 @@ module internal SourceElementDependencies =
 
             let dependency =
                 {
-                    Requestor        = endpoint
+                    Requestor       = endpoint
                     OutputProperty  = outputProperty
                 }
 
@@ -171,9 +173,10 @@ type SourceElementDefinition<'TPolicyRecord> =
 type ParsedSource<'TPolicyRecord, 'TStepResults> =
     {
         ElementDefinitions  : Map<string, SourceElementDefinition<'TPolicyRecord>>
-        //ApiCallsTupleType   : Type
         ApiCalls            : SourceElementApiCallDependency<'TPolicyRecord> Set
         RebuiltSourceExpr   : Expr
+        /// The API outputs, passed in via the obj array, will be in the SAME order
+        /// as the ApiCalls property above.
         Invoker             : ('TPolicyRecord * obj array) -> 'TStepResults
     }
 

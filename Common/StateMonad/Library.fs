@@ -22,7 +22,7 @@ module Stateful =
     let inline returnM value =
         Stateful (fun state -> value, state)
 
-    // One might comment as to why we're not using the InlineIfLambda attribute here...
+    // One _might_ comment as to why we're not using the InlineIfLambda attribute here...
     // Well... It's unlikely to make any meaningful difference whatsoever given how
     // infrequently this logic will be used.
     let inline mapM f (Stateful transformer) =

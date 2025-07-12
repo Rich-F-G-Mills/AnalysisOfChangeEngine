@@ -290,13 +290,13 @@ module ExcelApi =
 
                         dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs)                 
 
-                    AbstractApiRequestor.create ("Excel API [Opening]", executor)
+                    ApiRequestor.create ("Excel API [Opening]", executor)
 
                 | None ->
                     let executor _ _ =
                         failwith "Cannot call the opening requestor when no prior run date is provided."                
 
-                    AbstractApiRequestor.create ("Excel API [Opening]", executor)
+                    ApiRequestor.create ("Excel API [Opening]", executor)
 
             WrappedApiRequestor apiRequestor
 
@@ -319,6 +319,6 @@ module ExcelApi =
                 dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) 
 
             let apiRequestor =
-                AbstractApiRequestor.create ("PX API [Post-Opening Regression]", executor)
+                ApiRequestor.create ("PX API [Post-Opening Regression]", executor)
 
             WrappedApiRequestor apiRequestor

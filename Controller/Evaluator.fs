@@ -6,6 +6,7 @@ namespace AnalysisOfChangeEngine.Controller
 module Evaluator =
 
     open System.Threading.Tasks
+    open FsToolkit.ErrorHandling
     open AnalysisOfChangeEngine
     open AnalysisOfChangeEngine.Controller.WalkAnalyser
 
@@ -17,6 +18,8 @@ module Evaluator =
             EvaluationFailure.ApiCalculationFailure (requestor.Name, reasons)
         | ApiRequestFailure.CallFailure reasons ->
             EvaluationFailure.ApiCallFailure (requestor.Name, reasons)
+        | ApiRequestFailure.Cancelled ->
+            EvaluationFailure.Cancelled
 
 
     // We need to at least give a type hint for the abstract requestor, otherwise
@@ -25,6 +28,10 @@ module Evaluator =
         (acc: Result<Map<AbstractApiRequestor<_>, _>, _>)
         (apiRequstor, apiResponse) =
             match acc, apiRequstor, apiResponse with
+            // Once we've been cancelled, we don't care about anything else.
+            | _, _, Error ApiRequestFailure.Cancelled
+            | Error [ EvaluationFailure.Cancelled ], _, _ ->
+                Error [ EvaluationFailure.Cancelled ]
             // No prior failures and current requestor was successful.
             | Ok acc', requestor, Ok results ->
                 Ok (acc' |> Map.add requestor results)
@@ -41,20 +48,12 @@ module Evaluator =
                 Error ((failureMapper requestor failure)::failures)
 
 
-    let private createExitedPolicyEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-        (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>)
-        : ExitedPolicy<'TPolicyRecord> -> Task<ExitedPolicyOutcome<'TStepResults>> =
-            let openingReRunStepHdr, openingReRunParsedStep =
-                // This CANNOT fail! If it does, I've not idea
-                // how the logic managed to get this far!
-                List.head parsedWalk.ParsedSteps
-
-            assert checkStepType<OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>> openingReRunStepHdr
-
+    let private createSingleStepEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        (parsedSource: ParsedSource<'TPolicyRecord, 'TStepResults>) =
             let apiCalls, invoker =
                 // Don't forget that F# sets are ordered. Iterating over an unordered set
                 // could well lead to palpatations!
-                openingReRunParsedStep.ApiCalls, openingReRunParsedStep.Invoker           
+                parsedSource.ApiCalls, parsedSource.Invoker           
 
             // Group our API outputs by their respective requestors.
             let groupedDependenciesByRequestor =
@@ -98,7 +97,7 @@ module Evaluator =
             let responseArrayHydrator responsesByRequestor idx =
                 resultMappers[idx] responsesByRequestor
 
-            fun (ExitedPolicy policyRecord) ->
+            fun policyRecord ->
                 backgroundTask {
                     let responseTasksByRequestor =
                         nestedApiCallTasksByRequestor
@@ -141,11 +140,114 @@ module Evaluator =
                     return evaluationOutcome
                 }
 
-    let exitedPolicyEvaluator (walk: AbstractWalk<_, _, 'TApiCollection>) apiCollection =
+
+    let private createRemainingPolicyEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>) =
+
+            (*
+            Design Decision:
+                For a given record, we could process one data stage at a time.
+                However, if a data stage is going to fail, it is better we find
+                this out as soon as possible so we don't waste time making
+                API calls that will just be discarded anyway!
+            *)
+            
+            fun (RemainingPolicy (openingPolicyRecord, closingPolicyRecord)) ->
+                result {
+                    let rec extractDataChanges priorPolicyRecord
+                        : PostOpeningDataStage<'TPolicyRecord, 'TStepResults> list -> _ = function
+                        | ds::dss ->
+                            let newRecordForDataStage =
+                                ds.DataChangeStep.DataChanger
+                                    (openingPolicyRecord, priorPolicyRecord, closingPolicyRecord)
+                                        
+                            match newRecordForDataStage with
+                            | Ok None ->
+                                Result.bind
+                                    (fun subsequentStages -> Ok (None::subsequentStages))
+                                    // If the current data change step hasn't changed anything,
+                                    // then we'll just carry forward our inherited view of the
+                                    // latest policy record.
+                                    (extractDataChanges priorPolicyRecord dss)
+                            | Ok (Some newRecord as newRecord') ->
+                                Result.bind
+                                    (fun subsequentStages -> Ok (newRecord'::subsequentStages))
+                                    // However, if the data change step _does_ lead to a new record,
+                                    // then that will need to be carried forward instead.
+                                    (extractDataChanges newRecord dss)
+                            | Error reason ->
+                                // If we encounter an error... Then we can immediately return.
+                                Error (EvaluationFailure.DataChangeFailure
+                                    (ds.DataChangeStep, [| reason |]))
+                        | [] ->
+                            Ok []                                   
+
+                    // Note that this will exclude the opening policy record itself.
+                    // If, for example, this was a list of None's, that'd suggest that
+                    // the opening record and closing records are the same.
+                    let! policyRecordDataChanges =
+                        extractDataChanges openingPolicyRecord parsedWalk.PostOpeningDataStages
+
+                    assert (policyRecordDataChanges.Length = parsedWalk.PostOpeningDataStages.Length)
+
+
+
+                    return 0
+                }
+                
+
+
+    let private createExitedPolicyEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>) =
+            let openingReRunStepHdr, openingReRunParsedStep =
+                // This CANNOT fail! If it does, I've not idea
+                // how the logic managed to get this far!
+                List.head parsedWalk.ParsedSteps
+
+            assert checkStepType<OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>> openingReRunStepHdr
+
+            let evaluator =
+                createSingleStepEvaluator openingReRunParsedStep
+
+            fun (ExitedPolicy policyRecord) ->
+                evaluator policyRecord
+
+    let private createNewPolicyEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>) =
+            let newRecordsStepHdr, newRecordsParsedStep =
+                // This CANNOT fail! If it does, I've not idea
+                // how the logic managed to get this far!
+                List.last parsedWalk.ParsedSteps
+
+            assert checkStepType<AddNewRecordsStep<'TPolicyRecord, 'TStepResults>> newRecordsStepHdr
+
+            let evaluator =
+                createSingleStepEvaluator newRecordsParsedStep
+
+            fun (NewPolicy policyRecord) ->
+                evaluator policyRecord
+
+    let create (walk: AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection>) apiCollection =
         let parsedWalk =
             WalkParser.execute walk apiCollection
 
-        createExitedPolicyEvaluator<_, _, 'TApiCollection> parsedWalk
+        let exitedRecordEvaluator =
+            // If we don't specificy the API collection type, obj will be inferred
+            // which will lead to a type assertion failure at runtime.
+            createExitedPolicyEvaluator<_, _, 'TApiCollection> parsedWalk
+
+        let newRecordEvaluator =
+            createNewPolicyEvaluator<_, _, 'TApiCollection> parsedWalk
+
+        {
+            new IPolicyEvaluator<'TPolicyRecord, 'TStepResults> with
+
+                member _.Execute (ExitedPolicy _ as exitedPolicyRecord) =
+                    exitedRecordEvaluator exitedPolicyRecord
+
+                member _.Execute (NewPolicy _ as newPolicyRecord) =
+                    newRecordEvaluator newPolicyRecord
+        }
 
 
 

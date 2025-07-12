@@ -45,6 +45,15 @@ module Core =
             | StepUid uid -> uid
 
 
+    [<NoEquality; NoComparison>]
+    type ApiRequestorTelemetryEvent =
+        {
+            /// An optional ID for the end-point that ultimately processed a given request.
+            EndpointId      : string option
+            Timestamp       : DateTime
+        }
+
+
     [<RequireQualifiedAccess>]
     [<NoEquality; NoComparison>]
     type ApiRequestFailure =
@@ -54,31 +63,37 @@ module Core =
         /// Indicates that an API call failed to execute. This would,
         /// for example, be the case if the API was not available.
         | CallFailure of Reasons: string array
+        /// Cancelled by the user.
+        | Cancelled
 
+    /// Represents the outcome of an asynchronous execution
+    /// performed by an IApiRequestor object,
     type ApiRequestOutcome =
         Result<obj array, ApiRequestFailure>
 
-    // Do NOT change this to IApiEndpoint. Again. The same endpoint could have
-    // multiple requestors mapping to it. Calling it 'endpoint' would be misleading.
-    type IApiRequestor<'TPolicyRecord> =
-        interface
-            /// Note that API requestors with the SAME NAME will be grouped together!
-            abstract Name: string
 
-            abstract ExecuteAsync:
-                PropertyInfo array
-                    -> 'TPolicyRecord
-                    -> Task<ApiRequestOutcome>
-        end
+    (*
+    Design Decision:
+        Why not use an interface instead?
+        We want to use the instances for grouping operations. By using an
+        abstract class, we can bake-in implementations for eqality and
+        comparison operations.
 
+        Is it risk only considering the Name for this operations?
+        TODO - Could reference equality be used for grouping oeprations?
 
-    // Allows us to define custom equality and comparison operations.
-    // TODO - Is it risk only considering the Name for this operations?
+        Do NOT change this to IApiEndpoint. Again. The same endpoint could have
+        multiple requestors mapping to it. Calling it 'endpoint' would be misleading.
+    *)
+
+    /// Types implementing this interface provide an asynchronous way to submit a
+    /// calculation request to an API end-point.
     [<AbstractClass>]
     type AbstractApiRequestor<'TPolicyRecord> () =
         /// Note that API requestors with the SAME NAME will be grouped together!
         abstract member Name: string
 
+        /// Asyncronously submit a calculation request to the underlying end-point.
         abstract member ExecuteAsync:
             PropertyInfo array
                 -> 'TPolicyRecord
@@ -110,19 +125,14 @@ module Core =
                 | _ ->
                     failwith "Cannot compare different types of API requestors."                    
 
-        interface IApiRequestor<'TPolicyRecord> with
-            member this.Name =
-                this.Name
-
-            member this.ExecuteAsync requiredOutputs policyRecord =
-                this.ExecuteAsync requiredOutputs policyRecord
-
 
     [<RequireQualifiedAccess>]
-    module AbstractApiRequestor =
+    /// Contains logic providing for the creation of API requestors.
+    module ApiRequestor =
         
         [<Sealed>]
         // No-one, and I mean no-one, should be deriving from this.
+        /// Not intended for direct developer use.
         type EncapsulatedApiRequestor<'TPolicyRecord> internal (name, asyncExecutor) =
             inherit AbstractApiRequestor<'TPolicyRecord> ()
 
@@ -132,13 +142,13 @@ module Core =
             override _.ExecuteAsync requiredOutputs policyRecord =
                 asyncExecutor requiredOutputs policyRecord
 
-
+        /// Create an API requestor using the supplied name and executor logic.
         let create (name, asyncExecutor) : AbstractApiRequestor<'TPolicyRecord> =
             upcast new EncapsulatedApiRequestor<'TPolicyRecord> (name, asyncExecutor)
 
 
-    // Allows us to extract the underlying requestor, even when we don't
-    // have the step result type.
+    // This effectively allows us to peel away the generic API
+    // response type from a wrapped API requestor.
     type IWrappedApiRequestor<'TPolicyRecord> =
         interface
             abstract member UnderlyingRequestor:
@@ -150,16 +160,17 @@ module Core =
     Design Decision:
         We also need to track the possible API responses... We cannot use
         a vanilla type alias as it will complain about TResponse not actually getting used.
-        However, we have no such issue using a DU. Ultimately, this is just an IApiRequestor
+        However, we have no such issue using a DU. Ultimately, this is just an API requestor
         with some supplementary type information for intelli-sense purposes.
     *)
-    /// Represent an API end-point which, via a "baked-in" generic type-parameter, provides
+    /// Represents an API requestor which, via a "baked-in" generic type-parameter, provides
     /// a strongly typed link to possible responses.
     [<NoEquality; NoComparison>]
     type WrappedApiRequestor<'TPolicyRecord, 'TResponse> =
         | WrappedApiRequestor of AbstractApiRequestor<'TPolicyRecord>
 
-        // Allows us to extract the underlying endpoint without caring about the response type.
+        // As mentioned above, allows us to peel away the generic response type
+        // which we don't _actually_ care about.
         interface IWrappedApiRequestor<'TPolicyRecord> with
 
             member this.UnderlyingRequestor =
@@ -170,15 +181,15 @@ module Core =
 
     type ILogger =
         interface
-            abstract member LogInfo: message: string -> unit
-            abstract member LogDebug: message: string -> unit
-            abstract member LogWarning: message: string -> unit
-            abstract member LogError: message: string -> unit
+            abstract member LogInfo     : message: string -> unit
+            abstract member LogDebug    : message: string -> unit
+            abstract member LogWarning  : message: string -> unit
+            abstract member LogError    : message: string -> unit
         end
 
 
     [<AbstractClass>]
-    // Private constructor as this will never be instantiated. It purely provides a container
+    // Private constructor as this will NEVER be instantiated. It purely provides a container
     // for actions that can be performed as part of a source definition. Furthermore, having them
     // defined as instance members allows them to be more easily discoverable via reflection.
     type SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection> private () =
@@ -186,13 +197,19 @@ module Core =
         Design Decision:
             Could have used a curried call rather than tupled; however, identifying (let along deciphering)
             it within any code quotation where it was used was proving a lot more complicated.
+
+            Furthermore... Why would we not just directly pass in the wrapped API requestor?
+            Firstly, we are limited what can be passed in to a code quotation. When we
+            compile the walk, we pass in a collection of API requestors. We can therefore
+            provide a mapping from this collection to one of the requestor within. Put another
+            way, it is trivial to quote the accessing of an object's property.
         *)
         /// Request specific output from the referenced API end-point and corresponding response.        
         abstract member apiCall<'TResponse, 'T>
             : apiRequest: ('TApiCollection -> WrappedApiRequestor<'TPolicyRecord, 'TResponse>) * selector: ('TResponse -> 'T) -> 'T
 
 
-    /// Required type of all source definitions.
+    /// Required type of all source definitions for the opening re-run step.
     type OpeningReRunSourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
         Expr<SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             -> 'TPolicyRecord   // Current policy record.
@@ -200,9 +217,9 @@ module Core =
             -> 'TStepResults>   // Constructed results for current step.
 
     [<RequireQualifiedAccess>]
-    module OpeningReRunSourceExpr =
+    module private OpeningReRunSourceExpr =
         // Used to break apart a source definition.
-        let (|Definition|_|) = function
+        let internal (|Definition|_|) = function
             | Patterns.Lambda (from,
                 Patterns.Lambda (policyRecord,
                         Patterns.Lambda (currentResults, sourceBody))) ->
@@ -211,7 +228,7 @@ module Core =
                 None
 
 
-    /// Required type of all source definitions.
+    /// Required type of all source definitions (except for the opening re-run step).
     type SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
         Expr<SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection>
             -> 'TPolicyRecord   // Current policy record.
@@ -221,19 +238,25 @@ module Core =
 
     [<RequireQualifiedAccess>]
     module SourceExpr =
+        /// Not intended for direct developer use.
+        let cast<'TPolicyRecord, 'TStepResults, 'TApiCollection> expr
+            : SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
+                Expr.Cast<_> expr
+
         // Used to break apart a source definition.
-        let (|Definition|_|) = function
+        /// Not intended for direct developer use.
+        let (|Definition|_|) (sourceExpr: SourceExpr<_, 'TStepResults, _>) =
+            match sourceExpr with
             | Patterns.Lambda (from,
                 Patterns.Lambda (policyRecord,
                     Patterns.Lambda (priorResults,
                         Patterns.Lambda (currentResults, sourceBody)))) ->
-                            Some (from, policyRecord, priorResults, currentResults, sourceBody)
+                            let sourceBody' =
+                                Expr.Cast<'TStepResults> sourceBody
+
+                            Some (from, policyRecord, priorResults, currentResults, sourceBody')
             | _ ->
                 None
-
-        let cast<'TPolicyRecord, 'TStepResults, 'TApiCollection> expr
-            : SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
-                Expr.Cast<_> expr
 
 
     (*
@@ -242,6 +265,7 @@ module Core =
         Although a fair question... What would 'Ok' mean specifically? Using this specific DU,
         we make it clear that we care more about whether the validation completed or not.
     *)
+    /// Represents the outcome of step validation logic.
     [<RequireQualifiedAccess; NoEquality; NoComparison>]
     type StepValidationOutcome =
         /// Indicates that the validation logic was successfully applied, regardless of
@@ -312,7 +336,9 @@ module Core =
         end
 
 
-    /// Required first step (usually considered step #0).
+    /// Required first step. In the absence of (for example) model changes or
+    /// errors in the underlying logic, this would be expected to tie up
+    /// the prior run's closing position.
     [<NoEquality; NoComparison>]
     type OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
         {
@@ -431,8 +457,10 @@ module Core =
             member _.DataChanger =
                 fun (_, prior, closing) ->
                     if prior = closing then
+                        // If there's no change in the policy record, then indicate as such.
                         Ok None
                     else
+                        // Conversely, return the modified record.
                         Ok (Some closing)
 
 
@@ -461,6 +489,9 @@ module Core =
             member this.Description = this.Description
 
 
+    /// Automatically implemented by all walks. Allows for the extraction of
+    /// all registered step headers without needing to know (or care) about
+    /// the various generic type parameters as used by an abstract walk instance.
     type IWalk =
         interface
             abstract member AllSteps : IStepHeader seq
@@ -468,7 +499,8 @@ module Core =
 
 
     /// Abstract base class for all user defined walks. Provides 'slots' for required steps
-    /// and a mechanism by which additional (ie. user supplied) steps can be registered.
+    /// and a mechanism by which additional (ie. user supplied) steps can (and MUST!)
+    /// be registered.
     [<AbstractClass>]
     type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord : equality>
         (logger: ILogger) as this =
@@ -564,8 +596,13 @@ module Core =
     [<RequireQualifiedAccess>]
     [<NoEquality; NoComparison>]
     type PolicyGetterFailure =
+        /// Indicates that, although the required record was found, it could
+        /// not be successfully parsed into a corresponding policy record object.
         | ParseFailure of Reason: string
+        /// No record could be found with the requisite ID.
         | NotFound
+        /// User cancelled the request.
+        | Cancelled
 
     type PolicyGetterOutcome<'TPolicyRecord> =
         Result<'TPolicyRecord, PolicyGetterFailure>
@@ -611,14 +648,25 @@ module Core =
     [<RequireQualifiedAccess>]
     [<NoEquality; NoComparison>]
     type EvaluationFailure =
-        | ApiCalculationFailure     of RequestorName: string    * Reasons: string array
+        /// Indicates that, although a response was received from the API,
+        /// it failed either in part or in entirety.
+        | ApiCalculationFailure     of RequestorName: string    * Reasons: string array        
+        /// Indicates that an API call failed to execute. This would,
+        /// for example, be the case if the API was not available.
         | ApiCallFailure            of RequestorName: string    * Reasons: string array
+        /// A data-change step could not successfully transform the policy record
+        /// for a given step.
         | DataChangeFailure         of StepHeader: IStepHeader  * Reasons: string array
-        | ValidationAborted         of StepHeader: IStepHeader  * Reasons: string array
+        /// Indicates that the validation logic was successfully applied with errors
+        /// having been identified.
         | ValidationFailure         of StepHeader: IStepHeader  * Reasons: string array
+        /// Indicates that the validation logic was unable to run for a specified reason.
+        | ValidationAborted         of StepHeader: IStepHeader  * Reasons: string array
+        /// It was not possible to construct a step result for a given policy.
         | StepConstructionFailure   of StepHeader: IStepHeader  * Reasons: string array
+        /// User cancelled the request.
         | Cancelled
-
+        
 
     // We use lists for the failures as they can be more easily constructed
     // in a cumulative manner.
@@ -631,22 +679,26 @@ module Core =
     type NewPolicyOutcome<'TStepResults> =
         Result<'TStepResults, EvaluationFailure list>
 
-
+    
+    /// Required interface for any implementation that can
+    /// asyncronously evaluate a given policy.
     type IPolicyEvaluator<'TPolicyRecord, 'TStepResults> =
         interface
             /// Only a single result will be provided for the initial
             /// (ie. opening re-run) step.
-            abstract member execute:
+            abstract member Execute:
                 ExitedPolicy<'TPolicyRecord>
                     -> Task<ExitedPolicyOutcome<'TStepResults>>
 
-            abstract member execute:
-                RemainingPolicy<'TPolicyRecord>
-                    -> Task<RemainingPolicyOutcome<'TStepResults>>
+            //abstract member Execute:
+            //    RemainingPolicy<'TPolicyRecord>
+            //        -> Task<RemainingPolicyOutcome<'TStepResults>>
 
             /// Only a single result will be provided for the final
             /// (ie. add new records) step.
-            abstract member execute:
+            abstract member Execute:
                 NewPolicy<'TPolicyRecord>
                     -> Task<NewPolicyOutcome<'TStepResults>>
         end
+
+

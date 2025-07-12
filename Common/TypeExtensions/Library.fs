@@ -10,6 +10,8 @@ module TypeExtensions =
 
 
     type IDictionary<'K, 'V> with
+        // I was afronted that this method was available for concurrent dictionaries,
+        // but not for vanilla ones. Until now!
         member this.GetOrAdd (key: 'K, valueFactory: unit -> 'V) =
             match this.TryGetValue key with
             | true, value ->
@@ -28,7 +30,8 @@ module TypeExtensions =
         TimeOnly.FromTimeSpan (TimeSpan.FromSeconds 0)
 
     type DateOnly with
-        // Useful for Excel interop where only DateTimes can (seemingly) be marshalled across.
+        // Useful for Excel interop where only DateTimes can (seemingly)
+        // be marshalled across.
         member this.ToDateTimeMidnight () =
             this.ToDateTime (midnightTimeOnly)            
 

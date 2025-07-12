@@ -60,8 +60,8 @@ module private CachedByProductSchema =
 (*
 Design Decision:
     Why not use a module instead of a pseudo-static class?
-    A subset of the methods need to be discoverable via reflection, which is easier to wrangle with
-    vanilla (static) members.
+    A subset of the methods need to be discoverable via reflection,
+    which is easier to wrangle with vanilla (static) members.
 *)
 [<AbstractClass; Sealed>]
 type internal TransferableType private () =
@@ -157,8 +157,8 @@ type internal TransferableType private () =
 
         let toSqlParamValueArrayExpr': Expr<_ -> NpgsqlParameter> =
             <@
-            fun value ->
-                TransferableType.makeTypedParameter<_ array> value
+            fun values ->
+                TransferableType.makeTypedParameter<_ array> values
             @>
 
         TransferableType.CreateFor<'TNonOptionalValue>
@@ -314,6 +314,8 @@ type internal TransferableType private () =
                 let transferableType =
                     match valueType with
                     | NonOptionalNonUnion ->
+                        // There is no guarantee this will work. Ultimately depends
+                        // on what types Npgsql can natively serialize.
                         TransferableType.CreateForNonOptionalNonUnion<'TValue> ()
 
                     | NonOptionalNonParameterizedPostgresUnion (pgTypeName, schemaMapper) ->
