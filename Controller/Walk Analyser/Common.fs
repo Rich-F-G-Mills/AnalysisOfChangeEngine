@@ -195,10 +195,7 @@ type PostOpeningDataStage<'TPolicyRecord, 'TStepResults> =
         // Note that NOT all data changes occur at a DataChangeStep!
         // Data changes can also ocurr at the penultimate step.
         DataChangeStep              : IDataChangeStep<'TPolicyRecord>
-        // Although a data change step has no source, it inherits that
-        // as used for the previous step.
-        DataChangeStepParsedSource  : ParsedSource<'TPolicyRecord, 'TStepResults>
-        // This does NOT include the data change step header above.
+        // This DOES include the data change step header above.
         WithinStageSteps            : (IStepHeader * ParsedSource<'TPolicyRecord, 'TStepResults>) list
         // These are the API calls arising from steps within this data stage.
         // This will INCLUDE those arising from the data change step itself

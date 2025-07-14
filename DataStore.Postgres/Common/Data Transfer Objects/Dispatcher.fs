@@ -44,9 +44,8 @@ module internal RecordParser =
                 |> Expr.Cast<DbDataReader>
 
             let columnParsers =
-                columnIdxs
-                |> Array.zip transferableTypes
-                |> Array.map (fun (tt, idx) ->
+                (transferableTypes, columnIdxs) 
+                ||> Array.map2 (fun tt idx ->
                     tt.ReadSqlColumnExpr (dataReaderVar, idx))
                 |> Array.toList
 
@@ -97,9 +96,8 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
 
 
         let makeSelectors (tableColumns: PropertyInfo array, transferableTypes: ITransferableType array) =
-            transferableTypes
-            |> Array.zip tableColumns
-            |> Array.map (fun (pi, tt) -> tt.SqlColMapper (sprintf "\"%s\"" pi.Name))
+            (tableColumns, transferableTypes)
+            ||> Array.map2 (fun pi tt -> tt.SqlColMapper (sprintf "\"%s\"" pi.Name))
 
         let baseSqlColumnSelectors =
             makeSelectors (baseTableColumns, baseTransferableTypes)
@@ -702,16 +700,14 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         (Array.map (fun _ -> Expr.TupleGet (combinedRecordVar, 1)) augTableColumns)                
 
                 let paramValueTupleExprs =
-                    combinedRecordVars
-                    |> Seq.zip combinedTableColumns
-                    |> Seq.zip combinedTransferableTypes
-                    |> Seq.map (fun (tt, (pi, var)) ->
-                        Expr.Application (
-                            // Other than the fact that these are injected during start-up.
-                            // the current implementation also caches the resulting expression.
-                            tt.ToSqlParamValueExpr productSchema,
-                            Expr.PropertyGet (var, pi)
-                        ))
+                    (combinedTransferableTypes, combinedTableColumns, combinedRecordVars)
+                    |||> Seq.map3 (fun tt pi var ->
+                            Expr.Application (
+                                // Other than the fact that these are injected during start-up.
+                                // the current implementation also caches the resulting expression.
+                                tt.ToSqlParamValueExpr productSchema,
+                                Expr.PropertyGet (var, pi)
+                            ))
                     |> Seq.map Expr.Cast<NpgsqlParameter>
 
                 let constructParamListExpr =

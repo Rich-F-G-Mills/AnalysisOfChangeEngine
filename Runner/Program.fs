@@ -192,7 +192,38 @@ module Runner =
                 |> Map.map (fun _ -> _.Result)
 
 
-            do printfn "\n\n%A\n\n" newResults
+            let apiTelemetry =
+                exitedResults.Values
+                |> Seq.append newResults.Values
+                |> Seq.map snd
+                |> Seq.collect _.ApiRequestTelemetry
+                |> Seq.toList
+
+            let minApiStart =
+                apiTelemetry
+                |> Seq.map _.ProcessingStart
+                |> Seq.min
+
+            let maxApiEnd =
+                apiTelemetry
+                |> Seq.map _.ProcessingEnd
+                |> Seq.max
+
+
+            do printfn "\nMin start: %s\nMax end: %s"
+                (minApiStart.ToString   ("yyyy-MM-dd HH:mm:ss:FFF"))
+                (maxApiEnd.ToString     ("yyyy-MM-dd HH:mm:ss:FFF"))
+
+            let apiTelemetryByEndPoint =
+                apiTelemetry
+                |> List.groupBy _.EndpointId
+                |> Map.ofList
+
+            do printfn "\n\n%A" apiTelemetryByEndPoint
+
+                
+
+            //do printfn "\n\n%A\n\n" newResults
 
             return 0
         }

@@ -24,7 +24,7 @@ module Dispatcher =
             abstract member ExecuteAsync :
                 PropertyInfo array
                     -> 'TStepRelatedInputs * 'TPolicyRelatedInputs
-                    -> Task<ApiRequestOutcome>
+                    -> Task<ApiRequestOutcome * ApiRequestTelemetry>
         end
 
 
@@ -34,7 +34,7 @@ module Dispatcher =
             StepRelatedInputs   : 'TStepRelatedInputs
             PolicyRelatedInputs : 'TPolicyRelatedInputs
             RequiredOutputs     : PropertyInfo array
-            Callback            : ApiRequestOutcome -> unit
+            Callback            : (ApiRequestOutcome * ApiRequestTelemetry) -> unit
         }
 
 
@@ -108,10 +108,13 @@ module Dispatcher =
                     (bufferBlockOptions)
 
             let dispatchers =
-                writers
-                |> Array.zip workbooksFound
-                |> Array.zip excelApps
-                |> Array.map (fun (app, (workbook, writer)) ->
+                (excelApps, workbooksFound, writers)
+                |||> Array.zip3 
+                |> Array.mapi (fun idx (app, workbook, writer) ->
+                    // Store for later re-use.
+                    let endpointId =
+                        Some $"{idx}"
+                         
                     let cachedRanges =
                         // In theory, this should NEVER be accessed concurrently.
                         new Dictionary<string, Excel.Range> ()
@@ -160,6 +163,9 @@ module Dispatcher =
                                 failwithf "Unsupported output type '%s'." pi.PropertyType.FullName
 
                     let action request =
+                        let processingStart =
+                            DateTime.Now
+
                         do writer (request.StepRelatedInputs, request.PolicyRelatedInputs)
                         // This will be another, more onerous, blocking action.
                         do app.Calculate ()                                            
@@ -186,7 +192,17 @@ module Dispatcher =
 
                                     Error (ApiRequestFailure.CalculationFailure combinedReasons)
 
-                        do request.Callback outputs
+                        let processingStart =
+                            DateTime.Now
+
+                        let requestTelemetry =
+                            {
+                                EndpointId      = endpointId
+                                ProcessingStart = processingStart
+                                ProcessingEnd   = DateTime.Now
+                            }
+
+                        do request.Callback (outputs, requestTelemetry)
 
                     new ActionBlock<_> (action, actionBlockOptions))
 
@@ -218,10 +234,20 @@ module Dispatcher =
                         // This is non-blocking. Given the buffer block is unbounded,
                         // this _should_ never fail.
                         if not (bufferBlock.Post newCalcRequest) then
+                            let timestamp =
+                                DateTime.Now
+
+                            let telemetry =
+                                {
+                                    EndpointId      = None
+                                    ProcessingStart = timestamp
+                                    ProcessingEnd   = timestamp
+                                }
+
                             tcs.SetResult 
                                 (Error
                                     (ApiRequestFailure.CallFailure
-                                        [| "Unable to submit Excel request." |]))
+                                        [| "Unable to submit Excel request." |]), telemetry)
 
                         tcs.Task
             }

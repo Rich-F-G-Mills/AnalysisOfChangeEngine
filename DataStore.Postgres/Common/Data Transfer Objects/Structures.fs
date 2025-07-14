@@ -3,7 +3,6 @@ namespace AnalysisOfChangeEngine.DataStore.Postgres.DataTransferObjects
 
 open System
 open System.Data.Common
-open System.Reflection
 open System.Threading.Tasks
 open FSharp.Reflection
 open Npgsql
@@ -389,8 +388,9 @@ type internal StepResultsBaseDTO =
     {
         run_uid                 : Guid
         step_uid                : Guid
+        // Although we could figure this out when extracting results...
+        // It's a lot easier if it's just readily available!
         used_data_stage_uid     : Guid
-        run_when                : DateTime
         policy_id               : string
     }
 

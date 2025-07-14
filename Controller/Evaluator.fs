@@ -5,6 +5,8 @@ namespace AnalysisOfChangeEngine.Controller
 [<RequireQualifiedAccess>]
 module Evaluator =
 
+    open System
+    open System.Collections.Concurrent
     open System.Threading.Tasks
     open FsToolkit.ErrorHandling
     open AnalysisOfChangeEngine
@@ -26,7 +28,7 @@ module Evaluator =
     // we cannot access the 'Name' property.
     let private apiResponsesConsolidator
         (acc: Result<Map<AbstractApiRequestor<_>, _>, _>)
-        (apiRequstor, apiResponse) =
+        (apiRequstor, (apiResponse, _)) =
             match acc, apiRequstor, apiResponse with
             // Once we've been cancelled, we don't care about anything else.
             | _, _, Error ApiRequestFailure.Cancelled
@@ -48,25 +50,24 @@ module Evaluator =
                 Error ((failureMapper requestor failure)::failures)
 
 
-    let private createSingleStepEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-        (parsedSource: ParsedSource<'TPolicyRecord, 'TStepResults>) =
-            let apiCalls, invoker =
-                // Don't forget that F# sets are ordered. Iterating over an unordered set
-                // could well lead to palpatations!
-                parsedSource.ApiCalls, parsedSource.Invoker           
+    let private createDataStageEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        (parsedSources: ParsedSource<'TPolicyRecord, 'TStepResults> list) =
+            let apiDependencies =
+                parsedSources
+                |> List.map _.ApiCalls
 
-            // Group our API outputs by their respective requestors.
+            let combinedApiDependencies =
+                apiDependencies
+                |> Set.unionMany
+
             let groupedDependenciesByRequestor =
-                apiCalls
+                combinedApiDependencies
                 |> Seq.groupBy _.Requestor
                 |> Seq.map (fun (requestor, dependencies) ->
                     requestor, Seq.toArray dependencies)
                 |> Map.ofSeq
-                
-            // For our grouped API outputs, create a wrapper that, when
-            // supplied the policy record, will return a corresponding task
-            // for the requested outputs.
-            let nestedApiCallTasksByRequestor =
+
+            let deferredApiCallTasksByRequestor =
                 groupedDependenciesByRequestor
                 |> Map.map (fun requestor dependencies ->
                     let outputs =
@@ -78,30 +79,36 @@ module Evaluator =
 
                     asyncExecutor)
 
-            // For each API output that our step invoker is expecting, create a function
-            // that can take a set of mapped API 'outcomes' and extract the relevant bit.
+            // Execute all API calls within a given group.
+            let groupedDependencyExecutor policyRecord =
+                deferredApiCallTasksByRequestor
+                |> Map.map (fun _ asyncExecutor -> asyncExecutor policyRecord)
+
             let resultMappers =
-                apiCalls
-                |> Seq.map (fun dependency ->
-                    let nestedIdxWithinRequestor =
-                        groupedDependenciesByRequestor[dependency.Requestor]
-                        |> Array.findIndex _.Equals(dependency)
+                apiDependencies
+                |> List.map (fun stepDependencies ->
+                    stepDependencies
+                    |> Seq.map (fun dependency ->
+                        let nestedIdxWithinRequestor =
+                            groupedDependenciesByRequestor[dependency.Requestor]
+                            |> Array.findIndex _.Equals(dependency)
 
-                    fun (apiResponses: Map<_, obj array>) ->
-                        let responsesWithinRequestor =
-                            apiResponses[dependency.Requestor]
+                        fun (apiResponses: Map<_, obj array>) ->
+                            let responsesWithinRequestor =
+                                apiResponses[dependency.Requestor]
 
-                        responsesWithinRequestor[nestedIdxWithinRequestor])
-                |> Seq.toArray
+                            responsesWithinRequestor[nestedIdxWithinRequestor])
+                    |> Seq.toArray)
 
-            let responseArrayHydrator responsesByRequestor idx =
-                resultMappers[idx] responsesByRequestor
+            let responseArrayHydrators =
+                resultMappers
+                |> List.map (fun mapper responsesByRequestor idx ->
+                    mapper[idx] responsesByRequestor)
 
             fun policyRecord ->
                 backgroundTask {
                     let responseTasksByRequestor =
-                        nestedApiCallTasksByRequestor
-                        |> Map.map (fun _ asyncExecutor -> asyncExecutor policyRecord)
+                        groupedDependencyExecutor policyRecord
                             
                     // Allows us to asynchronously await all tasks without using
                     // a blocking Wait command.
@@ -121,29 +128,91 @@ module Evaluator =
                     let consolidatedResponses =
                         responsesByRequestor
                         |> Map.toSeq
-                        |> Seq.fold apiResponsesConsolidator (Ok Map.empty)  
-                            
-                    let evaluationOutcome =
+                        |> Seq.fold apiResponsesConsolidator (Ok Map.empty) 
+
+                    let evaluationOutcome =                                       
                         match consolidatedResponses with
                         | Ok resultsByRequestor ->
-                            let apiResults =
-                                Array.init apiCalls.Count (responseArrayHydrator resultsByRequestor)
+                            let stepResults =
+                                (parsedSources, responseArrayHydrators)
+                                ||> List.map2 (fun source hydrator ->
+                                        let invokerArgs =
+                                            Array.init source.ApiCalls.Count (hydrator resultsByRequestor)
 
-                            // Now we have the required API outputs, we can pass these
-                            // on to our step logic.
-                            Ok (invoker (policyRecord, apiResults))
+                                        let stepResult =
+                                            source.Invoker (policyRecord, invokerArgs)
+                                    
+                                        stepResult)
+
+                            Ok stepResults
 
                         | Error failures ->
                             // Necessary as we're mapping from one result domain to another.
                             Error failures
 
-                    return evaluationOutcome
+                    let apiRequestsTelemetry =
+                        responsesByRequestor
+                        |> Map.values
+                        |> Seq.map snd
+                        |> Seq.toList
+
+                    return evaluationOutcome, apiRequestsTelemetry
                 }
+
+    (*
+    let private createEvaluatorsForProfile
+        (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>) =
+
+            let openingDataStageSteps =
+                parsedWalk.OpeningDataStage.WithinStageSteps
+
+            let postOpeningDataStageSteps =
+                parsedWalk.PostOpeningDataStages
+                |> List.map _.WithinStageSteps
+
+            let parsedStepsByDataStage =
+                openingDataStageSteps :: postOpeningDataStageSteps
+        
+            fun dataChangeProfile ->
+                let dataChangeGroupIdxs =
+                    dataChangeProfile
+                    |> List.unfold (fun rem ->
+                        if rem > 0 then Some (rem &&& 1, rem / 2) else None)
+                    |> List.scan (fun acc x -> acc + x) 0
+
+
+                (dataChangeGroupIdxs)
+
+
+
+                let parsedStepTuplesByGroup =
+                    (dataChangeGroupIdxs, parsedWalk.ParsedSteps)
+                    ||> List.zip
+                    |> List.groupBy fst
+                    // Just in case the grouping doesn't preserver ordering.
+                    |> List.sortBy fst
+                    |> List.map (snd >> List.map snd)
+                    
+                let dataStageEvaluators =
+                    parsedStepTuplesByGroup
+                    |> List.map (fun tuples ->
+                        let dataStageHdr, _ =
+                            List.head tuples
+
+                        let dataStageUid =
+                            StepUid dataStageHdr.Uid
+
+                        let parsedSources =
+                            tuples
+                            |> List.map snd
+
+                        createDataStageEvaluator parsedSources)
+
+                dataStageEvaluators
 
 
     let private createRemainingPolicyEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection>
         (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>) =
-
             (*
             Design Decision:
                 For a given record, we could process one data stage at a time.
@@ -151,6 +220,11 @@ module Evaluator =
                 this out as soon as possible so we don't waste time making
                 API calls that will just be discarded anyway!
             *)
+
+            let cachedDataStageEvaluators =
+                // This must be concurrent given we'll have multiple records in flight
+                // at the same time.
+                new ConcurrentDictionary<int, 'TPolicyRecord -> _> ()
             
             fun (RemainingPolicy (openingPolicyRecord, closingPolicyRecord)) ->
                 result {
@@ -182,35 +256,92 @@ module Evaluator =
                         | [] ->
                             Ok []                                   
 
-                    // Note that this will exclude the opening policy record itself.
+                    // Note that this will EXCLUDE the opening policy record itself.
                     // If, for example, this was a list of None's, that'd suggest that
                     // the opening record and closing records are the same.
-                    let! policyRecordDataChanges =
+                    let! postOpeningDataChanges =
                         extractDataChanges openingPolicyRecord parsedWalk.PostOpeningDataStages
 
-                    assert (policyRecordDataChanges.Length = parsedWalk.PostOpeningDataStages.Length)
+                    assert (postOpeningDataChanges.Length = parsedWalk.PostOpeningDataStages.Length)
 
+                    // Represents a hash of the steps where data has changed.
+                    let dataChangeProfile =
+                        postOpeningDataChanges
+                        |> Seq.indexed
+                        |> Seq.sumBy (function | idx, Some _ -> 1 <<< idx | _ -> 0)
+                       
+                    
+
+                    let policyDataByGroup =
+                        policyRecordDataChanges
+                        // Convert our list of maybe records into a list of, well, records.
+                        |> List.choose id
+                        // Bring in the opening policy record.
+                        |> List.append [ openingPolicyRecord ]
 
 
                     return 0
                 }
+    *)
                 
+
+
+    let private createSingleStepEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+        (dataSource, parsedSource: ParsedSource<'TPolicyRecord, 'TStepResults>) =
+            let evaluator =
+                createDataStageEvaluator
+                    [ parsedSource ]
+
+            fun policyRecord ->
+                backgroundTask {
+                    let evaluationStart =
+                        DateTime.Now
+
+                    let! stepResult, apiTelemetry =
+                        evaluator policyRecord
+
+                    let evaluationEnd =
+                        DateTime.Now
+
+                    let stepResult' =
+                        stepResult |> Result.map List.head
+
+                    let evaluationApiTelemetry =
+                        apiTelemetry 
+                        |> List.map (fun telemetry ->
+                            {
+                                DataSource      = dataSource
+                                EndpointId      = telemetry.EndpointId
+                                ProcessingStart = telemetry.ProcessingStart
+                                ProcessingEnd   = telemetry.ProcessingEnd                            
+                            })
+
+                    let evaluationTelemetry =
+                        {
+                            EvaluationStart = evaluationStart
+                            EvaluationEnd = evaluationEnd
+                            ApiRequestTelemetry = evaluationApiTelemetry
+                        }
+
+                    return stepResult', evaluationTelemetry
+                }
 
 
     let private createExitedPolicyEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection>
         (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>) =
-            let openingReRunStepHdr, openingReRunParsedStep =
+            let exitedStepHdr, exitedParsedStep =
                 // This CANNOT fail! If it does, I've not idea
                 // how the logic managed to get this far!
                 List.head parsedWalk.ParsedSteps
 
-            assert checkStepType<OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>> openingReRunStepHdr
+            assert checkStepType<OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>> exitedStepHdr
 
             let evaluator =
-                createSingleStepEvaluator openingReRunParsedStep
+                createSingleStepEvaluator (TelemetryDataSource.OpeningData, exitedParsedStep)
 
             fun (ExitedPolicy policyRecord) ->
                 evaluator policyRecord
+
 
     let private createNewPolicyEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection>
         (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>) =
@@ -222,10 +353,12 @@ module Evaluator =
             assert checkStepType<AddNewRecordsStep<'TPolicyRecord, 'TStepResults>> newRecordsStepHdr
 
             let evaluator =
-                createSingleStepEvaluator newRecordsParsedStep
+                createSingleStepEvaluator (TelemetryDataSource.ClosingData, newRecordsParsedStep)
 
             fun (NewPolicy policyRecord) ->
                 evaluator policyRecord
+                
+
 
     let create (walk: AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection>) apiCollection =
         let parsedWalk =

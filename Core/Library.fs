@@ -45,15 +45,6 @@ module Core =
             | StepUid uid -> uid
 
 
-    [<NoEquality; NoComparison>]
-    type ApiRequestorTelemetryEvent =
-        {
-            /// An optional ID for the end-point that ultimately processed a given request.
-            EndpointId      : string option
-            Timestamp       : DateTime
-        }
-
-
     [<RequireQualifiedAccess>]
     [<NoEquality; NoComparison>]
     type ApiRequestFailure =
@@ -70,6 +61,19 @@ module Core =
     /// performed by an IApiRequestor object,
     type ApiRequestOutcome =
         Result<obj array, ApiRequestFailure>
+
+
+    [<NoEquality; NoComparison>]
+    /// Provides timing information for a given API request. This will always be provided,
+    /// irrespective of whether the request was successful or not.
+    type ApiRequestTelemetry =
+        {
+            /// A given API requestor may have multiple end-points that can be used.
+            /// This allows the one actually used to be specified.
+            EndpointId      : string option
+            ProcessingStart : DateTime
+            ProcessingEnd   : DateTime
+        }
 
 
     (*
@@ -97,7 +101,7 @@ module Core =
         abstract member ExecuteAsync:
             PropertyInfo array
                 -> 'TPolicyRecord
-                -> Task<ApiRequestOutcome>
+                -> Task<ApiRequestOutcome * ApiRequestTelemetry>
         
         override this.Equals other =
             match other with
@@ -123,7 +127,7 @@ module Core =
                 | :? AbstractApiRequestor<'TPolicyRecord> as other' ->
                     (this :> IComparable<_>).CompareTo other'
                 | _ ->
-                    failwith "Cannot compare different types of API requestors."                    
+                    failwith "Cannot compare different types of API requestors."
 
 
     [<RequireQualifiedAccess>]
@@ -219,11 +223,15 @@ module Core =
     [<RequireQualifiedAccess>]
     module private OpeningReRunSourceExpr =
         // Used to break apart a source definition.
-        let internal (|Definition|_|) = function
+        let internal (|Definition|_|) (sourceExpr: OpeningReRunSourceExpr<_, 'TStepResults, _>) =
+            match sourceExpr with
             | Patterns.Lambda (from,
                 Patterns.Lambda (policyRecord,
                         Patterns.Lambda (currentResults, sourceBody))) ->
-                            Some (from, policyRecord, currentResults, sourceBody)
+                            let sourceBody' =
+                                Expr.Cast<'TStepResults> sourceBody
+
+                            Some (from, policyRecord, currentResults, sourceBody')
             | _ ->
                 None
 
@@ -673,11 +681,46 @@ module Core =
     type ExitedPolicyOutcome<'TStepResults> =
         Result<'TStepResults, EvaluationFailure list>
 
+    // Either all steps succeed, or we return a list of failures.
     type RemainingPolicyOutcome<'TStepResults> =
         Result<'TStepResults array, EvaluationFailure list>
 
     type NewPolicyOutcome<'TStepResults> =
         Result<'TStepResults, EvaluationFailure list>
+
+
+    [<RequireQualifiedAccess>]
+    [<NoEquality; NoComparison>]
+    type TelemetryDataSource =
+        | OpeningData
+        | ClosingData
+        | DataChangeStep of Guid
+
+    [<NoEquality; NoComparison>]
+    type EvaluationApiRequestTelemetry =
+        {
+            DataSource      : TelemetryDataSource
+            EndpointId      : string option
+            ProcessingStart : DateTime
+            ProcessingEnd   : DateTime
+        }       
+
+    (*
+    Design Decision:
+        Why not just make the policy evaluator an observable?
+        We could... However, I want it to be possible for the telemetry to
+        be associated with a given polcy ID. This would mean passing in policy ID
+        to logic that strictly couldn't care less about the policy ID being run.
+        Regardless of whether we use the current approach or the observable approach,
+        we're still going to be making allocations for telemetry output.
+    *)
+    [<NoEquality; NoComparison>]
+    type EvaluationTelemetry =
+        {       
+            EvaluationStart     : DateTime
+            EvaluationEnd       : DateTime
+            ApiRequestTelemetry : EvaluationApiRequestTelemetry list
+        }
 
     
     /// Required interface for any implementation that can
@@ -688,17 +731,17 @@ module Core =
             /// (ie. opening re-run) step.
             abstract member Execute:
                 ExitedPolicy<'TPolicyRecord>
-                    -> Task<ExitedPolicyOutcome<'TStepResults>>
+                    -> Task<ExitedPolicyOutcome<'TStepResults> * EvaluationTelemetry>
 
             //abstract member Execute:
             //    RemainingPolicy<'TPolicyRecord>
-            //        -> Task<RemainingPolicyOutcome<'TStepResults>>
+            //        -> Task<RemainingPolicyOutcome<'TStepResults> * EvaluationTelemetry>
 
             /// Only a single result will be provided for the final
             /// (ie. add new records) step.
             abstract member Execute:
                 NewPolicy<'TPolicyRecord>
-                    -> Task<NewPolicyOutcome<'TStepResults>>
+                    -> Task<NewPolicyOutcome<'TStepResults> * EvaluationTelemetry>
         end
 
 

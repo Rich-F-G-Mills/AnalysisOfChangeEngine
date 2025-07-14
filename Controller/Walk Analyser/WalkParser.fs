@@ -58,9 +58,8 @@ module (*internal*) WalkParser =
             // For those sourceable steps, create a mapping between the source step UIDs and the
             // corresponding source.
             let parsedStepMapping =
-                parsedSources
-                |> List.zip sourceableStepHdrs
-                |> List.map (fun ((uid, _), parsed) -> uid, parsed)
+                (sourceableStepHdrs, parsedSources)
+                ||> List.map2 (fun (uid, _) parsed -> uid, parsed)
                 |> Map.ofList
 
             let firstStepUid =
@@ -152,14 +151,9 @@ module (*internal*) WalkParser =
             {
                 DataChangeStep =
                     dataChangeStepHdr
-                DataChangeStepParsedSource =
-                    withinStageTuples
-                    |> List.head
-                    |> snd
                 WithinStageSteps =
-                    // We don't want the data change step itself.
-                    withinStageTuples
-                    |> List.tail                                    
+                    // This DOES include the data change step itself.
+                    withinStageTuples                                 
                 WithinStageApiCalls =
                     // Remember that the data change step inherits the source
                     // from the previous step. As such, we need to include any API
@@ -225,8 +219,8 @@ module (*internal*) WalkParser =
             // It's more convenient to keep the step and parsed source together in this way.
             /// Does not include the opening step.
             let parsedStepTuples =
-                parsedStepSources
-                |> List.zip allSteps
+                (allSteps, parsedStepSources)
+                ||> List.zip 
 
             assert (allSteps.Length = parsedStepTuples.Length)
 
@@ -244,8 +238,8 @@ module (*internal*) WalkParser =
             assert (allSteps.Length = isOpeningDataStageIndicator.Length)
 
             let openingDataStageTuples, postOpeningDataStageTuples =
-                parsedStepTuples
-                |> List.zip isOpeningDataStageIndicator
+                (isOpeningDataStageIndicator, parsedStepTuples)
+                ||> List.zip 
                 |> List.partition fst
                 |> function
                     | opening, postOpening ->
@@ -274,7 +268,6 @@ module (*internal*) WalkParser =
 
             let impliedCountSteps =
                 + parsedWalk.OpeningDataStage.WithinStageSteps.Length
-                + parsedWalk.PostOpeningDataStages.Length
                 + (List.sumBy _.WithinStageSteps.Length parsedWalk.PostOpeningDataStages)
 
             assert (impliedCountSteps = allSteps.Length)

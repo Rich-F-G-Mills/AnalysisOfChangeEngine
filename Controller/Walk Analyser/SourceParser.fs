@@ -47,9 +47,8 @@ module internal SourceParser =
                             | expr ->
                                 expr)
 
-                    newValues
-                    |> Seq.zip stepResultMembers
-                    |> Seq.map (fun (pi, v) -> pi.Name, v)
+                    (stepResultMembers, newValues)
+                    ||> Seq.map2 (fun pi v -> pi.Name, v)
                     |> Map.ofSeq
 
             | _ ->
