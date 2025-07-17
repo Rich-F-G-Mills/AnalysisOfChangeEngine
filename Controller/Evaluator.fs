@@ -354,40 +354,40 @@ module Evaluator =
     type private DataStageExecutor<'TPolicyRecord, 'TStepResults> =
         'TPolicyRecord -> Task<Result<'TStepResults list, EvaluationFailure list> * (EvaluationApiRequestTelemetry list)>
 
-    let rec private executeDataStageGroups<'TPolicyRecord, 'TStepResults>
+    let rec private executeDataStageGroups
         (groupedDataAndExecutors: ('TPolicyRecord * DataStageExecutor<'TPolicyRecord, 'TStepResults>) list) =
             match groupedDataAndExecutors with
-                | (policyData, executor)::xs ->
-                    backgroundTask {
-                        let! dataStageOutcome, telemetry =
-                            executor policyData
+            | (policyData, executor)::xs ->
+                backgroundTask {
+                    let! dataStageOutcome, telemetry =
+                        executor policyData
 
-                        let! allGroupsOutcomes =
-                            match dataStageOutcome with
-                            | Ok dataStageResults ->
-                                backgroundTask {
-                                    let! nextOutcomes =
-                                        executeDataStageGroups xs
+                    let! allGroupsOutcomes =
+                        match dataStageOutcome with
+                        | Ok dataStageResults ->
+                            backgroundTask {
+                                let! nextOutcomes =
+                                    executeDataStageGroups xs
 
-                                    return
-                                        match nextOutcomes with
-                                        | Ok nextDataStageResults, nextTelemetry ->
-                                            Ok (dataStageResults::nextDataStageResults), telemetry::nextTelemetry
-                                        | Error nextFailures, nextTelemetry ->
-                                            Error nextFailures, telemetry::nextTelemetry
-                                }
+                                return
+                                    match nextOutcomes with
+                                    | Ok nextDataStageResults, nextTelemetry ->
+                                        Ok (dataStageResults::nextDataStageResults), telemetry::nextTelemetry
+                                    | Error nextFailures, nextTelemetry ->
+                                        Error nextFailures, telemetry::nextTelemetry
+                            }
 
-                            | Error dataStageFailures ->
-                                backgroundTask {
-                                    return Error dataStageFailures, [telemetry]
-                                }
+                        | Error dataStageFailures ->
+                            backgroundTask {
+                                return Error dataStageFailures, [telemetry]
+                            }
 
-                        return allGroupsOutcomes                            
-                    }
-                | [] ->
-                    backgroundTask {
-                        return Ok [[]], [[]]
-                    }
+                    return allGroupsOutcomes                            
+                }
+            | [] ->
+                backgroundTask {
+                    return Ok [[]], [[]]
+                }
 
     // We intentionally refer to this as an evaluator, particularly given it's returning
     // telemetry for the evaluation itself.
@@ -484,6 +484,7 @@ module Evaluator =
                         return Error [ reason ], evaluationTelemetry
                     }
                     
+    // We're an evaluator now we're returning evaluation telemetry.
     let private createEvaluatorForStep (dataSource, parsedSource) =
         let executor =
             createExecutorForStep parsedSource
