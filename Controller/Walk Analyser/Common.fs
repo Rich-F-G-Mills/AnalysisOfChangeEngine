@@ -185,8 +185,6 @@ type OpeningDataStage<'TPolicyRecord, 'TStepResults> =
     {        
         // This does include the exited records step.
         WithinStageSteps            : (IStepHeader * ParsedSource<'TPolicyRecord, 'TStepResults>) list
-        // These are the API calls arising from the within stage steps above.
-        WithinStageApiCalls         : SourceElementApiCallDependency<'TPolicyRecord> Set
     }
 
 [<NoEquality; NoComparison>]
@@ -197,10 +195,6 @@ type PostOpeningDataStage<'TPolicyRecord, 'TStepResults> =
         DataChangeStep              : IDataChangeStep<'TPolicyRecord>
         // This DOES include the data change step header above.
         WithinStageSteps            : (IStepHeader * ParsedSource<'TPolicyRecord, 'TStepResults>) list
-        // These are the API calls arising from steps within this data stage.
-        // This will INCLUDE those arising from the data change step itself
-        // which will have inherited the source from the previous step.
-        WithinStageApiCalls         : SourceElementApiCallDependency<'TPolicyRecord> Set
     }
 
 (*

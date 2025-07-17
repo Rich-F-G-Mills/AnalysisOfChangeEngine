@@ -166,6 +166,8 @@ module Runner =
                 |> Map.map (fun _ -> Result.map ExitedPolicy)
                 |> Map.map (fun _ -> Result.defaultWith (fun _ -> failwith "Failed"))
 
+            let someRemainingPolicyRecords =
+
             let someNewPolicyRecords =
                 dataStore.GetPolicyRecordsAsync priorExtractionUid somePolicyIds
                 |> _.Result

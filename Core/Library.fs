@@ -683,7 +683,7 @@ module Core =
 
     // Either all steps succeed, or we return a list of failures.
     type RemainingPolicyOutcome<'TStepResults> =
-        Result<'TStepResults array, EvaluationFailure list>
+        Result<'TStepResults list, EvaluationFailure list>
 
     type NewPolicyOutcome<'TStepResults> =
         Result<'TStepResults, EvaluationFailure list>
@@ -733,9 +733,9 @@ module Core =
                 ExitedPolicy<'TPolicyRecord>
                     -> Task<ExitedPolicyOutcome<'TStepResults> * EvaluationTelemetry>
 
-            //abstract member Execute:
-            //    RemainingPolicy<'TPolicyRecord>
-            //        -> Task<RemainingPolicyOutcome<'TStepResults> * EvaluationTelemetry>
+            abstract member Execute:
+                RemainingPolicy<'TPolicyRecord>
+                    -> Task<RemainingPolicyOutcome<'TStepResults> * EvaluationTelemetry>
 
             /// Only a single result will be provided for the final
             /// (ie. add new records) step.

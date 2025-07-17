@@ -94,11 +94,6 @@ module (*internal*) WalkParser =
         {
             WithinStageSteps =
                 openingDataStageTuples
-            WithinStageApiCalls =
-                openingDataStageTuples
-                |> List.map snd
-                |> List.map _.ApiCalls
-                |> Set.unionMany
         }
 
     let private getPostOpeningDataStages (postOpeningDataStageTuples: (IStepHeader * _) list) =
@@ -153,15 +148,7 @@ module (*internal*) WalkParser =
                     dataChangeStepHdr
                 WithinStageSteps =
                     // This DOES include the data change step itself.
-                    withinStageTuples                                 
-                WithinStageApiCalls =
-                    // Remember that the data change step inherits the source
-                    // from the previous step. As such, we need to include any API
-                    // calls relevant for the data change step itself.
                     withinStageTuples
-                    |> List.map snd
-                    |> Seq.map _.ApiCalls
-                    |> Set.unionMany
             }
 
         let postOpeningDataStages =

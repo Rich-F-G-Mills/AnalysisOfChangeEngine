@@ -7,9 +7,11 @@ module Evaluator =
 
     open System
     open System.Collections.Concurrent
+    open System.Collections.Generic
     open System.Threading.Tasks
     open FsToolkit.ErrorHandling
     open AnalysisOfChangeEngine
+    open AnalysisOfChangeEngine.Common
     open AnalysisOfChangeEngine.Controller.WalkAnalyser
 
 
@@ -50,16 +52,22 @@ module Evaluator =
                 Error ((failureMapper requestor failure)::failures)
 
 
-    let private createDataStageEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+    // This creates an executor for a list of steps, in the order provided.
+    // It makes no assumption about whether these belong to the same data-stage or not.
+    // We use the term executor as it is not concerned with returning (for example)
+    // evaluation telemetry.
+    let private createExecutorForSteps
         (parsedSources: ParsedSource<'TPolicyRecord, 'TStepResults> list) =
             let apiDependencies =
                 parsedSources
                 |> List.map _.ApiCalls
 
+            // Convert our list of lists into a single set.
             let combinedApiDependencies =
                 apiDependencies
                 |> Set.unionMany
 
+            // Now we can group API requests by the underlying requestor.
             let groupedDependenciesByRequestor =
                 combinedApiDependencies
                 |> Seq.groupBy _.Requestor
@@ -67,6 +75,9 @@ module Evaluator =
                     requestor, Seq.toArray dependencies)
                 |> Map.ofSeq
 
+            // Call each unique API requestor asking for as many outputs
+            // as required. Basically, we're trying to get as much output
+            // from each and every API call.
             let deferredApiCallTasksByRequestor =
                 groupedDependenciesByRequestor
                 |> Map.map (fun requestor dependencies ->
@@ -81,29 +92,37 @@ module Evaluator =
 
             // Execute all API calls within a given group.
             let groupedDependencyExecutor policyRecord =
+                // Pre-compute as much in-advance before we need to do
+                // something with the supplied policy record.
                 deferredApiCallTasksByRequestor
                 |> Map.map (fun _ asyncExecutor -> asyncExecutor policyRecord)
 
-            let resultMappers =
+            let responseArrayHydrators =
                 apiDependencies
                 |> List.map (fun stepDependencies ->
-                    stepDependencies
-                    |> Seq.map (fun dependency ->
-                        let nestedIdxWithinRequestor =
-                            groupedDependenciesByRequestor[dependency.Requestor]
-                            |> Array.findIndex _.Equals(dependency)
+                    // For each dependency in our current step, create a function
+                    // let will take the API response and return the corresponding output.
+                    let dependencyGetter =
+                        stepDependencies
+                        |> Seq.map (fun dependency ->
+                            // We deriving this up-front as won't change.
+                            let nestedIdxWithinRequestor =
+                                // Find the specific API requestor from our grouped
+                                // collection of API requestors.
+                                groupedDependenciesByRequestor[dependency.Requestor]
+                                // Once we have that, find where our specific output
+                                // is in the returned array.
+                                |> Array.findIndex _.Equals(dependency)
 
-                        fun (apiResponses: Map<_, obj array>) ->
-                            let responsesWithinRequestor =
-                                apiResponses[dependency.Requestor]
+                            fun (apiResponses: Map<_, obj array>) ->
+                                let responsesWithinRequestor =
+                                    apiResponses[dependency.Requestor]
 
-                            responsesWithinRequestor[nestedIdxWithinRequestor])
-                    |> Seq.toArray)
-
-            let responseArrayHydrators =
-                resultMappers
-                |> List.map (fun mapper responsesByRequestor idx ->
-                    mapper[idx] responsesByRequestor)
+                                responsesWithinRequestor[nestedIdxWithinRequestor])
+                        |> Seq.toArray
+                        
+                    fun apiResponses idx ->
+                        dependencyGetter[idx] apiResponses)
 
             fun policyRecord ->
                 backgroundTask {
@@ -137,6 +156,7 @@ module Evaluator =
                                 (parsedSources, responseArrayHydrators)
                                 ||> List.map2 (fun source hydrator ->
                                         let invokerArgs =
+                                            // Hydrator requires our grouped API responses.
                                             Array.init source.ApiCalls.Count (hydrator resultsByRequestor)
 
                                         let stepResult =
@@ -159,174 +179,320 @@ module Evaluator =
                     return evaluationOutcome, apiRequestsTelemetry
                 }
 
-    (*
-    let private createEvaluatorsForProfile
-        (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>) =
-
-            let openingDataStageSteps =
-                parsedWalk.OpeningDataStage.WithinStageSteps
-
-            let postOpeningDataStageSteps =
-                parsedWalk.PostOpeningDataStages
-                |> List.map _.WithinStageSteps
-
-            let parsedStepsByDataStage =
-                openingDataStageSteps :: postOpeningDataStageSteps
-        
-            fun dataChangeProfile ->
-                let dataChangeGroupIdxs =
-                    dataChangeProfile
-                    |> List.unfold (fun rem ->
-                        if rem > 0 then Some (rem &&& 1, rem / 2) else None)
-                    |> List.scan (fun acc x -> acc + x) 0
-
-
-                (dataChangeGroupIdxs)
-
-
-
-                let parsedStepTuplesByGroup =
-                    (dataChangeGroupIdxs, parsedWalk.ParsedSteps)
-                    ||> List.zip
-                    |> List.groupBy fst
-                    // Just in case the grouping doesn't preserver ordering.
-                    |> List.sortBy fst
-                    |> List.map (snd >> List.map snd)
-                    
-                let dataStageEvaluators =
-                    parsedStepTuplesByGroup
-                    |> List.map (fun tuples ->
-                        let dataStageHdr, _ =
-                            List.head tuples
-
-                        let dataStageUid =
-                            StepUid dataStageHdr.Uid
-
-                        let parsedSources =
-                            tuples
-                            |> List.map snd
-
-                        createDataStageEvaluator parsedSources)
-
-                dataStageEvaluators
-
-
-    let private createRemainingPolicyEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-        (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>) =
-            (*
-            Design Decision:
-                For a given record, we could process one data stage at a time.
-                However, if a data stage is going to fail, it is better we find
-                this out as soon as possible so we don't waste time making
-                API calls that will just be discarded anyway!
-            *)
-
-            let cachedDataStageEvaluators =
-                // This must be concurrent given we'll have multiple records in flight
-                // at the same time.
-                new ConcurrentDictionary<int, 'TPolicyRecord -> _> ()
-            
-            fun (RemainingPolicy (openingPolicyRecord, closingPolicyRecord)) ->
-                result {
-                    let rec extractDataChanges priorPolicyRecord
-                        : PostOpeningDataStage<'TPolicyRecord, 'TStepResults> list -> _ = function
-                        | ds::dss ->
-                            let newRecordForDataStage =
-                                ds.DataChangeStep.DataChanger
-                                    (openingPolicyRecord, priorPolicyRecord, closingPolicyRecord)
-                                        
-                            match newRecordForDataStage with
-                            | Ok None ->
-                                Result.bind
-                                    (fun subsequentStages -> Ok (None::subsequentStages))
-                                    // If the current data change step hasn't changed anything,
-                                    // then we'll just carry forward our inherited view of the
-                                    // latest policy record.
-                                    (extractDataChanges priorPolicyRecord dss)
-                            | Ok (Some newRecord as newRecord') ->
-                                Result.bind
-                                    (fun subsequentStages -> Ok (newRecord'::subsequentStages))
-                                    // However, if the data change step _does_ lead to a new record,
-                                    // then that will need to be carried forward instead.
-                                    (extractDataChanges newRecord dss)
-                            | Error reason ->
-                                // If we encounter an error... Then we can immediately return.
-                                Error (EvaluationFailure.DataChangeFailure
-                                    (ds.DataChangeStep, [| reason |]))
-                        | [] ->
-                            Ok []                                   
-
-                    // Note that this will EXCLUDE the opening policy record itself.
-                    // If, for example, this was a list of None's, that'd suggest that
-                    // the opening record and closing records are the same.
-                    let! postOpeningDataChanges =
-                        extractDataChanges openingPolicyRecord parsedWalk.PostOpeningDataStages
-
-                    assert (postOpeningDataChanges.Length = parsedWalk.PostOpeningDataStages.Length)
-
-                    // Represents a hash of the steps where data has changed.
-                    let dataChangeProfile =
-                        postOpeningDataChanges
-                        |> Seq.indexed
-                        |> Seq.sumBy (function | idx, Some _ -> 1 <<< idx | _ -> 0)
-                       
-                    
-
-                    let policyDataByGroup =
-                        policyRecordDataChanges
-                        // Convert our list of maybe records into a list of, well, records.
-                        |> List.choose id
-                        // Bring in the opening policy record.
-                        |> List.append [ openingPolicyRecord ]
-
-
-                    return 0
-                }
-    *)
-                
-
-
-    let private createSingleStepEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection>
-        (dataSource, parsedSource: ParsedSource<'TPolicyRecord, 'TStepResults>) =
-            let evaluator =
-                createDataStageEvaluator
+    // This is used for the exited and new records only. This is because such
+    // policies only require a single step to be run.
+    let private createExecutorForStep
+        (parsedSource: ParsedSource<'TPolicyRecord, 'TStepResults>) =
+            // Running a single step is the same as running a list of just one step!
+            let executor =
+                createExecutorForSteps
                     [ parsedSource ]
 
             fun policyRecord ->
                 backgroundTask {
-                    let evaluationStart =
-                        DateTime.Now
-
                     let! stepResult, apiTelemetry =
-                        evaluator policyRecord
-
-                    let evaluationEnd =
-                        DateTime.Now
+                        executor policyRecord
 
                     let stepResult' =
-                        stepResult |> Result.map List.head
+                        // We're only expecting results for a single step to be returned.
+                        stepResult
+                        |> Result.map List.exactlyOne
 
-                    let evaluationApiTelemetry =
-                        apiTelemetry 
-                        |> List.map (fun telemetry ->
-                            {
-                                DataSource      = dataSource
-                                EndpointId      = telemetry.EndpointId
-                                ProcessingStart = telemetry.ProcessingStart
-                                ProcessingEnd   = telemetry.ProcessingEnd                            
-                            })
-
-                    let evaluationTelemetry =
-                        {
-                            EvaluationStart = evaluationStart
-                            EvaluationEnd = evaluationEnd
-                            ApiRequestTelemetry = evaluationApiTelemetry
-                        }
-
-                    return stepResult', evaluationTelemetry
+                    return stepResult', apiTelemetry
                 }
 
 
+    let private createEvaluatorsForProfile
+        (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>) =
+            // The slight complexity here is that we're trying to determine
+            // the data source we want to use for telemetry purposes.
+            // TODO - Arguably... This could be done as part of the parsing process?
+            let allDataStages =
+                parsedWalk.PostOpeningDataStages
+                |> List.map _.WithinStageSteps
+                |> List.map (fun parsedSteps ->
+                    let dataSource =
+                        match parsedSteps.Head with
+                        | :? MoveToClosingDataStep<'TPolicyRecord, 'TStepResults>, _ ->
+                            TelemetryDataSource.ClosingData
+                        | hdr, _ ->
+                            TelemetryDataSource.DataChangeStep hdr.Uid
+
+                    parsedSteps, dataSource)
+
+            // In theory, this (parent) evaluator function will only ever be called
+            // from synchronized code. As such, no need to support concurrent writes.
+            let cachedGroupEvaluators =
+                new Dictionary<Guid list, _> ()
+        
+            fun (dataStageGroupingIdxs: int list) ->
+                assert (dataStageGroupingIdxs.Length = allDataStages.Length)
+
+                let groupedParsedSteps =
+                    (dataStageGroupingIdxs, allDataStages)
+                    ||> List.zip 
+                    |> List.groupBy fst
+                    |> List.map (fun (_, steps) ->
+                        let steps' =
+                            steps
+                            |> List.map snd
+
+                        // We use the data source from the first data stage in our group.
+                        let dataSource =
+                            steps'
+                            |> List.head
+                            |> snd
+
+                        let collectedSteps =
+                            steps'
+                            |> List.collect fst
+                            
+                        collectedSteps, dataSource)
+
+                assert (dataStageGroupingIdxs.Length = groupedParsedSteps.Length)
+
+                let groupedUids =
+                    groupedParsedSteps
+                    |> List.map (fst >> List.map (fst >> _.Uid))
+
+                let groupedParsedSources =
+                    groupedParsedSteps
+                    |> List.map (fun (parsedSteps, dataSource) ->
+                        let parsedSources =
+                            parsedSteps |> List.map snd
+
+                        parsedSources, dataSource)
+
+                let groupedExecutors =
+                    (groupedUids, groupedParsedSources)
+                    ||> List.map2 (fun stepUids (parsedSources, dataSource) ->
+                        cachedGroupEvaluators.GetOrAdd (stepUids, fun _ ->
+                            let executor =
+                                // We need to 
+                                createExecutorForSteps parsedSources
+
+                            fun policyRecord ->
+                                backgroundTask {
+                                    let! groupOutcome, apiTelemetry =
+                                        executor policyRecord
+
+                                    let evaluationApiTelemetry =
+                                        apiTelemetry
+                                        |> List.map (fun telemetry ->
+                                            {
+                                                DataSource      = dataSource
+                                                EndpointId      = telemetry.EndpointId
+                                                ProcessingStart = telemetry.ProcessingStart
+                                                ProcessingEnd   = telemetry.ProcessingEnd
+                                            })
+
+                                    return groupOutcome, evaluationApiTelemetry
+                                }))
+                    
+                groupedExecutors
+
+    let private extractDataChanges (openingPolicyRecord, closingPolicyRecord) = 
+        let rec inner priorPolicyRecord
+            : PostOpeningDataStage<'TPolicyRecord, 'TStepResults> list -> _ = function
+            | ds::dss ->
+                let newRecordForDataStage =
+                    ds.DataChangeStep.DataChanger
+                        (openingPolicyRecord, priorPolicyRecord, closingPolicyRecord)
+                                        
+                match newRecordForDataStage with
+                | Ok None ->
+                    Result.bind
+                        (fun subsequentStages -> Ok (None::subsequentStages))
+                        // If the current data change step hasn't changed anything,
+                        // then we'll just carry forward our inherited view of the
+                        // latest policy record.
+                        (inner priorPolicyRecord dss)
+                | Ok (Some newRecord as newRecord') ->
+                    Result.bind
+                        (fun subsequentStages -> Ok (newRecord'::subsequentStages))
+                        // However, if the data change step _does_ lead to a new record,
+                        // then that will need to be carried forward instead.
+                        (inner newRecord dss)
+                | Error reason ->
+                    // If we encounter an error... Then we can immediately return.
+                    Error (EvaluationFailure.DataChangeFailure
+                        (ds.DataChangeStep, [| reason |]))
+            | [] ->
+                Ok [] 
+                
+        inner openingPolicyRecord
+            
+    type private DataStageExecutor<'TPolicyRecord, 'TStepResults> =
+        'TPolicyRecord -> Task<Result<'TStepResults list, EvaluationFailure list> * (EvaluationApiRequestTelemetry list)>
+
+    let rec private executeDataStageGroups<'TPolicyRecord, 'TStepResults>
+        (groupedDataAndExecutors: ('TPolicyRecord * DataStageExecutor<'TPolicyRecord, 'TStepResults>) list) =
+            match groupedDataAndExecutors with
+                | (policyData, executor)::xs ->
+                    backgroundTask {
+                        let! dataStageOutcome, telemetry =
+                            executor policyData
+
+                        let! allGroupsOutcomes =
+                            match dataStageOutcome with
+                            | Ok dataStageResults ->
+                                backgroundTask {
+                                    let! nextOutcomes =
+                                        executeDataStageGroups xs
+
+                                    return
+                                        match nextOutcomes with
+                                        | Ok nextDataStageResults, nextTelemetry ->
+                                            Ok (dataStageResults::nextDataStageResults), telemetry::nextTelemetry
+                                        | Error nextFailures, nextTelemetry ->
+                                            Error nextFailures, telemetry::nextTelemetry
+                                }
+
+                            | Error dataStageFailures ->
+                                backgroundTask {
+                                    return Error dataStageFailures, [telemetry]
+                                }
+
+                        return allGroupsOutcomes                            
+                    }
+                | [] ->
+                    backgroundTask {
+                        return Ok [[]], [[]]
+                    }
+
+    // We intentionally refer to this as an evaluator, particularly given it's returning
+    // telemetry for the evaluation itself.
+    let private createRemainingPolicyEvaluator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord: equality>
+        (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>) =
+            (*
+            Design Decision:
+                For a given record, we could process all data stages in one go.
+                However, if a data stage is going to fail, it is better we find
+                this out as soon as possible so we don't waste time making
+                API calls that will just be discarded anyway.
+            *)
+
+            let cachedGroupedEvaluators =
+                // This MUST be concurrent given we'll have multiple records in flight
+                // at the same time.
+                new ConcurrentDictionary<int list, _ list> ()
+
+            let groupedEvaluatorsFactory =
+                createEvaluatorsForProfile parsedWalk
+            
+            fun (RemainingPolicy (openingPolicyRecord, closingPolicyRecord)) ->   
+                let evaluationStart =
+                    DateTime.Now
+
+                // Note that this will EXCLUDE the opening policy record itself.
+                // If, for example, this was a list of None's, that'd suggest that
+                // the opening record and closing records are the same.
+                let postOpeningDataChanges =
+                    extractDataChanges
+                        (openingPolicyRecord, closingPolicyRecord)
+                        parsedWalk.PostOpeningDataStages
+                            
+                match postOpeningDataChanges with
+                | Ok postOpeningDataChanges' ->
+                    backgroundTask {
+                        assert (postOpeningDataChanges'.Length = parsedWalk.PostOpeningDataStages.Length)
+                       
+                        let dataStageGroupingIdxs =
+                            postOpeningDataChanges'
+                            |> List.scan (fun priorIdx -> function
+                                | Some _    -> priorIdx + 1
+                                | None      -> priorIdx) 0
+                            // Don't drop the initial state as that corresponds to the opening data stage.
+
+                        let policyDataByGroup =
+                            postOpeningDataChanges'
+                            // Convert our list of maybe records into a list of, well, records.
+                            |> List.choose id
+                            // Bring in the opening policy record.
+                            |> List.append [ openingPolicyRecord ]
+
+                        assert (policyDataByGroup.Length = dataStageGroupingIdxs.Length)                       
+
+                        let evaluatorsByGroup =
+                            // Make sure we re-use any cached evaluators for this given profile.
+                            cachedGroupedEvaluators.GetOrAdd
+                                (dataStageGroupingIdxs, groupedEvaluatorsFactory)
+
+                        assert (evaluatorsByGroup.Length = dataStageGroupingIdxs.Length)
+
+                        let! allStepResults, evaluationApiTelemetry =
+                            (policyDataByGroup, evaluatorsByGroup)
+                            ||> List.zip
+                            |> executeDataStageGroups                        
+
+                        let allStepResults' =
+                            allStepResults
+                            |> Result.map List.concat
+
+                        let evaluationApiTelemetry' =
+                            List.concat evaluationApiTelemetry
+
+                        let evaluationEnd =
+                            DateTime.Now
+
+                        let evaluationTelemetry =
+                            {
+                                EvaluationStart     = evaluationStart
+                                EvaluationEnd       = evaluationEnd
+                                ApiRequestTelemetry = evaluationApiTelemetry'
+                            }
+
+                        return allStepResults', evaluationTelemetry
+                    }
+
+                | Error reason ->
+                    backgroundTask {
+                        let evaluationTelemetry =
+                            {
+                                EvaluationStart     = evaluationStart
+                                EvaluationEnd       = DateTime.Now
+                                ApiRequestTelemetry = []
+                            }
+
+                        return Error [ reason ], evaluationTelemetry
+                    }
+                    
+    let private createEvaluatorForStep (dataSource, parsedSource) =
+        let executor =
+            createExecutorForStep parsedSource
+
+        fun policyRecord ->
+            backgroundTask {
+                let evaluationStart =
+                    DateTime.Now
+
+                let! outcome, apiTelemetry =
+                    executor policyRecord
+
+                let evaluationEnd =
+                    DateTime.Now
+
+                let evaluationApiTelemetry =
+                    apiTelemetry
+                    |> List.map (fun telemetry ->
+                        {
+                            DataSource      = dataSource
+                            EndpointId      = telemetry.EndpointId
+                            ProcessingStart = telemetry.ProcessingStart
+                            ProcessingEnd   = telemetry.ProcessingEnd
+                        })
+
+                let evaluationTelemetry =
+                    {
+                        EvaluationStart     = evaluationStart
+                        EvaluationEnd       = evaluationEnd
+                        ApiRequestTelemetry = evaluationApiTelemetry
+                    }
+
+                return outcome, evaluationTelemetry
+            }                        
+
+    // Arguably, we're only asking for the API collection type for the purpose of type assertion.
     let private createExitedPolicyEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection>
         (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>) =
             let exitedStepHdr, exitedParsedStep =
@@ -334,30 +500,29 @@ module Evaluator =
                 // how the logic managed to get this far!
                 List.head parsedWalk.ParsedSteps
 
+            // Let's just make sure we're dealing with the step we're actually expecting!
             assert checkStepType<OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>> exitedStepHdr
 
             let evaluator =
-                createSingleStepEvaluator (TelemetryDataSource.OpeningData, exitedParsedStep)
+                createEvaluatorForStep (TelemetryDataSource.OpeningData, exitedParsedStep)
 
             fun (ExitedPolicy policyRecord) ->
                 evaluator policyRecord
 
 
+    // Note the comments for the exited policy evaluator above.
     let private createNewPolicyEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection>
         (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>) =
             let newRecordsStepHdr, newRecordsParsedStep =
-                // This CANNOT fail! If it does, I've not idea
-                // how the logic managed to get this far!
                 List.last parsedWalk.ParsedSteps
 
             assert checkStepType<AddNewRecordsStep<'TPolicyRecord, 'TStepResults>> newRecordsStepHdr
 
             let evaluator =
-                createSingleStepEvaluator (TelemetryDataSource.ClosingData, newRecordsParsedStep)
+                createEvaluatorForStep (TelemetryDataSource.ClosingData, newRecordsParsedStep)
 
             fun (NewPolicy policyRecord) ->
-                evaluator policyRecord
-                
+                evaluator policyRecord                
 
 
     let create (walk: AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection>) apiCollection =
@@ -366,8 +531,11 @@ module Evaluator =
 
         let exitedRecordEvaluator =
             // If we don't specificy the API collection type, obj will be inferred
-            // which will lead to a type assertion failure at runtime.
+            // which will lead to chaos via a type assertion failure at runtime.
             createExitedPolicyEvaluator<_, _, 'TApiCollection> parsedWalk
+
+        let remainingRecordEvaluator =
+            createRemainingPolicyEvaluator parsedWalk
 
         let newRecordEvaluator =
             createNewPolicyEvaluator<_, _, 'TApiCollection> parsedWalk
@@ -378,15 +546,9 @@ module Evaluator =
                 member _.Execute (ExitedPolicy _ as exitedPolicyRecord) =
                     exitedRecordEvaluator exitedPolicyRecord
 
+                member _.Execute (RemainingPolicy _ as remainingPolicy) =
+                    remainingRecordEvaluator remainingPolicy
+
                 member _.Execute (NewPolicy _ as newPolicyRecord) =
                     newRecordEvaluator newPolicyRecord
-        }
-
-
-
-
-
-
-                
-                
-
+        }               
