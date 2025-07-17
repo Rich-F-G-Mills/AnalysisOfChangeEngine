@@ -15,6 +15,18 @@ module Evaluator =
     open AnalysisOfChangeEngine.Controller.WalkAnalyser
 
 
+    [<NoEquality; NoComparison>]
+    /// Provides timing information for a given API request. This will always be provided,
+    /// irrespective of whether the request was successful or not.
+    type private TaggedApiRequestTelemetry =
+        {
+            RequestorName   : string
+            EndpointId      : string option
+            ProcessingStart : DateTime
+            ProcessingEnd   : DateTime
+        }
+
+
     // We need to move from the world of API failures into the world of
     // failed evaluations.
     let private failureMapper (requestor: AbstractApiRequestor<_>) = function
@@ -88,7 +100,23 @@ module Evaluator =
                     let asyncExecutor =
                         requestor.ExecuteAsync outputs
 
-                    asyncExecutor)
+                    fun policyRecord ->
+                        backgroundTask {
+                            let! apiResponse, apiTelemetry =
+                                asyncExecutor policyRecord
+
+                            let taggedTelemetry =
+                                apiTelemetry
+                                |> Option.map (fun telemetry ->
+                                    {
+                                        RequestorName   = requestor.Name
+                                        EndpointId      = telemetry.EndpointId
+                                        ProcessingStart = telemetry.ProcessingStart
+                                        ProcessingEnd   = telemetry.ProcessingEnd
+                                    })
+
+                            return apiResponse, taggedTelemetry
+                        })
 
             // Execute all API calls within a given group.
             let groupedDependencyExecutor policyRecord =
@@ -173,7 +201,7 @@ module Evaluator =
                     let apiRequestsTelemetry =
                         responsesByRequestor
                         |> Map.values
-                        |> Seq.map snd
+                        |> Seq.choose snd
                         |> Seq.toList
 
                     return evaluationOutcome, apiRequestsTelemetry
@@ -219,6 +247,8 @@ module Evaluator =
                             TelemetryDataSource.DataChangeStep hdr.Uid
 
                     parsedSteps, dataSource)
+                |> List.append
+                    [ parsedWalk.OpeningDataStage.WithinStageSteps, TelemetryDataSource.OpeningData ]
 
             // In theory, this (parent) evaluator function will only ever be called
             // from synchronized code. As such, no need to support concurrent writes.
@@ -249,8 +279,6 @@ module Evaluator =
                             
                         collectedSteps, dataSource)
 
-                assert (dataStageGroupingIdxs.Length = groupedParsedSteps.Length)
-
                 let groupedUids =
                     groupedParsedSteps
                     |> List.map (fst >> List.map (fst >> _.Uid))
@@ -273,13 +301,14 @@ module Evaluator =
 
                             fun policyRecord ->
                                 backgroundTask {
-                                    let! groupOutcome, apiTelemetry =
+                                    let! groupOutcome, taggedTelemetry =
                                         executor policyRecord
 
                                     let evaluationApiTelemetry =
-                                        apiTelemetry
+                                        taggedTelemetry
                                         |> List.map (fun telemetry ->
                                             {
+                                                RequestorName   = telemetry.RequestorName
                                                 DataSource      = dataSource
                                                 EndpointId      = telemetry.EndpointId
                                                 ProcessingStart = telemetry.ProcessingStart
@@ -409,16 +438,14 @@ module Evaluator =
                             // Convert our list of maybe records into a list of, well, records.
                             |> List.choose id
                             // Bring in the opening policy record.
-                            |> List.append [ openingPolicyRecord ]
-
-                        assert (policyDataByGroup.Length = dataStageGroupingIdxs.Length)                       
+                            |> List.append [ openingPolicyRecord ]                     
 
                         let evaluatorsByGroup =
                             // Make sure we re-use any cached evaluators for this given profile.
                             cachedGroupedEvaluators.GetOrAdd
                                 (dataStageGroupingIdxs, groupedEvaluatorsFactory)
 
-                        assert (evaluatorsByGroup.Length = dataStageGroupingIdxs.Length)
+                        assert (policyDataByGroup.Length = evaluatorsByGroup.Length)
 
                         let! allStepResults, evaluationApiTelemetry =
                             (policyDataByGroup, evaluatorsByGroup)
@@ -466,16 +493,17 @@ module Evaluator =
                 let evaluationStart =
                     DateTime.Now
 
-                let! outcome, apiTelemetry =
+                let! outcome, taggedTelemetry =
                     executor policyRecord
 
                 let evaluationEnd =
                     DateTime.Now
 
                 let evaluationApiTelemetry =
-                    apiTelemetry
+                    taggedTelemetry
                     |> List.map (fun telemetry ->
                         {
+                            RequestorName   = telemetry.RequestorName
                             DataSource      = dataSource
                             EndpointId      = telemetry.EndpointId
                             ProcessingStart = telemetry.ProcessingStart

@@ -101,7 +101,7 @@ module Core =
         abstract member ExecuteAsync:
             PropertyInfo array
                 -> 'TPolicyRecord
-                -> Task<ApiRequestOutcome * ApiRequestTelemetry>
+                -> Task<ApiRequestOutcome * ApiRequestTelemetry option>
         
         override this.Equals other =
             match other with
@@ -699,6 +699,7 @@ module Core =
     [<NoEquality; NoComparison>]
     type EvaluationApiRequestTelemetry =
         {
+            RequestorName   : string
             DataSource      : TelemetryDataSource
             EndpointId      : string option
             ProcessingStart : DateTime

@@ -274,6 +274,8 @@ module ExcelApi =
     let createOpeningExcelRequestor
         (dispatcher: IExcelDispatcher<_, _>) (openingRunDate: DateOnly option)
         : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs> =
+            let requestorName =
+                "Excel API [Opening]"
 
             let apiRequestor =
                 match openingRunDate with
@@ -285,18 +287,32 @@ module ExcelApi =
                         }
 
                     let executor requiredOutputs policyRecord =
-                        let policyRelatedInputs =
-                            TransferTypes.ExcelPolicyRelatedInputs.ofUnderlying policyRecord
+                        backgroundTask {
+                            let policyRelatedInputs =
+                                TransferTypes.ExcelPolicyRelatedInputs.ofUnderlying policyRecord
 
-                        dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs)                 
+                            let! requestOutcome, dispatcherTelemetry =
+                                dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs)
 
-                    ApiRequestor.create ("Excel API [Opening]", executor)
+                            let apiTelemetry: ApiRequestTelemetry option =
+                                dispatcherTelemetry
+                                |> Option.map (fun telemetry ->
+                                    {
+                                        EndpointId      = Some $"{telemetry.EndpointIdx}"
+                                        ProcessingStart = telemetry.ProcessingStart
+                                        ProcessingEnd   = telemetry.ProcessingEnd                                   
+                                    })
+
+                            return requestOutcome, apiTelemetry                        
+                        }                                         
+
+                    ApiRequestor.create (requestorName, executor)
 
                 | None ->
                     let executor _ _ =
                         failwith "Cannot call the opening requestor when no prior run date is provided."                
 
-                    ApiRequestor.create ("Excel API [Opening]", executor)
+                    ApiRequestor.create (requestorName, executor)
 
             WrappedApiRequestor apiRequestor
 
@@ -313,10 +329,24 @@ module ExcelApi =
                 }
 
             let executor requiredOutputs policyRecord =
-                let policyRelatedInputs =
-                    TransferTypes.ExcelPolicyRelatedInputs.ofUnderlying policyRecord
+                backgroundTask {
+                    let policyRelatedInputs =
+                        TransferTypes.ExcelPolicyRelatedInputs.ofUnderlying policyRecord
 
-                dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) 
+                    let! requestOutcome, dispatcherTelemetry =
+                        dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs)
+
+                    let apiTelemetry: ApiRequestTelemetry option =
+                        dispatcherTelemetry
+                        |> Option.map (fun telemetry ->
+                            {
+                                EndpointId      = Some $"{telemetry.EndpointIdx}"
+                                ProcessingStart = telemetry.ProcessingStart
+                                ProcessingEnd   = telemetry.ProcessingEnd                                   
+                            })
+
+                    return requestOutcome, apiTelemetry                        
+                } 
 
             let apiRequestor =
                 ApiRequestor.create ("PX API [Post-Opening Regression]", executor)

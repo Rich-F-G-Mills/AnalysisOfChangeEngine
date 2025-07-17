@@ -5,6 +5,7 @@ namespace AnalysisOfChangeEngine
 module Runner =
 
     open System
+    open System.Threading.Tasks
     open FsToolkit.ErrorHandling
     open Npgsql
     open AnalysisOfChangeEngine
@@ -161,15 +162,53 @@ module Runner =
                 |> Seq.toArray
 
             let someExitedPolicyRecords =
-                dataStore.GetPolicyRecordsAsync priorExtractionUid somePolicyIds
+                outstandingRecords
+                |> Seq.choose (function | Choice1Of3 policyId -> Some policyId.Value | _ -> None)
+                |> Seq.truncate 5
+                |> Seq.toArray
+                |> dataStore.GetPolicyRecordsAsync priorExtractionUid
                 |> _.Result
                 |> Map.map (fun _ -> Result.map ExitedPolicy)
                 |> Map.map (fun _ -> Result.defaultWith (fun _ -> failwith "Failed"))
 
             let someRemainingPolicyRecords =
+                outstandingRecords
+                |> Seq.choose (function | Choice2Of3 policyId -> Some policyId.Value | _ -> None)
+                |> Seq.truncate 5
+                |> Seq.toArray
+                |> function
+                    | policyIds ->
+                        backgroundTask {
+                            let! records =
+                                Task.WhenAll(
+                                    dataStore.GetPolicyRecordsAsync priorExtractionUid policyIds,
+                                    dataStore.GetPolicyRecordsAsync currentExtractionUid policyIds
+                                )
+
+                            let openingRecords =
+                                records[0]
+                                |> Map.map (fun _ -> Result.defaultWith (fun _ -> failwith "Failed"))
+
+                            let closingRecords =
+                                records[1]
+                                |> Map.map (fun _ -> Result.defaultWith (fun _ -> failwith "Failed"))
+
+                            let combinedRecords =
+                                policyIds
+                                |> Seq.map (fun policyId ->
+                                    policyId, RemainingPolicy (openingRecords[policyId], closingRecords[policyId]))
+                                |> Map.ofSeq
+
+                            return combinedRecords
+                        }                        
+                |> _.Result
 
             let someNewPolicyRecords =
-                dataStore.GetPolicyRecordsAsync priorExtractionUid somePolicyIds
+                outstandingRecords
+                |> Seq.choose (function | Choice3Of3 policyId -> Some policyId.Value | _ -> None)
+                |> Seq.truncate 5
+                |> Seq.toArray
+                |> dataStore.GetPolicyRecordsAsync currentExtractionUid
                 |> _.Result
                 |> Map.map (fun _ -> Result.map NewPolicy)
                 |> Map.map (fun _ -> Result.defaultWith (fun _ -> failwith "Failed"))
@@ -177,26 +216,35 @@ module Runner =
             let evaluator =
                 Evaluator.create walk walk.ApiCollection
             
-            let exitedResults =
-                someExitedPolicyRecords
+            //let exitedResults =
+            //    someExitedPolicyRecords
+            //    |> Map.map (fun _ -> evaluator.Execute)
+
+            let remainingResults =
+                someRemainingPolicyRecords
                 |> Map.map (fun _ -> evaluator.Execute)
 
-            let newResults =
-                someNewPolicyRecords
-                |> Map.map (fun _ -> evaluator.Execute)
+            //let newResults =
+            //    someNewPolicyRecords
+            //    |> Map.map (fun _ -> evaluator.Execute)
 
-            let exitedResults =
-                exitedResults
+            //let exitedResults =
+            //    exitedResults
+            //    |> Map.map (fun _ -> _.Result)
+
+            let remainingResults =
+                remainingResults
                 |> Map.map (fun _ -> _.Result)
 
-            let newResults =
-                newResults
-                |> Map.map (fun _ -> _.Result)
+            //let newResults =
+            //    newResults
+            //    |> Map.map (fun _ -> _.Result)
 
 
             let apiTelemetry =
-                exitedResults.Values
-                |> Seq.append newResults.Values
+                //exitedResults.Values
+                //|> Seq.append newResults.Values
+                remainingResults.Values
                 |> Seq.map snd
                 |> Seq.collect _.ApiRequestTelemetry
                 |> Seq.toList
@@ -221,11 +269,9 @@ module Runner =
                 |> List.groupBy _.EndpointId
                 |> Map.ofList
 
-            do printfn "\n\n%A" apiTelemetryByEndPoint
+            do printfn "\n\n%A\n\n" apiTelemetryByEndPoint                
 
-                
-
-            //do printfn "\n\n%A\n\n" newResults
+            do printfn "\n\n%A\n\n" remainingResults
 
             return 0
         }

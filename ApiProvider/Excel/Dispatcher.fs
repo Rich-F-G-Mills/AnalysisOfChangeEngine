@@ -16,6 +16,14 @@ module Dispatcher =
     open AnalysisOfChangeEngine.Common
 
 
+    [<NoEquality; NoComparison>]
+    type ExcelRequestTelemetry =
+        {
+            EndpointIdx     : int
+            ProcessingStart : DateTime
+            ProcessingEnd   : DateTime
+        }
+
     // See the README.md for what's going on here!
     type IExcelDispatcher<'TStepRelatedInputs, 'TPolicyRelatedInputs> =
         interface
@@ -24,9 +32,8 @@ module Dispatcher =
             abstract member ExecuteAsync :
                 PropertyInfo array
                     -> 'TStepRelatedInputs * 'TPolicyRelatedInputs
-                    -> Task<ApiRequestOutcome * ApiRequestTelemetry>
+                    -> Task<ApiRequestOutcome * ExcelRequestTelemetry option>
         end
-
 
     [<NoEquality; NoComparison>]
     type private ExcelCalcRequest<'TStepRelatedInputs, 'TPolicyRelatedInputs> =
@@ -34,7 +41,7 @@ module Dispatcher =
             StepRelatedInputs   : 'TStepRelatedInputs
             PolicyRelatedInputs : 'TPolicyRelatedInputs
             RequiredOutputs     : PropertyInfo array
-            Callback            : (ApiRequestOutcome * ApiRequestTelemetry) -> unit
+            Callback            : (ApiRequestOutcome * ExcelRequestTelemetry option) -> unit
         }
 
 
@@ -197,12 +204,12 @@ module Dispatcher =
 
                         let requestTelemetry =
                             {
-                                EndpointId      = endpointId
+                                EndpointIdx     = idx
                                 ProcessingStart = processingStart
                                 ProcessingEnd   = DateTime.Now
                             }
 
-                        do request.Callback (outputs, requestTelemetry)
+                        do request.Callback (outputs, Some requestTelemetry)
 
                     new ActionBlock<_> (action, actionBlockOptions))
 
@@ -237,17 +244,10 @@ module Dispatcher =
                             let timestamp =
                                 DateTime.Now
 
-                            let telemetry =
-                                {
-                                    EndpointId      = None
-                                    ProcessingStart = timestamp
-                                    ProcessingEnd   = timestamp
-                                }
-
                             tcs.SetResult 
                                 (Error
                                     (ApiRequestFailure.CallFailure
-                                        [| "Unable to submit Excel request." |]), telemetry)
+                                        [| "Unable to submit Excel request." |]), None)
 
                         tcs.Task
             }
