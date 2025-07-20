@@ -10,4 +10,8 @@
     <Compile Include="StepResults.fs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\Core\Core.fsproj" />
+  </ItemGroup>
+
 </Project>

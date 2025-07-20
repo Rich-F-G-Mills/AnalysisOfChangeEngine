@@ -222,7 +222,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                 | (_, Some _, _) when config.IgnoreOpeningMismatches ->
                     StepValidationOutcome.Empty
 
-                | (_, Some beforeResults, afterResults) when beforeResults = afterResults ->                        
+                | (_, Some beforeResults, afterResults) when beforeResults.IsCloseTo afterResults ->                        
                     StepValidationOutcome.Empty
 
                 | (_, Some _, _) ->                            
@@ -283,10 +283,12 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
 
                 Validator = function
                     // TODO - May need to add some kind of tolerance here.
-                    | (_, beforeResults, afterResults) when beforeResults = afterResults ->                        
+                    | (_, beforeResults, afterResults) when beforeResults.IsCloseTo afterResults ->                        
                         StepValidationOutcome.Empty
 
-                    | _ ->
+                    | (_, beforeResults, afterResults) ->
+                        do printfn "\n\n-----------------\n%A\n-----------------\n%A\n\n" beforeResults afterResults
+
                         StepValidationOutcome.Completed [| "Mismatch between opening position in AoC logic." |]
             }
         )          

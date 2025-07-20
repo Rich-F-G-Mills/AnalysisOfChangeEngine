@@ -2,7 +2,10 @@
 namespace AnalysisOfChangeEngine
 
 
+
+
 /// Common types used throughout the analysis of change machinery.
+// This codifies the underlying philosophy of what we're trying to achieve here!
 [<AutoOpen>]
 module Core =
 
@@ -453,6 +456,8 @@ module Core =
     /// Underlying type of the penultimate (and required) step in the walk.
     /// Indicates a move to the closing data for a given policy record.
     [<NoEquality; NoComparison>]
+    // We need the equality constraint here as we need to be able to compare closing policy
+    // records against those inherited from the prior step.
     type MoveToClosingDataStep<'TPolicyRecord, 'TStepResults when 'TPolicyRecord: equality> =
         {
             Uid             : Guid

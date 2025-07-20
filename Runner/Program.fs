@@ -177,7 +177,8 @@ module Runner =
             let someRemainingPolicyRecords =
                 outstandingRecords
                 |> Seq.choose (function | Choice2Of3 policyId -> Some policyId.Value | _ -> None)
-                |> Seq.truncate 5
+                //|> Seq.skip 6
+                |> Seq.truncate 10
                 |> Seq.toArray
                 |> function
                     | policyIds ->

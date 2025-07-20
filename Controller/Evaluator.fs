@@ -14,6 +14,12 @@ module Evaluator =
     open AnalysisOfChangeEngine.Controller.WalkAnalyser
 
 
+    // TODO - We're frequently having to pass around a generic type for the
+    // API collection. Ultimately, this is only needed for type assertions and
+    // type-based pattern matching. Could be avoided by creating a step-specific
+    // interface for the opening re-run and source change steps.
+
+
     [<NoEquality; NoComparison>]
     /// Provides timing information for a given API request. This will always be provided,
     /// irrespective of whether the request was successful or not.
@@ -67,7 +73,8 @@ module Evaluator =
     // This creates an executor for a list of steps, in the order provided.
     // It makes no assumption about whether these belong to the same data-stage or not.
     // We use the term executor as it is not concerned with returning (for example)
-    // evaluation telemetry.
+    // evaluation telemetry. Other than to ensure that step results have been
+    // successfully constructed, it doesn't perform any other validation.
     let private createExecutorForSteps
         (parsedSources: ParsedSource<'TPolicyRecord, 'TStepResults> list) =
             let apiDependenciesByStep =
@@ -279,8 +286,9 @@ module Evaluator =
 
     (*
     --- REMAINING POLICY RECORD SPECIFIC LOGIC ---
-    The following is logic used to run policy records present at both the opening and closing steps.
-    The logic itself is very complicated... So you better deal with it!
+    The following is logic used to run policy records present at both the opening AND closing steps.
+    The logic itself is very complicated... DEAL WITH IT.
+
     Reason being that we have a number of aspects to deal with:
         * The need to combine data stages together where a data change step does NOT lead to a change
             in policy data.
@@ -321,6 +329,7 @@ module Evaluator =
         inner openingPolicyRecord
 
 
+    // These Groupings... types are helpers that allow us to group commonly used values together.
     [<NoEquality; NoComparison>]
     type private GroupingsByDataStage<'TPolicyRecord, 'TStepResults> =
         {
@@ -330,6 +339,7 @@ module Evaluator =
             TelemetryDataSources    : TelemetryDataSource list
         }
 
+    // This is to make the distinction explicit, as opposed to the groupings by data stage above.
     [<NoEquality; NoComparison>]
     type private GroupingsByProfile<'TPolicyRecord, 'TStepResults> =
         {       
@@ -402,6 +412,8 @@ module Evaluator =
                     |> List.map List.head
             }
 
+
+    // Short-hand as type inference is sometimes struggling.
     type private DataStageExecutor<'TPolicyRecord, 'TStepResults> =
         'TPolicyRecord -> Task<Result<'TStepResults list, EvaluationFailure list> * (TaggedApiRequestTelemetry list)>
 
@@ -430,9 +442,13 @@ module Evaluator =
                     hdr.Validator (policyRecordForPriorStage, currentStepResults)
                 | Some _, :? RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> ->
                     StepValidationOutcome.Empty
+                // We do NOT want a catch-all here. In the event another step type gets introduces,
+                // I want this to fail... At least at runtime!
                 | _ ->
                     failwith "Unexpected error."
 
+            // We now need to move between our world of possible validation issues to
+            // the world of evaluation failures.
             match stepValidationOutcome, xs with
             | StepValidationOutcome.Completed [||], [] ->
                 // No issues and nothing else left to validate within this stage.
@@ -453,6 +469,9 @@ module Evaluator =
 
     // Note that priorStepResults is for the prior step, NOT the prior stage. Not to say
     // those results don't come from the final run within the prior stage!
+    // Note that by 'profile', we're referring to series of data-stages that may have been
+    // combined depending on how/if the policy data has changed as move through the walk.
+    // Data-stages where no data change has occurred are grouped together.
     let rec private executeProfile<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord: equality>
         (policyRecordForPriorStage: 'TPolicyRecord, priorStepResults: 'TStepResults option) = function
         | (policyRecordForStage: 'TPolicyRecord, (stepHdrsForStage, stageExecutor: DataStageExecutor<_, _>, dataSourceForStage))::xs ->
@@ -480,6 +499,8 @@ module Evaluator =
                         let validationIssues =
                             (stepHdrsForStage, stageResults')
                             ||> List.zip
+                            // We need to explicitly specify the API collection type as it cannot
+                            // be inferred. Failure to do so means that type-based pattern matches will fail.
                             |> tryFindValidationFailureWithinProfileStage<_, _, 'TApiCollection>
                                 (policyRecordForPriorStage, policyRecordForStage, priorStepResults)
 
@@ -492,6 +513,7 @@ module Evaluator =
 
                         | None ->
                             backgroundTask {
+                                // We need to feed this into the processing of the next profile stage.
                                 let finalStepResultsForGroup =
                                     List.last stageResults'
 
@@ -502,6 +524,7 @@ module Evaluator =
                                     executeProfile<_, _, 'TApiCollection>
                                         (policyRecordForStage, Some finalStepResultsForGroup) xs
 
+                                // Inspect our remaining outcomes to see what we actually want to return.
                                 return
                                     match remOutcomes with
                                     | Ok remStageResults ->
@@ -524,24 +547,25 @@ module Evaluator =
             }
 
 
+    // A short-hand alias used when type inference struggles.
     type private ProfileExecutor<'TPolicyRecord, 'TStepResults when 'TPolicyRecord: equality> =
         'TPolicyRecord * 'TStepResults option * 'TPolicyRecord list -> 
             Task<Result<'TStepResults list list, EvaluationFailure list> * (EvaluationApiRequestTelemetry list list)>
 
 
     let private createRemainingPolicyEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord: equality>
-        (logger: ILogger)
-        (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>) =
-
+        (logger: ILogger) (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>) =
+            // Pre-compute this once up-front.
             let groupingsByDataStage =
+                // If we don't pass in the API collection type, obj gets inferred.
                 getGroupingsByDataStage<_, _, 'TApiCollection> parsedWalk
 
             let postOpeningDataChangeSteps =
                 parsedWalk.PostOpeningDataStages
                 |> List.map _.DataChangeStep
 
-            // Note that value factories for a concurrent CAN be run in parallel. However,
-            // only the first to complete will be retained.
+            // Note that value factories for a concurrent dictionary CAN be run in parallel.
+            // However, only the first to complete will be retained.
             // As such, where we have value factory logic referring to a dictionary,
             // that dictionary MUST also be concurrent!
             let cachedGroupingsForProfile =
@@ -559,7 +583,8 @@ module Evaluator =
                     DateTime.Now
 
                 let postOpeningDataChanges =
-                    extractPostOpeningDataChanges (openingPolicyRecord, closingPolicyRecord) postOpeningDataChangeSteps
+                    extractPostOpeningDataChanges
+                        (openingPolicyRecord, closingPolicyRecord) postOpeningDataChangeSteps
 
                 match postOpeningDataChanges with
                 | Ok postOpeningDataChanges' ->
@@ -576,9 +601,11 @@ module Evaluator =
                     let policyRecordsForProfile =
                         postOpeningDataChanges'
                         |> List.choose id
+                        // Bring in the opening policy record which coresponds to grouping idx #0.
                         |> List.append [ openingPolicyRecord ]
 
                     let profileExecutor =
+                        // Make sure we load a cached version where available.
                         cachedProfileExecutors.GetOrAdd(groupingProfileIdxs, fun _ ->
                             let groupingsForProfile =
                                 cachedGroupingsForProfile.GetOrAdd(groupingProfileIdxs, fun _ ->
@@ -593,6 +620,7 @@ module Evaluator =
                                             (sprintf "Creating executor for %ix step UIDs starting with %O."
                                                 uids.Length groupingProfileIdxs.Head)
 
+                                        // Again, ensure cached versions are used where available.
                                         cachedExecutorsForUids.GetOrAdd (uids, fun _ ->
                                             createExecutorForSteps sources))
 
@@ -603,6 +631,8 @@ module Evaluator =
                             do logger.LogDebug
                                 (sprintf "Created executor for profile %A." groupingProfileIdxs)
 
+                            // We CANNOT refer to the outer policy record information as this will create
+                            // a closure to stale inputs.
                             fun (openingPolicyRecord', priorClosingStepResults', policyRecordsForProfile': _ list) ->
                                 assert (policyRecordsForProfile'.Length = profileStagesInfo.Length)
 
@@ -610,13 +640,16 @@ module Evaluator =
                                 // policy records being processed.
                                 (policyRecordsForProfile', profileStagesInfo)
                                 ||> List.zip
+                                // Again, the need to pass in the API collection type!
                                 |> executeProfile<_, _, 'TApiCollection>
                                     (openingPolicyRecord', priorClosingStepResults')
                         )
 
                     backgroundTask {
                         let! walkResults, evaluationApiTelemetry =
-                            profileExecutor (openingPolicyRecord, priorClosingStepResults, policyRecordsForProfile)   
+                            profileExecutor (openingPolicyRecord, priorClosingStepResults, policyRecordsForProfile) 
+                            
+                        // The above items will give us a list of lists that needs to be flattened.
                             
                         let evaluationApiTelemetry' =
                             List.concat evaluationApiTelemetry                            
@@ -636,6 +669,7 @@ module Evaluator =
                     }
 
                 | Error failure ->
+                    // Although we've failed, we still need to supply that telemetry!
                     let evaluationTelemetry =
                         {
                             EvaluationStart     = evaluationStart
@@ -650,7 +684,8 @@ module Evaluator =
     // ------ END OF REMAINING POLICY RECORD SPECIFIC LOGIC ------
                 
 
-    // Arguably, we're only asking for the API collection type for the purpose of type assertion at run-time.
+    // As seen before, we're only asking for the API collection
+    // type for the purpose of type assertion at run-time and/or pattern matching.
     let private createExitedPolicyEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection>
         (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>) =
             let openingReRunStepHdr, openingReRunParsedStep =
