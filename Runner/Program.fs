@@ -27,7 +27,7 @@ module Runner =
         | DEBUG     = 4
      
 
-    let logger (logLevel: LogLevel) =
+    let createLogger (logLevel: LogLevel) =
         {
             new ILogger with
                 member _.LogDebug message =
@@ -51,6 +51,9 @@ module Runner =
     [<EntryPoint>]
     let main _ =
         result {
+            let logger =
+                createLogger LogLevel.DEBUG
+
             let today =
                 DateOnly.FromDateTime DateTime.Now
             
@@ -99,13 +102,13 @@ module Runner =
             let walkConfig: OBWholeOfLife.WalkConfiguration =
                 {
                     StepFactory             = new StepFactory (stepUidResolver)
-                    IgnoreOpeningMismatches = false
+                    IgnoreOpeningMismatches = true
                     OpeningRunDate          = Some openingRunDate
                     ClosingRunDate          = closingRunDate
                 }
 
             let! walk =
-                OBWholeOfLife.Walk.create (logger LogLevel.WARNING, walkConfig)
+                OBWholeOfLife.Walk.create (logger, walkConfig)
 
             //let priorRun =
             //    dataStore.CreateRun ("Monthly MI", None, None, openingRunDate, openingExtractionUid, walk)
@@ -214,7 +217,7 @@ module Runner =
                 |> Map.map (fun _ -> Result.defaultWith (fun _ -> failwith "Failed"))
             
             let evaluator =
-                Evaluator.create walk walk.ApiCollection
+                Evaluator.create logger walk walk.ApiCollection
             
             //let exitedResults =
             //    someExitedPolicyRecords
@@ -222,7 +225,7 @@ module Runner =
 
             let remainingResults =
                 someRemainingPolicyRecords
-                |> Map.map (fun _ -> evaluator.Execute)
+                |> Map.map (fun _ rr -> evaluator.Execute (rr, None))
 
             //let newResults =
             //    someNewPolicyRecords

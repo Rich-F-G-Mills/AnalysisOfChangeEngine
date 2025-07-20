@@ -283,14 +283,11 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
 
                 Validator = function
                     // TODO - May need to add some kind of tolerance here.
-                    | (_, Some beforeResults, afterResults) when beforeResults = afterResults ->                        
+                    | (_, beforeResults, afterResults) when beforeResults = afterResults ->                        
                         StepValidationOutcome.Empty
 
-                    | (_, Some _, _) ->                            
+                    | _ ->
                         StepValidationOutcome.Completed [| "Mismatch between opening position in AoC logic." |]
-
-                    | (_, None, _) ->
-                        StepValidationOutcome.Aborted "No prior results for comparison."
             }
         )          
 

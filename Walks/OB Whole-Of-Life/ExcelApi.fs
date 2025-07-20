@@ -286,6 +286,7 @@ module ExcelApi =
                             ClosingCalculationDate = openingRunDate'.ToDateTimeMidnight ()
                         }
 
+                    // TODO - Filthy duplication going on here!
                     let executor requiredOutputs policyRecord =
                         backgroundTask {
                             let policyRelatedInputs =

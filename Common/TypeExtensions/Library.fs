@@ -33,7 +33,14 @@ module TypeExtensions =
         // Useful for Excel interop where only DateTimes can (seemingly)
         // be marshalled across.
         member this.ToDateTimeMidnight () =
-            this.ToDateTime (midnightTimeOnly)            
+            this.ToDateTime (midnightTimeOnly)     
+            
+
+    [<RequireQualifiedAccess>]
+    module List =
+    
+        let inline innerMap ([<InlineIfLambda>] f) xs =
+            List.map (List.map f) xs
 
 
     [<RequireQualifiedAccess>]

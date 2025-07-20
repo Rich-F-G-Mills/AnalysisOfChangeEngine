@@ -64,6 +64,13 @@ policyDetails <-
             c(probMonthlyFreq, 1.0 - probMonthlyFreq)
         ),
       
+      NUM_PREMIUMS_PER_ANNUM =
+          dplyr::case_match(
+            PREMIUM_FREQUENCY,
+            'MONTHLY' ~ 12L,
+            'YEARLY' ~ 1L
+          ),
+      
       MODAL_PREMIUM =
         runif(
           n = numPolicies,
@@ -71,6 +78,9 @@ policyDetails <-
           max = 10.0
         ) |>
         round(digits = 2L),
+      
+      ANNUAL_PREMIUM =
+          MODAL_PREMIUM * NUM_PREMIUMS_PER_ANNUM,
       
       RANDOM_ENTRY_DATE_OFFSET =
         runif(n = numPolicies, min = 0.0, max = 20 * 365) |>
@@ -80,13 +90,13 @@ policyDetails <-
       ENTRY_DATE =
         lubridate::ymd('1980-01-01') + RANDOM_ENTRY_DATE_OFFSET,
       
-      SUM_ASSURED =
-        runif(n = numPolicies, min = 100.0, max = 100000.0) |>
-        round(digits = 2L),
-      
       LTD_PAYMENT_TERM =
         runif(n = numPolicies, min = 15L, max = 60L) |>
         as.integer(),
+      
+      SUM_ASSURED =
+        ANNUAL_PREMIUM * LTD_PAYMENT_TERM * 0.5 |>
+        round(digits = 2L),
       
       ALL_PAID_DATE =
         ENTRY_DATE %m+% years(LTD_PAYMENT_TERM),
@@ -192,6 +202,8 @@ policyDetails <-
         )
     ) |>
     dplyr::select(
+      -ANNUAL_PREMIUM,
+      -NUM_PREMIUMS_PER_ANNUM,
       -ALL_PAID_DATE,
       -IS_ALL_PAID_AT_OPENING,
       -IS_ALL_PAID_AT_CLOSING,
@@ -308,7 +320,7 @@ generatedSql <-
       SQL =
         glue::glue(
           "
-          --DELETE FROM ob_wol.policy_data;
+          DELETE FROM ob_wol.policy_data;
           --DELETE FROM ob_wol.extraction_headers;
           
           --INSERT INTO ob_wol.extraction_headers(

@@ -117,11 +117,7 @@ module Dispatcher =
             let dispatchers =
                 (excelApps, workbooksFound, writers)
                 |||> Array.zip3 
-                |> Array.mapi (fun idx (app, workbook, writer) ->
-                    // Store for later re-use.
-                    let endpointId =
-                        Some $"{idx}"
-                         
+                |> Array.mapi (fun idx (app, workbook, writer) ->                         
                     let cachedRanges =
                         // In theory, this should NEVER be accessed concurrently.
                         new Dictionary<string, Excel.Range> ()
@@ -198,9 +194,6 @@ module Dispatcher =
                                                 failwith "Unexpected failure.")
 
                                     Error (ApiRequestFailure.CalculationFailure combinedReasons)
-
-                        let processingStart =
-                            DateTime.Now
 
                         let requestTelemetry =
                             {

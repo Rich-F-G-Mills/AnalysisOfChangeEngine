@@ -19,6 +19,8 @@ module Core =
         Given that the Guid type is used throughout, it's not impossible
         that (for example) an extraction UID suddently finds itself being
         used as a run UID. This should (!) reduce the chance of that happening.
+        The YouTuber 'Coding Jesus' would be proud of this approach, which he
+        refers to as 'strong typing'.
     *)
     [<NoEquality; NoComparison>]
     type RunUid =
@@ -101,6 +103,8 @@ module Core =
         abstract member ExecuteAsync:
             PropertyInfo array
                 -> 'TPolicyRecord
+                // We don't insist that telemetry is provided. There are situations where
+                // no request was even made/possible. This can be indicated as such here.
                 -> Task<ApiRequestOutcome * ApiRequestTelemetry option>
         
         override this.Equals other =
@@ -291,15 +295,16 @@ module Core =
     type OpeningReRunStepValidator<'TPolicyRecord, 'TStepResults> =
         'TPolicyRecord * 'TStepResults option * 'TStepResults -> StepValidationOutcome
 
-    /// Step validator that receives the prior policy record and step results (where available),
-    /// followed by those for the currene step.
+    /// Step validator that receives the prior policy record and step results,
+    /// followed by those for the current step. Note that this will ONLY be run
+    /// if a data change has actually occurred at this step.
     type DataChangeStepValidator<'TPolicyRecord, 'TStepResults> =
-        'TPolicyRecord * 'TStepResults option * 'TPolicyRecord * 'TStepResults -> StepValidationOutcome
+        'TPolicyRecord * 'TStepResults * 'TPolicyRecord * 'TStepResults -> StepValidationOutcome
 
     /// Step validator that receives the current policy record followed by
-    /// the prior (where available) and current step results.
+    /// the prior  and current step results.
     type SourceChangeStepValidator<'TPolicyRecord, 'TStepResults> =
-        'TPolicyRecord * 'TStepResults option * 'TStepResults -> StepValidationOutcome
+        'TPolicyRecord * 'TStepResults * 'TStepResults -> StepValidationOutcome
 
     /// Step validator that receives the new policy record and corresponding step results.
     type AddNewRecordsStepValidator<'TPolicyRecord, 'TStepResults> =
@@ -380,6 +385,29 @@ module Core =
                     failwith "Invalid source defintion."
 
 
+    (*
+    Design decision:
+        Arguably, do we need to have a separate step for this? One alternative would be for
+        us to just "know" that exited policies are removed after the opening re-run step.
+        However, having a dedicated step for this makes it explicit.
+        We have a similar situation later with the add new records step.
+    *)
+    /// Indicates that policies not present in the closing position are to be excluded
+    /// from further processing.
+    [<NoEquality; NoComparison>]
+    type RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> =
+        {
+            Uid             : Guid
+            Title           : string
+            Description     : string
+        }
+
+        interface IStepHeader with
+            member this.Uid = this.Uid
+            member this.Title = this.Title
+            member this.Description = this.Description 
+
+
     /// Indicates a step where the source can be specified.
     [<NoEquality; NoComparison>]
     type SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
@@ -419,30 +447,7 @@ module Core =
             member this.Description = this.Description 
 
         interface IDataChangeStep<'TPolicyRecord> with
-            member this.DataChanger = this.DataChanger                
-
-
-    (*
-    Design decision:
-        Arguably, do we need to have a separate step for this? One alternative would be for
-        us to just "know" that exited policies are removed after the opening re-run step.
-        However, having a dedicated step for this makes it explicit.
-        We have a similar situation later with the add new records step.
-    *)
-    /// Indicates that policies not present in the closing position are to be excluded
-    /// from further processing.
-    [<NoEquality; NoComparison>]
-    type RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> =
-        {
-            Uid             : Guid
-            Title           : string
-            Description     : string
-        }
-
-        interface IStepHeader with
-            member this.Uid = this.Uid
-            member this.Title = this.Title
-            member this.Description = this.Description 
+            member this.DataChanger = this.DataChanger             
 
 
     /// Underlying type of the penultimate (and required) step in the walk.
@@ -539,8 +544,8 @@ module Core =
 
 
             member private _._registerInteriorStep (step: IStepHeader) =
-
-                do logger.LogDebug (sprintf "Registering interior step '%s'." step.Title)
+                // Not clear how this logging is adding any value. Suppressing for now.
+                // do logger.LogDebug (sprintf "Registering interior step '%s'." step.Title)
                 do _interiorSteps.Add step
 
             (*
@@ -702,6 +707,7 @@ module Core =
             RequestorName   : string
             DataSource      : TelemetryDataSource
             EndpointId      : string option
+            Submitted       : DateTime
             ProcessingStart : DateTime
             ProcessingEnd   : DateTime
         }       
@@ -731,11 +737,12 @@ module Core =
             /// Only a single result will be provided for the initial
             /// (ie. opening re-run) step.
             abstract member Execute:
-                ExitedPolicy<'TPolicyRecord>
+                ExitedPolicy<'TPolicyRecord> * 'TStepResults option
                     -> Task<ExitedPolicyOutcome<'TStepResults> * EvaluationTelemetry>
 
             abstract member Execute:
-                RemainingPolicy<'TPolicyRecord>
+                // We can optionally provide the prior closing step results.
+                RemainingPolicy<'TPolicyRecord> * 'TStepResults option
                     -> Task<RemainingPolicyOutcome<'TStepResults> * EvaluationTelemetry>
 
             /// Only a single result will be provided for the final
@@ -744,5 +751,3 @@ module Core =
                 NewPolicy<'TPolicyRecord>
                     -> Task<NewPolicyOutcome<'TStepResults> * EvaluationTelemetry>
         end
-
-
