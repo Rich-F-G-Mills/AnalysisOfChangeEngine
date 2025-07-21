@@ -244,99 +244,99 @@ module AbstractDataStore =
                     $"""
                     WITH
                         run_steps AS (
-		                    SELECT
+                            SELECT
                                 rs.{fieldName<RunStepDTO, _> <@ _.step_idx @>} AS idx,
                                 sh.{fieldName<StepHeaderDTO, _> <@ _.uid @>} AS uid,
                                 sh.{fieldName<StepHeaderDTO, _> <@ _.run_if_exited_record @>} AS run_if_exited_record,
                                 sh.{fieldName<StepHeaderDTO, _> <@ _.run_if_new_record @>} AS run_if_new_record
-		                    FROM {schema}.{runStepPgTableName} AS rs
-		                    LEFT JOIN common.{stepHeaderPgTableName} AS sh
-		                    ON rs.{fieldName<RunStepDTO, _> <@ _.step_uid @>} =
+                            FROM {schema}.{runStepPgTableName} AS rs
+                            LEFT JOIN common.{stepHeaderPgTableName} AS sh
+                            ON rs.{fieldName<RunStepDTO, _> <@ _.step_uid @>} =
                                 sh.{fieldName<StepHeaderDTO, _> <@ _.uid @>}
-		                    WHERE rs.{fieldName<RunStepDTO, _> <@ _.run_uid @>} =
+                            WHERE rs.{fieldName<RunStepDTO, _> <@ _.run_uid @>} =
                                 @current_run_uid
-	                    ),
-	
-	                    opening_policy_ids AS (
-		                    SELECT DISTINCT {fieldName<PolicyDataBaseDTO, _> <@ _.policy_id @>} AS policy_id
-		                    FROM {schema}.{policyDataPgTableName}
-		                    WHERE {fieldName<PolicyDataBaseDTO, _> <@ _.extraction_uid @>} =
+                        ),
+    
+                        opening_policy_ids AS (
+                            SELECT DISTINCT {fieldName<PolicyDataBaseDTO, _> <@ _.policy_id @>} AS policy_id
+                            FROM {schema}.{policyDataPgTableName}
+                            WHERE {fieldName<PolicyDataBaseDTO, _> <@ _.extraction_uid @>} =
                                 @prior_extraction_uid
-	                    ),
-	
-	                    closing_policy_ids AS (
-		                    SELECT DISTINCT {fieldName<PolicyDataBaseDTO, _> <@ _.policy_id @>} AS policy_id
-		                    FROM {schema}.{policyDataPgTableName}
-		                    WHERE {fieldName<PolicyDataBaseDTO, _> <@ _.extraction_uid @>} =
+                        ),
+    
+                        closing_policy_ids AS (
+                            SELECT DISTINCT {fieldName<PolicyDataBaseDTO, _> <@ _.policy_id @>} AS policy_id
+                            FROM {schema}.{policyDataPgTableName}
+                            WHERE {fieldName<PolicyDataBaseDTO, _> <@ _.extraction_uid @>} =
                                 @current_extraction_uid
-	                    ),
-	
-	                    remaining_policy_ids AS (
-		                    SELECT policy_id
-		                    FROM opening_policy_ids
-		                    INTERSECT SELECT policy_id
-		                    FROM closing_policy_ids
-	                    ),
-	
-	                    exited_policy_ids AS (
-		                    SELECT policy_id
-		                    FROM opening_policy_ids
-		                    EXCEPT SELECT policy_id
-		                    FROM closing_policy_ids
-	                    ),
-	
-	                    new_policy_ids AS (
-		                    SELECT policy_id
-		                    FROM closing_policy_ids
-		                    EXCEPT SELECT policy_id
-		                    FROM opening_policy_ids
-	                    ),
-	
-	                    steps_run AS (
-		                    SELECT
+                        ),
+    
+                        remaining_policy_ids AS (
+                            SELECT policy_id
+                            FROM opening_policy_ids
+                            INTERSECT SELECT policy_id
+                            FROM closing_policy_ids
+                        ),
+    
+                        exited_policy_ids AS (
+                            SELECT policy_id
+                            FROM opening_policy_ids
+                            EXCEPT SELECT policy_id
+                            FROM closing_policy_ids
+                        ),
+    
+                        new_policy_ids AS (
+                            SELECT policy_id
+                            FROM closing_policy_ids
+                            EXCEPT SELECT policy_id
+                            FROM opening_policy_ids
+                        ),
+    
+                        steps_run AS (
+                            SELECT
                                 {fieldName<StepResultsBaseDTO, _> <@ _.policy_id @>} AS policy_id,
                                 {fieldName<StepResultsBaseDTO, _> <@ _.step_uid @>} AS step_uid
-		                    FROM {schema}.{stepResultsPgTableName}
-		                    WHERE {fieldName<StepResultsBaseDTO, _> <@ _.run_uid @>} =
+                            FROM {schema}.{stepResultsPgTableName}
+                            WHERE {fieldName<StepResultsBaseDTO, _> <@ _.run_uid @>} =
                                 @current_run_uid
-	                    ),
-	
-	                    steps_expected AS (
-		                    SELECT policy_id, uid AS step_uid
-		                    FROM exited_policy_ids, run_steps
-		                    WHERE run_if_exited_record
-		                    UNION ALL SELECT policy_id, uid AS step_uid
-		                    FROM remaining_policy_ids, run_steps
-		                    UNION ALL SELECT policy_id, uid AS step_uid
-		                    FROM new_policy_ids, run_steps
-		                    WHERE run_if_new_record
-	                    ),
-	
-	                    step_statuses AS (
-		                    SELECT
-			                    COALESCE (expected.policy_id, run.policy_id) AS policy_id,
-			                    COALESCE (expected.step_uid, run.step_uid) AS step_uid,
-			                    run.policy_id IS NOT NULL AND expected.policy_id IS NOT NULL AS was_run
-		                    FROM steps_expected AS expected
-		                    LEFT JOIN steps_run AS run
-		                    ON expected.policy_id = run.policy_id
-			                    AND expected.step_uid = run.step_uid		
-	                    )
+                        ),
+    
+                        steps_expected AS (
+                            SELECT policy_id, uid AS step_uid
+                            FROM exited_policy_ids, run_steps
+                            WHERE run_if_exited_record
+                            UNION ALL SELECT policy_id, uid AS step_uid
+                            FROM remaining_policy_ids, run_steps
+                            UNION ALL SELECT policy_id, uid AS step_uid
+                            FROM new_policy_ids, run_steps
+                            WHERE run_if_new_record
+                        ),
+    
+                        step_statuses AS (
+                            SELECT
+                                COALESCE (expected.policy_id, run.policy_id) AS policy_id,
+                                COALESCE (expected.step_uid, run.step_uid) AS step_uid,
+                                run.policy_id IS NOT NULL AND expected.policy_id IS NOT NULL AS was_run
+                            FROM steps_expected AS expected
+                            LEFT JOIN steps_run AS run
+                            ON expected.policy_id = run.policy_id
+                                AND expected.step_uid = run.step_uid		
+                        )
 
-		            SELECT
-			            policy_id,
+                    SELECT
+                        policy_id,
                         CASE
-		                    WHEN policy_id IN (SELECT policy_id FROM exited_policy_ids)
-			                    THEN 'EXITED'::common.cohort_membership
-		                    WHEN policy_id IN (SELECT policy_id FROM remaining_policy_ids)
-			                    THEN 'REMAINING'::common.cohort_membership
-		                    WHEN policy_id IN (SELECT policy_id FROM new_policy_ids)
-			                    THEN 'NEW'::common.cohort_membership
-	                    END AS cohort
-		            FROM step_statuses
-		            -- This approach seems MUCH faster than using a SELECT DISTINCT and a WHERE.
-		            GROUP BY policy_id		
-		            HAVING NOT bool_and(was_run)
+                            WHEN policy_id IN (SELECT policy_id FROM exited_policy_ids)
+                                THEN 'EXITED'::common.cohort_membership
+                            WHEN policy_id IN (SELECT policy_id FROM remaining_policy_ids)
+                                THEN 'REMAINING'::common.cohort_membership
+                            WHEN policy_id IN (SELECT policy_id FROM new_policy_ids)
+                                THEN 'NEW'::common.cohort_membership
+                        END AS cohort
+                    FROM step_statuses
+                    -- This approach seems MUCH faster than using a SELECT DISTINCT and a WHERE.
+                    GROUP BY policy_id		
+                    HAVING NOT bool_and(was_run)
                     """
 
                 use dbCommand = 

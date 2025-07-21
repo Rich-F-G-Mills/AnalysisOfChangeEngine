@@ -336,7 +336,7 @@ module Evaluator =
             ParsedSources           : ParsedSource<'TPolicyRecord, 'TStepResults> list list
             StepHeaders             : IStepHeader list list
             StepUids                : Guid list list
-            TelemetryDataSources    : TelemetryDataSource list
+            TelemetryDataSources    : StepDataSource list
         }
 
     // This is to make the distinction explicit, as opposed to the groupings by data stage above.
@@ -346,7 +346,7 @@ module Evaluator =
             ParsedSources           : ParsedSource<'TPolicyRecord, 'TStepResults> list list
             StepHeaders             : IStepHeader list list
             StepUids                : Guid list list
-            TelemetryDataSources    : TelemetryDataSource list
+            TelemetryDataSources    : StepDataSource list
         }
 
     let private getGroupingsByDataStage<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord: equality>
@@ -374,11 +374,11 @@ module Evaluator =
                 |> List.map List.head
                 |> List.map (function
                     | :? OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> ->
-                        TelemetryDataSource.OpeningData
+                        StepDataSource.OpeningData
                     | :? MoveToClosingDataStep<'TPolicyRecord, 'TStepResults> ->
-                        TelemetryDataSource.ClosingData
+                        StepDataSource.ClosingData
                     | :? DataChangeStep<'TPolicyRecord, 'TStepResults> as hdr ->
-                        TelemetryDataSource.DataChangeStep hdr.Uid
+                        StepDataSource.DataChangeStep hdr
                     | _ ->
                         failwith "Unexpected data change step type.")
 
@@ -408,7 +408,7 @@ module Evaluator =
                     |> List.map List.singleton
                     |> reGroupByProfile
                     // However, we only care about the first telemetry data source
-                    // without our profile groupings.
+                    // within each of our profile groupings.
                     |> List.map List.head
             }
 
@@ -550,7 +550,7 @@ module Evaluator =
     // A short-hand alias used when type inference struggles.
     type private ProfileExecutor<'TPolicyRecord, 'TStepResults when 'TPolicyRecord: equality> =
         'TPolicyRecord * 'TStepResults option * 'TPolicyRecord list -> 
-            Task<Result<'TStepResults list list, EvaluationFailure list> * (EvaluationApiRequestTelemetry list list)>
+            Task<Result<(StepDataSource * 'TStepResults) list, EvaluationFailure list> * (EvaluationApiRequestTelemetry list)>
 
 
     let private createRemainingPolicyEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord: equality>
@@ -604,6 +604,17 @@ module Evaluator =
                         // Bring in the opening policy record which coresponds to grouping idx #0.
                         |> List.append [ openingPolicyRecord ]
 
+                    let interiorDataChanges =
+                        (postOpeningDataChangeSteps, postOpeningDataChanges')
+                        ||> List.zip
+                        |> List.choose (function
+                            // We only want the interior data changes. We don't care about the opening or
+                            // closing stages as 
+                            | :? DataChangeStep<'TPolicyRecord, 'TStepResults> as hdr, Some record ->
+                                Some (hdr, record)
+                            | _ ->
+                                None)
+
                     let profileExecutor =
                         // Make sure we load a cached version where available.
                         cachedProfileExecutors.GetOrAdd(groupingProfileIdxs, fun _ ->
@@ -628,44 +639,66 @@ module Evaluator =
                                 (groupingsForProfile.StepHeaders, executorsByProfileStage, groupingsForProfile.TelemetryDataSources)
                                 |||> List.zip3
 
+                            let dataSourceByStep =
+                                (groupingsForProfile.StepHeaders, groupingsForProfile.TelemetryDataSources)
+                                ||> List.map2 (fun headers dataSource ->
+                                    List.replicate headers.Length dataSource)
+                                |> List.concat
+
+                            assert (dataSourceByStep.Length = parsedWalk.ParsedSteps.Length)                                
+
                             do logger.LogDebug
                                 (sprintf "Created executor for profile %A." groupingProfileIdxs)
 
                             // We CANNOT refer to the outer policy record information as this will create
                             // a closure to stale inputs.
                             fun (openingPolicyRecord', priorClosingStepResults', policyRecordsForProfile': _ list) ->
-                                assert (policyRecordsForProfile'.Length = profileStagesInfo.Length)
+                                backgroundTask {
+                                    assert (policyRecordsForProfile'.Length = profileStagesInfo.Length)
 
-                                // We can't compute this ahead of time as it depends on the
-                                // policy records being processed.
-                                (policyRecordsForProfile', profileStagesInfo)
-                                ||> List.zip
-                                // Again, the need to pass in the API collection type!
-                                |> executeProfile<_, _, 'TApiCollection>
-                                    (openingPolicyRecord', priorClosingStepResults')
-                        )
+                                    let! walkResults, evaluationApiTelemetry =
+                                        // We can't compute this ahead of time as it depends on the
+                                        // policy records being processed.
+                                        (policyRecordsForProfile', profileStagesInfo)
+                                        ||> List.zip
+                                        // Again, the need to pass in the API collection type!
+                                        |> executeProfile<_, _, 'TApiCollection>
+                                            (openingPolicyRecord', priorClosingStepResults')
+
+                                    let walkResults' =
+                                        walkResults
+                                        // Flatten our results...
+                                        |> Result.map List.concat
+                                        // ...and then stitch these with the data source for each step.
+                                        |> Result.map (List.zip dataSourceByStep)
+
+                                    let evaluationApiTelemetry' =
+                                        evaluationApiTelemetry
+                                        |> List.concat
+
+                                    return walkResults', evaluationApiTelemetry'
+                                })
 
                     backgroundTask {
                         let! walkResults, evaluationApiTelemetry =
-                            profileExecutor (openingPolicyRecord, priorClosingStepResults, policyRecordsForProfile) 
-                            
-                        // The above items will give us a list of lists that needs to be flattened.
-                            
-                        let evaluationApiTelemetry' =
-                            List.concat evaluationApiTelemetry                            
+                            profileExecutor (openingPolicyRecord, priorClosingStepResults, policyRecordsForProfile)                                                      
 
                         let evaluationTelemetry =
                             {
                                 EvaluationStart     = evaluationStart
                                 EvaluationEnd       = DateTime.Now
-                                ApiRequestTelemetry = evaluationApiTelemetry'
+                                ApiRequestTelemetry = evaluationApiTelemetry
                             }
 
-                        let walkResults' =
+                        let output =
                             walkResults
-                            |> Result.map List.concat
+                            |> Result.map (fun stepResults ->
+                                {
+                                    InteriorDataChanges = interiorDataChanges
+                                    StepResults         = stepResults
+                                })
 
-                        return walkResults', evaluationTelemetry
+                        return output, evaluationTelemetry
                     }
 
                 | Error failure ->
@@ -700,7 +733,7 @@ module Evaluator =
                 downcast openingReRunStepHdr
 
             let evaluator =
-                createEvaluatorForStep (TelemetryDataSource.OpeningData, openingReRunParsedStep)
+                createEvaluatorForStep (StepDataSource.OpeningData, openingReRunParsedStep)
 
             fun (ExitedPolicy policyRecord, priorClosingStepResults) ->
                 backgroundTask {
@@ -741,7 +774,7 @@ module Evaluator =
                 downcast newRecordsStepHdr
 
             let evaluator =
-                createEvaluatorForStep (TelemetryDataSource.ClosingData, newRecordsParsedStep)
+                createEvaluatorForStep (StepDataSource.ClosingData, newRecordsParsedStep)
 
             fun (NewPolicy policyRecord) ->
                 backgroundTask {

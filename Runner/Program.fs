@@ -224,7 +224,7 @@ module Runner =
             //    someExitedPolicyRecords
             //    |> Map.map (fun _ -> evaluator.Execute)
 
-            let remainingResults =
+            let remainingResultOutcomes =
                 someRemainingPolicyRecords
                 |> Map.map (fun _ rr -> evaluator.Execute (rr, None))
 
@@ -236,8 +236,8 @@ module Runner =
             //    exitedResults
             //    |> Map.map (fun _ -> _.Result)
 
-            let remainingResults =
-                remainingResults
+            let remainingResultOutcomes =
+                remainingResultOutcomes
                 |> Map.map (fun _ -> _.Result)
 
             //let newResults =
@@ -245,10 +245,16 @@ module Runner =
             //    |> Map.map (fun _ -> _.Result)
 
 
+            let remainingResults =
+                remainingResultOutcomes
+                |> Map.map (fun _ -> fst)
+                |> Map.map (fun _ ->
+                    Result.map (_.StepResults >> List.map snd))
+
             let apiTelemetry =
                 //exitedResults.Values
                 //|> Seq.append newResults.Values
-                remainingResults.Values
+                remainingResultOutcomes.Values
                 |> Seq.map snd
                 |> Seq.collect _.ApiRequestTelemetry
                 |> Seq.toList

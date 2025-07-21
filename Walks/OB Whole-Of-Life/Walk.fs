@@ -286,8 +286,9 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                     | (_, beforeResults, afterResults) when beforeResults.IsCloseTo afterResults ->                        
                         StepValidationOutcome.Empty
 
-                    | (_, beforeResults, afterResults) ->
-                        do printfn "\n\n-----------------\n%A\n-----------------\n%A\n\n" beforeResults afterResults
+                    | _ ->
+                    //| (_, beforeResults, afterResults) ->
+                        //do printfn "\n\n-----------------\n%A\n-----------------\n%A\n\n" beforeResults afterResults
 
                         StepValidationOutcome.Completed [| "Mismatch between opening position in AoC logic." |]
             }

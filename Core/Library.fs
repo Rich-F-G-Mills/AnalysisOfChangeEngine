@@ -684,6 +684,17 @@ module Core =
         | StepConstructionFailure   of StepHeader: IStepHeader  * Reasons: string array
         /// User cancelled the request.
         | Cancelled
+
+
+    [<RequireQualifiedAccess>]
+    [<NoEquality; NoComparison>]
+    type StepDataSource =
+        | OpeningData
+        | ClosingData
+        // Theoretically, we should use the data changer interface. However,
+        // given it's generic with respect to the policy record type, we'd
+        // then need to make this generic as well.
+        | DataChangeStep of IStepHeader
         
 
     // We use lists for the failures as they can be more easily constructed
@@ -691,26 +702,27 @@ module Core =
     type ExitedPolicyOutcome<'TStepResults> =
         Result<'TStepResults, EvaluationFailure list>
 
+    type RemainingPolicyResults<'TPolicyRecord, 'TStepResults> =
+        {
+            // We use DataChangeStep here as that is only used for interior data changes.
+            InteriorDataChanges : (DataChangeStep<'TPolicyRecord, 'TStepResults> * 'TPolicyRecord) list
+            StepResults         : (StepDataSource * 'TStepResults) list
+        }
+
     // Either all steps succeed, or we return a list of failures.
-    type RemainingPolicyOutcome<'TStepResults> =
-        Result<'TStepResults list, EvaluationFailure list>
+    type RemainingPolicyOutcome<'TPolicyRecord, 'TStepResults> =
+        // This makes it explicit that we're only return internal data stages.
+        Result<RemainingPolicyResults<'TPolicyRecord, 'TStepResults>, EvaluationFailure list>
 
     type NewPolicyOutcome<'TStepResults> =
         Result<'TStepResults, EvaluationFailure list>
 
 
-    [<RequireQualifiedAccess>]
-    [<NoEquality; NoComparison>]
-    type TelemetryDataSource =
-        | OpeningData
-        | ClosingData
-        | DataChangeStep of Guid
-
     [<NoEquality; NoComparison>]
     type EvaluationApiRequestTelemetry =
         {
             RequestorName   : string
-            DataSource      : TelemetryDataSource
+            DataSource      : StepDataSource
             EndpointId      : string option
             Submitted       : DateTime
             ProcessingStart : DateTime
@@ -748,7 +760,7 @@ module Core =
             abstract member Execute:
                 // We can optionally provide the prior closing step results.
                 RemainingPolicy<'TPolicyRecord> * 'TStepResults option
-                    -> Task<RemainingPolicyOutcome<'TStepResults> * EvaluationTelemetry>
+                    -> Task<RemainingPolicyOutcome<'TPolicyRecord, 'TStepResults> * EvaluationTelemetry>
 
             /// Only a single result will be provided for the final
             /// (ie. add new records) step.
