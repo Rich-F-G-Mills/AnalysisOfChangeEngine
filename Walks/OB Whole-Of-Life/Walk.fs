@@ -42,9 +42,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
         config.StepFactory
 
     // Short-hand way of changing our source for UAS and SAS (post-opening regression!)
-    let useForAssetShares
-        (unsmoothedSelector: Expr<ExcelOutputs -> float32>)
-        (smoothedSelector: Expr<ExcelOutputs -> float32>)
+    let useForAssetShares unsmoothedSelector smoothedSelector
         : SourceExpr<OBWholeOfLife.PolicyRecord, OBWholeOfLife.StepResults, _> =
             <@
                 fun from _ prior _ ->

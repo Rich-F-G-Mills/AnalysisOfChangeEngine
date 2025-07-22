@@ -8,7 +8,7 @@ open System.Threading.Tasks.Dataflow
 open AnalysisOfChangeEngine    
         
 
-
+(*
 
 [<RequireQualifiedAccess>]
 type internal CohortMembership<'T, 'U> =
@@ -16,7 +16,7 @@ type internal CohortMembership<'T, 'U> =
     | Remaining of 'U
     | New of 'T
 
-(*
+
 type internal CohortedPolicyIds =
     CohortMembership<string, string>
 
@@ -93,13 +93,15 @@ type internal CalculationLoop<'TPolicyRecord>
                             exitedPolicyIds
                             |> Seq.choose (fun pid ->
                                 match getOpeningPolicyRecord pid with
-                                | Some (Ok record) -> 
-                                    Some (CohortMembership.Exited record)
-                                | Some (Error reason) ->
+                                | Ok record ->
+                                    Some (ExitedPolicy record)
+                                | Error (PolicyGetterFailure.ParseFailure reason) ->
                                     do notifyRecordReadFailure (pid, reason)
                                     None
-                                | None ->
+                                | Error PolicyGetterFailure.NotFound ->
                                     do notifyRecordNotFound pid
+                                    None
+                                | Error PolicyGetterFailure.Cancelled ->
                                     None)
 
                         let remainingPolicyRecords =
