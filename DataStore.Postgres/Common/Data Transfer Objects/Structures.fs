@@ -13,80 +13,36 @@ open AnalysisOfChangeEngine.DataStore.Postgres
 // EVERYTHING here should be internal! Nothing here should be escaping beyond
 // the bounds of this assembly.
 
+
 [<NoEquality; NoComparison>]
-type internal StepHeaderDTO =
+type internal DataStage_BaseDTO =
     {
-        uid                     : Guid
-        title                   : string
-        description             : string
-        run_if_exited_record    : bool
-        run_if_new_record       : bool
+        run_uid         : Guid
+        data_stage_uid  : Guid
+        policy_id       : string
     }
-    
+
 [<RequireQualifiedAccess>]
-module internal StepHeaderDTO =
+module internal DataStageDTO =
 
     let [<Literal>] private pgTableName =
-        "step_headers"
+        "data_stages"
 
-    (*
-    Design Decision:
-        Rather than allow direct access to the underlying PostgresTable object,
-        we define an interface which allows us to restrict the available behaviours.
-        It also allows us to pre-compute certain functions such as filtered selectors.
-    *)
     type internal IDispatcher =
         interface
-            abstract member SelectAll       : unit -> StepHeaderDTO list
-            abstract member TryGetByUid     : StepUid -> StepHeaderDTO option
             abstract member PgTableName     : string with get
         end
 
-    let internal buildDispatcher dataSource =
-        let dispatcher =
-            new PostgresCommonTableDispatcher<StepHeaderDTO, Unit>
-                (pgTableName, dataSource)
+    let internal buildDispatcher<'TAugRowDTO> (schema, dataSource) =
 
-        let selectByUid =
-            // Could we have used lazy instantiation here?
-            // Although it would prevent code being generated unnecessarily,
-            // the trade-off is that we could find issues occurring mid-flight.
-            // It would be "best" if any issues occur as an exception
-            // during assembly start-up code (ie... fail-safe AND fail-fast).
-            dispatcher.MakeBaseEquality1Selector    
-                <@ _.uid @>
+        let dispatcher =
+            new PostgresTableDispatcher<DataStage_BaseDTO, 'TAugRowDTO>
+                (pgTableName, schema, dataSource)
 
         {
             new IDispatcher with
-                member _.SelectAll () =
-                    dispatcher.SelectAllBaseRecords ()
-                        
-                member _.TryGetByUid (StepUid stepUid') =
-                    match selectByUid.Execute stepUid' with
-                    | []    -> None
-                    | [x]   -> Some x
-                    | _     -> failwith "Multiple step headers found."
-
                 member _.PgTableName
-                    with get () = pgTableName
-        }
-
-    let internal toUnderlying (hdr: StepHeaderDTO): StepHeader =
-        {
-            Uid                 = StepUid hdr.uid
-            Title               = hdr.title
-            Description         = hdr.description
-            RunIfExitedRecord   = hdr.run_if_exited_record
-            RunIfNewRecord      = hdr.run_if_new_record
-        }
-
-    let internal fromUnderlying (hdr: StepHeader): StepHeaderDTO =
-        {
-            uid                     = hdr.Uid.Value
-            title                   = hdr.Title
-            description             = hdr.Description
-            run_if_exited_record    = hdr.RunIfExitedRecord
-            run_if_new_record       = hdr.RunIfNewRecord
+                    with get () = pgTableName                  
         }
 
 
@@ -156,7 +112,7 @@ module internal ExtractionHeaderDTO =
 
 
 [<NoEquality; NoComparison>]
-type internal PolicyDataBaseDTO =
+type internal PolicyData_BaseDTO =
     {
         extraction_uid          : Guid
         policy_id               : string        
@@ -176,7 +132,7 @@ module internal PolicyDataDTO =
 
     let internal builderDispatcher<'TAugRowDTO> (schema, dataSource) =
         let dispatcher =
-            new PostgresTableDispatcher<PolicyDataBaseDTO, 'TAugRowDTO>
+            new PostgresTableDispatcher<PolicyData_BaseDTO, 'TAugRowDTO>
                 (pgTableName, schema, dataSource)
 
         let recordGetter =
@@ -333,8 +289,10 @@ module internal RunStepDTO =
         }
 
 
+[<RequireQualifiedAccess>]
 [<NoEquality; NoComparison>]
-type internal RunErrorTypeDTO =
+[<PostgresCommonEnumeration("failure_type")>]
+type internal RunFailureTypeDTO =
     | OPENING_RECORD_NOT_FOUND
     | CLOSING_RECORD_NOT_FOUND
     | OPENING_RECORD_PARSE_FAILURE
@@ -347,31 +305,29 @@ type internal RunErrorTypeDTO =
     | STEP_CONSTRUCTION_FAILURE    
 
 [<NoEquality; NoComparison>]
-type internal RunErrorsDTO =
+type internal RunFailureDTO =
     {           
         run_uid                 : Guid
         policy_id               : string
         step_uid                : Guid option
-        error_type              : RunErrorTypeDTO
-        reason                  : string option
-        timestamp               : DateTime        
+        error_type              : RunFailureTypeDTO
+        reason                  : string option   
     }
 
 [<AbstractClass>]
-module internal RunErrorsDTO =
+module internal RunFailureDTO =
     
     let [<Literal>] private pgTableName =
         "run_failures"
 
     type internal IDispatcher =
         interface
-
             abstract member PgTableName     : string with get
         end
 
     let internal buildDispatcher (schema, dataSource) =
         let dispatcher =
-            new PostgresTableDispatcher<RunErrorsDTO, Unit>
+            new PostgresTableDispatcher<RunFailureDTO, Unit>
                 (pgTableName, schema, dataSource)
 
         {
@@ -381,16 +337,89 @@ module internal RunErrorsDTO =
         }
 
     
+[<NoEquality; NoComparison>]
+type internal StepHeaderDTO =
+    {
+        uid                     : Guid
+        title                   : string
+        description             : string
+        run_if_exited_record    : bool
+        run_if_new_record       : bool
+    }
+    
+[<RequireQualifiedAccess>]
+module internal StepHeaderDTO =
+
+    let [<Literal>] private pgTableName =
+        "step_headers"
+
+    (*
+    Design Decision:
+        Rather than allow direct access to the underlying PostgresTable object,
+        we define an interface which allows us to restrict the available behaviours.
+        It also allows us to pre-compute certain functions such as filtered selectors.
+    *)
+    type internal IDispatcher =
+        interface
+            abstract member SelectAll       : unit -> StepHeaderDTO list
+            abstract member TryGetByUid     : StepUid -> StepHeaderDTO option
+            abstract member PgTableName     : string with get
+        end
+
+    let internal buildDispatcher dataSource =
+        let dispatcher =
+            new PostgresCommonTableDispatcher<StepHeaderDTO, Unit>
+                (pgTableName, dataSource)
+
+        let selectByUid =
+            // Could we have used lazy instantiation here?
+            // Although it would prevent code being generated unnecessarily,
+            // the trade-off is that we could find issues occurring mid-flight.
+            // It would be "best" if any issues occur as an exception
+            // during assembly start-up code (ie... fail-safe AND fail-fast).
+            dispatcher.MakeBaseEquality1Selector    
+                <@ _.uid @>
+
+        {
+            new IDispatcher with
+                member _.SelectAll () =
+                    dispatcher.SelectAllBaseRecords ()
+                        
+                member _.TryGetByUid (StepUid stepUid') =
+                    match selectByUid.Execute stepUid' with
+                    | []    -> None
+                    | [x]   -> Some x
+                    | _     -> failwith "Multiple step headers found."
+
+                member _.PgTableName
+                    with get () = pgTableName
+        }
+
+    let internal toUnderlying (hdr: StepHeaderDTO): StepHeader =
+        {
+            Uid                 = StepUid hdr.uid
+            Title               = hdr.title
+            Description         = hdr.description
+            RunIfExitedRecord   = hdr.run_if_exited_record
+            RunIfNewRecord      = hdr.run_if_new_record
+        }
+
+    let internal fromUnderlying (hdr: StepHeader): StepHeaderDTO =
+        {
+            uid                     = hdr.Uid.Value
+            title                   = hdr.Title
+            description             = hdr.Description
+            run_if_exited_record    = hdr.RunIfExitedRecord
+            run_if_new_record       = hdr.RunIfNewRecord
+        }
 
 
 [<NoEquality; NoComparison>]
-type internal StepResultsBaseDTO =
+type internal StepResults_BaseDTO =
     {
         run_uid                 : Guid
         step_uid                : Guid
-        // Although we could figure this out when extracting results...
-        // It's a lot easier if it's just readily available!
-        used_data_stage_uid     : Guid
+        used_data_stage_uid     : Guid option
         policy_id               : string
     }
 
@@ -402,42 +431,24 @@ module internal StepResultsDTO =
         
     type internal IDispatcher<'TAugRow> =
         interface
-            abstract member DeleteRows      : RunUid -> unit
-            // Cannot overload functions with curried arguments!
-            abstract member DeleteRows      : RunUid * policyIds: string array -> NpgsqlBatchCommand
-            // We don't allow deleting results for a specific step/policy combination as all steps
-            // would need to be run regardless.
             abstract member PgTableName     : string with get
         end
 
     let internal buildDispatcher<'TAugRowDTO> (schema, dataSource) =
 
         let dispatcher =
-            PostgresTableDispatcher<StepResultsBaseDTO, 'TAugRowDTO>
+            PostgresTableDispatcher<StepResults_BaseDTO, 'TAugRowDTO>
                 (pgTableName, schema, dataSource)
-
-        let deleteRunResults =
-            dispatcher.MakeEquality1Remover
-                <@ _.run_uid @>
-
-        let deleteRunResultsForPolicies =
-            dispatcher.MakeEquality1Multiple1Remover
-                (<@ _.run_uid @>, <@ _.policy_id @>)
 
         {
             new IDispatcher<'TAugRowDTO> with                  
-                member _.DeleteRows (RunUid runUid') =
-                    do ignore <| deleteRunResults.ExecuteNonQuery runUid'
-
-                member _.DeleteRows (RunUid runUid', policyIds) =
-                    deleteRunResultsForPolicies.AsBatchCommand runUid' policyIds
-
                 member _.PgTableName
                     with get () = pgTableName                   
         }
 
 
-[<RequireQualifiedAccess; NoEquality; NoComparison>]
+[<RequireQualifiedAccess>]
+[<NoEquality; NoComparison>]
 [<PostgresCommonEnumeration("cohort_membership")>]
 type CohortMembershipDTO =
     | EXITED

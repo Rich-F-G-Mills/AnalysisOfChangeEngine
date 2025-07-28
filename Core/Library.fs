@@ -616,7 +616,7 @@ module Core =
     type PolicyGetterFailure =
         /// Indicates that, although the required record was found, it could
         /// not be successfully parsed into a corresponding policy record object.
-        | ParseFailure of Reason: string
+        | ParseFailure of Reasons: string array
         /// No record could be found with the requisite ID.
         | NotFound
         /// User cancelled the request.
@@ -697,25 +697,18 @@ module Core =
         | DataChangeStep of IStepHeader
         
 
-    // We use lists for the failures as they can be more easily constructed
-    // in a cumulative manner.
-    type ExitedPolicyOutcome<'TStepResults> =
-        Result<'TStepResults, EvaluationFailure list>
-
-    type RemainingPolicyResults<'TPolicyRecord, 'TStepResults> =
+    type EvaluatedPolicyWalk<'TPolicyRecord, 'TStepResults> =
         {
-            // We use DataChangeStep here as that is only used for interior data changes.
-            InteriorDataChanges : (DataChangeStep<'TPolicyRecord, 'TStepResults> * 'TPolicyRecord) list
-            StepResults         : (StepDataSource * 'TStepResults) list
+            // Strictly speaking, for the interior data changes, we should use DataChangeSteps rather than UIDs within the map.
+            // However, for the sake of acceptable pragmatism, the UID will work fine for our purposes.
+            InteriorDataChanges : Map<Guid, 'TPolicyRecord>
+            StepResults         : Map<Guid, StepDataSource * 'TStepResults>
         }
 
     // Either all steps succeed, or we return a list of failures.
-    type RemainingPolicyOutcome<'TPolicyRecord, 'TStepResults> =
+    type PolicyWalkOutcome<'TPolicyRecord, 'TStepResults> =
         // This makes it explicit that we're only return internal data stages.
-        Result<RemainingPolicyResults<'TPolicyRecord, 'TStepResults>, EvaluationFailure list>
-
-    type NewPolicyOutcome<'TStepResults> =
-        Result<'TStepResults, EvaluationFailure list>
+        Result<EvaluatedPolicyWalk<'TPolicyRecord, 'TStepResults>, EvaluationFailure list>
 
 
     [<NoEquality; NoComparison>]
@@ -749,22 +742,24 @@ module Core =
     
     /// Required interface for any implementation that can
     /// asyncronously evaluate a given policy.
+    // We can't replace this with a function signature as we require different inputs depending
+    // on the cohort to which the given policy belongs.
     type IPolicyEvaluator<'TPolicyRecord, 'TStepResults> =
         interface
             /// Only a single result will be provided for the initial
             /// (ie. opening re-run) step.
             abstract member Execute:
                 ExitedPolicy<'TPolicyRecord> * 'TStepResults option
-                    -> Task<ExitedPolicyOutcome<'TStepResults> * EvaluationTelemetry>
+                    -> Task<PolicyWalkOutcome<'TPolicyRecord, 'TStepResults> * EvaluationTelemetry>
 
             abstract member Execute:
                 // We can optionally provide the prior closing step results.
                 RemainingPolicy<'TPolicyRecord> * 'TStepResults option
-                    -> Task<RemainingPolicyOutcome<'TPolicyRecord, 'TStepResults> * EvaluationTelemetry>
+                    -> Task<PolicyWalkOutcome<'TPolicyRecord, 'TStepResults> * EvaluationTelemetry>
 
             /// Only a single result will be provided for the final
             /// (ie. add new records) step.
             abstract member Execute:
                 NewPolicy<'TPolicyRecord>
-                    -> Task<NewPolicyOutcome<'TStepResults> * EvaluationTelemetry>
+                    -> Task<PolicyWalkOutcome<'TPolicyRecord, 'TStepResults> * EvaluationTelemetry>
         end

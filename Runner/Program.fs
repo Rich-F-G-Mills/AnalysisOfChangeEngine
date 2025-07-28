@@ -125,7 +125,9 @@ module Runner =
                 |> Result.requireSome "Unable to locate current run header."
 
             let! outstandingRecords =
-                dataStore.TryGetOutstandingRecords currentRun.Uid
+                dataStore.TryGetOutstandingRecords currentRun.Uid {
+                    ReRunFailedCases = true
+                }
 
             do printfn "\n\nOutstanding records: %i\n\n" outstandingRecords.Length
 
@@ -224,6 +226,7 @@ module Runner =
             //    someExitedPolicyRecords
             //    |> Map.map (fun _ -> evaluator.Execute)
 
+            
             let remainingResultOutcomes =
                 someRemainingPolicyRecords
                 |> Map.map (fun _ rr -> evaluator.Execute (rr, None))
@@ -249,7 +252,7 @@ module Runner =
                 remainingResultOutcomes
                 |> Map.map (fun _ -> fst)
                 |> Map.map (fun _ ->
-                    Result.map (_.StepResults >> List.map snd))
+                    Result.map (_.StepResults >> Map.map (fun _ -> snd)))
 
             let apiTelemetry =
                 //exitedResults.Values
@@ -281,7 +284,7 @@ module Runner =
 
             do printfn "\n\n%A\n\n" apiTelemetryByEndPoint                
 
-            do printfn "\n\n%A\n\n" remainingResults
+            do printfn "\n\n%A\n\n" remainingResults            
 
             return 0
         }

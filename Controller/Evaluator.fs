@@ -555,6 +555,10 @@ module Evaluator =
 
     let private createRemainingPolicyEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord: equality>
         (logger: ILogger) (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>) =
+            let walkStepUids =
+                parsedWalk.ParsedSteps
+                |> List.map (fst >> _.Uid)
+
             // Pre-compute this once up-front.
             let groupingsByDataStage =
                 // If we don't pass in the API collection type, obj gets inferred.
@@ -606,17 +610,21 @@ module Evaluator =
 
                     let interiorDataChanges =
                         (postOpeningDataChangeSteps, postOpeningDataChanges')
-                        ||> List.zip
-                        |> List.choose (function
+                        ||> Seq.zip
+                        |> Seq.choose (function
                             // We only want the interior data changes. We don't care about the opening or
                             // closing stages as 
                             | :? DataChangeStep<'TPolicyRecord, 'TStepResults> as hdr, Some record ->
-                                Some (hdr, record)
+                                Some (hdr.Uid, record)
                             | _ ->
                                 None)
+                        |> Map.ofSeq
 
                     let profileExecutor =
                         // Make sure we load a cached version where available.
+                        // TODO - This is going to lead to allocations where we're referring to the
+                        // prevailing profile via a closure. However, for aesthetics if nothing else,
+                        // I'm inclined to keep it as it is. Right?
                         cachedProfileExecutors.GetOrAdd(groupingProfileIdxs, fun _ ->
                             let groupingsForProfile =
                                 cachedGroupingsForProfile.GetOrAdd(groupingProfileIdxs, fun _ ->
@@ -694,8 +702,12 @@ module Evaluator =
                             walkResults
                             |> Result.map (fun stepResults ->
                                 {
-                                    InteriorDataChanges = interiorDataChanges
-                                    StepResults         = stepResults
+                                    InteriorDataChanges =
+                                        interiorDataChanges
+                                    StepResults         =
+                                        stepResults
+                                        |> Seq.zip walkStepUids
+                                        |> Map.ofSeq
                                 })
 
                         return output, evaluationTelemetry
@@ -747,7 +759,15 @@ module Evaluator =
 
                         match validationOutcome with
                         | StepValidationOutcome.Completed [||] ->
-                            return evaluationOutcome, evaluationTelemetry
+                            let evaluationOutcome : EvaluatedPolicyWalk<'TPolicyRecord, _> =
+                                {
+                                    InteriorDataChanges =
+                                        Map.empty
+                                    StepResults         =
+                                        Map.singleton openingReRunStepHdr.Uid (StepDataSource.OpeningData, stepResults)
+                                }
+
+                            return Ok evaluationOutcome, evaluationTelemetry
 
                         | StepValidationOutcome.Completed issues ->
                             return Error [ EvaluationFailure.ValidationFailure
@@ -757,9 +777,9 @@ module Evaluator =
                             return Error [ EvaluationFailure.ValidationAborted
                                 (openingReRunStepHdr, [| reason |]) ], evaluationTelemetry
 
-                    | Error _ ->
+                    | Error failures ->
                         // If we've already errored, there's no point in validating.
-                        return evaluationOutcome, evaluationTelemetry
+                        return Error failures, evaluationTelemetry
                 }
 
     // Note the comments for the exited policy evaluator above.
@@ -788,7 +808,15 @@ module Evaluator =
 
                         match validationOutcome with
                         | StepValidationOutcome.Completed [||] ->
-                            return evaluationOutcome, evaluationTelemetry
+                            let evaluationOutcome : EvaluatedPolicyWalk<'TPolicyRecord, _> =
+                                {
+                                    InteriorDataChanges =
+                                        Map.empty
+                                    StepResults         =
+                                        Map.singleton newRecordsStepHdr.Uid (StepDataSource.ClosingData, stepResults)
+                                }
+
+                            return Ok evaluationOutcome, evaluationTelemetry
 
                         | StepValidationOutcome.Completed issues ->
                             return Error [ EvaluationFailure.ValidationFailure
@@ -798,9 +826,9 @@ module Evaluator =
                             return Error [ EvaluationFailure.ValidationAborted
                                 (newRecordsStepHdr, [| reason |]) ], evaluationTelemetry
 
-                    | Error _ ->
+                    | Error failures ->
                         // If we've already errored, there's no point in validating.
-                        return evaluationOutcome, evaluationTelemetry
+                        return Error failures, evaluationTelemetry
                 }        
 
 

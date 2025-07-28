@@ -6,6 +6,7 @@ namespace AnalysisOfChangeEngine.DataStore.Postgres
 module AbstractDataStore =
 
     open System
+    open System.Text
     open FSharp.Quotations
     open Npgsql
     open FsToolkit.ErrorHandling
@@ -20,6 +21,13 @@ module AbstractDataStore =
             propInfo.Name
         | _ ->
             failwith "Invalid field expression."
+
+
+    [<NoEquality; NoComparison>]
+    type IdentifyOutstandingRecordsOptions =
+        {
+            ReRunFailedCases : bool
+        }
         
 
     [<AbstractClass>]
@@ -27,6 +35,10 @@ module AbstractDataStore =
         (sessionContext: SessionContext, dataSource: NpgsqlDataSource, schema: string) =
 
         // --- DISPATCHERS ---
+
+        let dataStageDispatcher =
+            DataStageDTO.buildDispatcher<'TPolicyRecordDTO>
+                (schema, dataSource)
 
         let extractionHeaderDispatcher =
             ExtractionHeaderDTO.buildDispatcher
@@ -50,6 +62,10 @@ module AbstractDataStore =
 
         let stepResultsDispatcher =
             StepResultsDTO.buildDispatcher<'TStepResultsDTO>
+                (schema, dataSource)
+
+        let runFailureDispatcher =
+            RunFailureDTO.buildDispatcher
                 (schema, dataSource)
 
 
@@ -171,9 +187,6 @@ module AbstractDataStore =
         abstract member dtoToStepResults: 'TStepResultsDTO -> Result<'TStepResults, string>
 
         abstract member stepResultsToDTO: 'TStepResults -> Result<'TStepResultsDTO, string>
-            
-        member _.DeleteResultsForPolicy stepUid policyId =
-            0
 
 
         // --- POLICY DATA ---
@@ -198,7 +211,7 @@ module AbstractDataStore =
             }
             
 
-        member this.TryGetOutstandingRecords currentRunUid =
+        member this.TryGetOutstandingRecords currentRunUid (options: IdentifyOutstandingRecordsOptions) =
             result {
                 let! currentRunHeader =
                     this.TryGetRunHeader currentRunUid
@@ -216,17 +229,6 @@ module AbstractDataStore =
                     | _ ->
                         None
 
-                let runStepPgTableName =
-                    runStepDispatcher.PgTableName
-
-                let stepHeaderPgTableName =
-                    stepHeaderDispatcher.PgTableName
-
-                let policyDataPgTableName =
-                    policyDataDispatcher.PgTableName
-
-                let stepResultsPgTableName =
-                    stepResultsDispatcher.PgTableName
 
                 (*
                 Design Decision:
@@ -240,7 +242,11 @@ module AbstractDataStore =
                 // TODO - At least create a helper function that can extract the Postgres type-name
                 // specified in the PG attribute associated with the type.
                 // Regardless, we use aliases as a way to avoid the need to keep extracting field names.
+
                 let sqlCommand =
+                    new StringBuilder ()
+
+                do ignore <| sqlCommand.Append(
                     $"""
                     WITH
                         run_steps AS (
@@ -249,8 +255,8 @@ module AbstractDataStore =
                                 sh.{fieldName<StepHeaderDTO, _> <@ _.uid @>} AS uid,
                                 sh.{fieldName<StepHeaderDTO, _> <@ _.run_if_exited_record @>} AS run_if_exited_record,
                                 sh.{fieldName<StepHeaderDTO, _> <@ _.run_if_new_record @>} AS run_if_new_record
-                            FROM {schema}.{runStepPgTableName} AS rs
-                            LEFT JOIN common.{stepHeaderPgTableName} AS sh
+                            FROM {schema}.{runStepDispatcher.PgTableName} AS rs
+                            LEFT JOIN common.{stepHeaderDispatcher.PgTableName} AS sh
                             ON rs.{fieldName<RunStepDTO, _> <@ _.step_uid @>} =
                                 sh.{fieldName<StepHeaderDTO, _> <@ _.uid @>}
                             WHERE rs.{fieldName<RunStepDTO, _> <@ _.run_uid @>} =
@@ -258,16 +264,16 @@ module AbstractDataStore =
                         ),
     
                         opening_policy_ids AS (
-                            SELECT DISTINCT {fieldName<PolicyDataBaseDTO, _> <@ _.policy_id @>} AS policy_id
-                            FROM {schema}.{policyDataPgTableName}
-                            WHERE {fieldName<PolicyDataBaseDTO, _> <@ _.extraction_uid @>} =
+                            SELECT DISTINCT {fieldName<PolicyData_BaseDTO, _> <@ _.policy_id @>} AS policy_id
+                            FROM {schema}.{policyDataDispatcher.PgTableName}
+                            WHERE {fieldName<PolicyData_BaseDTO, _> <@ _.extraction_uid @>} =
                                 @prior_extraction_uid
                         ),
     
                         closing_policy_ids AS (
-                            SELECT DISTINCT {fieldName<PolicyDataBaseDTO, _> <@ _.policy_id @>} AS policy_id
-                            FROM {schema}.{policyDataPgTableName}
-                            WHERE {fieldName<PolicyDataBaseDTO, _> <@ _.extraction_uid @>} =
+                            SELECT DISTINCT {fieldName<PolicyData_BaseDTO, _> <@ _.policy_id @>} AS policy_id
+                            FROM {schema}.{policyDataDispatcher.PgTableName}
+                            WHERE {fieldName<PolicyData_BaseDTO, _> <@ _.extraction_uid @>} =
                                 @current_extraction_uid
                         ),
     
@@ -294,10 +300,10 @@ module AbstractDataStore =
     
                         steps_run AS (
                             SELECT
-                                {fieldName<StepResultsBaseDTO, _> <@ _.policy_id @>} AS policy_id,
-                                {fieldName<StepResultsBaseDTO, _> <@ _.step_uid @>} AS step_uid
-                            FROM {schema}.{stepResultsPgTableName}
-                            WHERE {fieldName<StepResultsBaseDTO, _> <@ _.run_uid @>} =
+                                {fieldName<StepResults_BaseDTO, _> <@ _.policy_id @>} AS policy_id,
+                                {fieldName<StepResults_BaseDTO, _> <@ _.step_uid @>} AS step_uid
+                            FROM {schema}.{stepResultsDispatcher.PgTableName}
+                            WHERE {fieldName<StepResults_BaseDTO, _> <@ _.run_uid @>} =
                                 @current_run_uid
                         ),
     
@@ -311,6 +317,14 @@ module AbstractDataStore =
                             FROM new_policy_ids, run_steps
                             WHERE run_if_new_record
                         ),
+
+                        failed_cases AS (
+                            SELECT DISTINCT
+                                {fieldName<RunFailureDTO, _> <@ _.policy_id @>} AS policy_id
+                            FROM {schema}.{runFailureDispatcher.PgTableName}
+                            WHERE {fieldName<RunFailureDTO, _> <@ _.run_uid @>} =
+                                @current_run_uid
+                        ),
     
                         step_statuses AS (
                             SELECT
@@ -320,7 +334,62 @@ module AbstractDataStore =
                             FROM steps_expected AS expected
                             LEFT JOIN steps_run AS run
                             ON expected.policy_id = run.policy_id
-                                AND expected.step_uid = run.step_uid		
+                                AND expected.step_uid = run.step_uid
+                        ),
+
+                        incomplete_step_results AS (
+                            SELECT policy_id
+                            FROM step_statuses
+                            -- This approach seems MUCH faster than using a SELECT DISTINCT and a WHERE.
+                            GROUP BY policy_id		
+                            HAVING NOT bool_and(was_run)
+                        ),
+                    """
+                )               
+                
+                if options.ReRunFailedCases then
+                    do ignore <| sqlCommand.Append(
+                        $"""
+                        outstanding_cases AS (
+                            SELECT policy_id
+                            FROM incomplete_step_results
+                        ),                    
+                        """
+                    )
+
+                else
+                    do ignore <| sqlCommand.Append(
+                        $"""
+                        outstanding_cases AS (
+                            SELECT policy_id
+                            FROM incomplete_step_results
+                            WHERE policy_id NOT IN (SELECT policy_id FROM failed_cases)
+                        ),
+                        """
+                    )
+
+                do ignore <| sqlCommand.Append(
+                    $"""
+                        delete_existing_run_failures AS (
+                            DELETE FROM {schema}.{runFailureDispatcher.PgTableName}
+                            WHERE {fieldName<RunFailureDTO, _> <@ _.run_uid @>} = @current_run_uid
+                                AND {fieldName<RunFailureDTO, _> <@ _.policy_id @>} IN (
+                                    SELECT policy_id FROM outstanding_cases)
+                        ),
+
+                        -- ALthough unlikely, remove any existing step results for these records.
+                        delete_existing_results AS (
+                            DELETE FROM {schema}.{stepResultsDispatcher.PgTableName}
+                            WHERE {fieldName<StepResults_BaseDTO, _> <@ _.run_uid @>} = @current_run_uid
+                                AND {fieldName<StepResults_BaseDTO, _> <@ _.policy_id @>} IN (
+                                    SELECT policy_id FROM outstanding_cases)
+                        ),
+
+                        delete_existing_data_stages AS (
+                            DELETE FROM {schema}.{dataStageDispatcher.PgTableName}
+                            WHERE {fieldName<DataStage_BaseDTO, _> <@ _.run_uid @>} = @current_run_uid
+                                AND {fieldName<DataStage_BaseDTO, _> <@ _.policy_id @>} IN (
+                                    SELECT policy_id FROM outstanding_cases)
                         )
 
                     SELECT
@@ -333,14 +402,15 @@ module AbstractDataStore =
                             WHEN policy_id IN (SELECT policy_id FROM new_policy_ids)
                                 THEN 'NEW'::common.cohort_membership
                         END AS cohort
-                    FROM step_statuses
-                    -- This approach seems MUCH faster than using a SELECT DISTINCT and a WHERE.
-                    GROUP BY policy_id		
-                    HAVING NOT bool_and(was_run)
-                    """
+                    FROM outstanding_cases;
+                    """                    
+                )
+
+                let sqlCommand' =
+                    sqlCommand.ToString ()
 
                 use dbCommand = 
-                    dataSource.CreateCommand (sqlCommand)
+                    dataSource.CreateCommand sqlCommand'
 
                 let currentRunUidParam =
                     new NpgsqlParameter<Guid>
