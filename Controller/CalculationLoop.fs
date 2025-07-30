@@ -39,7 +39,6 @@ module CalculationLoop =
     type private RecordPendingEvaluationFailure =
         | OpeningRecordNotFound
         | ClosingRecordNotFound
-        | NeitherRecordFound
         | OpeningRecordParseFailure of Reasons: string array
         | ClosingRecordParseFailure of Reasons: string array
 
@@ -51,7 +50,7 @@ module CalculationLoop =
     [<RequireQualifiedAccess>]
     [<NoEquality; NoComparison>]
     type private ProcessingFailure =
-        | PreEvaluationFailure of RecordPendingEvaluationFailure
+        | PreEvaluationFailure of RecordPendingEvaluationFailure list
         | PostEvaluationFailure of EvaluationFailure list
 
     [<NoEquality; NoComparison>]
@@ -91,17 +90,17 @@ module CalculationLoop =
                             let exitedPolicyIds =
                                 policyIds
                                 |> Array.choose (
-                                    function | PendingPolicyId.Exited pid -> Some pid | _ -> None)
+                                    function | PolicyId.Exited pid -> Some pid | _ -> None)
 
                             let remainingPolicyIds =
                                 policyIds
                                 |> Array.choose (
-                                    function | PendingPolicyId.Remaining pid -> Some pid | _ -> None)
+                                    function | PolicyId.Remaining pid -> Some pid | _ -> None)
 
                             let newPolicyIds =
                                 policyIds
                                 |> Array.choose (
-                                    function | PendingPolicyId.New pid -> Some pid | _ -> None)
+                                    function | PolicyId.New pid -> Some pid | _ -> None)
 
                             let openingPolicyIds =
                                 exitedPolicyIds
@@ -128,16 +127,32 @@ module CalculationLoop =
                             let exitedPolicyRecords =
                                 exitedPolicyIds
                                 |> Seq.map (fun pid ->
-                                    match getOpeningPolicyRecord pid>> Result.map PendingPolicyRecord.Exited)
+                                    match getOpeningPolicyRecord pid with
+                                    | Ok policyRecord ->
+                                        Ok (PolicyRecord.Exited policyRecord)
+                                    | Error PolicyGetterFailure.NotFound ->
+                                        Error [ RecordPendingEvaluationFailure.ClosingRecordNotFound ]
+                                    | Error (PolicyGetterFailure.ParseFailure reasons) ->
+                                        Error [ RecordPendingEvaluationFailure.ClosingRecordParseFailure reasons ]
+                                    | Error PolicyGetterFailure.Cancelled ->
+                                        Error [ RecordPendingEvaluationFailure.Cancelled ])
 
                             let remainingPolicyRecords =
                                 remainingPolicyIds
-                                |> Seq.choose (fun pid ->
-                                    match getOpeningPolicyRecord pid, getClosingPolicyRecord pid with
-                                    | Some (Ok openingRecord), Some (Ok closingRecord) -> 
-                                        Some (CohortMembership.Remaining (openingRecord, closingRecord))
-                                    | Some (Error reason), Some (Ok _)
-                                    | Some (Ok _), Some (Error reason) ->
+                                |> Seq.map (fun pid ->
+                                    let openingRecord =
+                                        getOpeningPolicyRecord pid
+                                        |> Result.mapError (function
+                                            | PolicyGetterFailure.NotFound ->
+                                                [ RecordPendingEvaluationFailure.OpeningRecordNotFound ]
+                                            | PolicyGetterFailure.ParseFailure reasons ->
+                                                [ RecordPendingEvaluationFailure.OpeningRecordParseFailure reasons ]
+                                            | PolicyGetterFailure.Cancelled ->
+                                    | Ok policyRecord -> 
+                                        Ok policyRecord
+                                    | Error PolicyGetterFailure.NotFound, Ok _ ->
+                                        Error [ RecordPendingEvaluationFailure.OpeningRecordNotFound ]
+                                    | Ok _, Error reason) ->
                                         do notifyRecordReadFailure (pid, reason)
                                         None
                                     | Some (Error reason1), Some (Error reason2) ->
