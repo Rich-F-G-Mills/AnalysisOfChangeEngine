@@ -286,26 +286,11 @@ module ExcelApi =
                             ClosingCalculationDate = openingRunDate'.ToDateTimeMidnight ()
                         }
 
-                    // TODO - Filthy duplication going on here!
-                    let executor requiredOutputs policyRecord =
-                        backgroundTask {
-                            let policyRelatedInputs =
-                                TransferTypes.ExcelPolicyRelatedInputs.ofUnderlying policyRecord
+                    let executor requiredOutputs (policyRecord, onApiRequestProcessingStart) =
+                        let policyRelatedInputs =
+                            TransferTypes.ExcelPolicyRelatedInputs.ofUnderlying policyRecord
 
-                            let! requestOutcome, dispatcherTelemetry =
-                                dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs)
-
-                            let apiTelemetry: ApiRequestTelemetry option =
-                                dispatcherTelemetry
-                                |> Option.map (fun telemetry ->
-                                    {
-                                        EndpointId      = Some $"{telemetry.EndpointIdx}"
-                                        ProcessingStart = telemetry.ProcessingStart
-                                        ProcessingEnd   = telemetry.ProcessingEnd                                   
-                                    })
-
-                            return requestOutcome, apiTelemetry                        
-                        }                                         
+                        dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) onApiRequestProcessingStart
 
                     ApiRequestor.create (requestorName, executor)
 
@@ -329,25 +314,11 @@ module ExcelApi =
                         closingRunDate.ToDateTimeMidnight ()
                 }
 
-            let executor requiredOutputs policyRecord =
-                backgroundTask {
-                    let policyRelatedInputs =
-                        TransferTypes.ExcelPolicyRelatedInputs.ofUnderlying policyRecord
+            let executor requiredOutputs (policyRecord, onApiRequestProcessingStart) =
+                let policyRelatedInputs =
+                    TransferTypes.ExcelPolicyRelatedInputs.ofUnderlying policyRecord                        
 
-                    let! requestOutcome, dispatcherTelemetry =
-                        dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs)
-
-                    let apiTelemetry: ApiRequestTelemetry option =
-                        dispatcherTelemetry
-                        |> Option.map (fun telemetry ->
-                            {
-                                EndpointId      = Some $"{telemetry.EndpointIdx}"
-                                ProcessingStart = telemetry.ProcessingStart
-                                ProcessingEnd   = telemetry.ProcessingEnd                                   
-                            })
-
-                    return requestOutcome, apiTelemetry                        
-                } 
+                dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) onApiRequestProcessingStart 
 
             let apiRequestor =
                 ApiRequestor.create ("PX API [Post-Opening Regression]", executor)

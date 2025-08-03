@@ -96,9 +96,9 @@ module AbstractDataStore =
 
         // --- POLICY DATA ---
 
-        abstract member dtoToPolicyRecord: 'TPolicyRecordDTO -> Result<'TPolicyRecord, string>
+        abstract member dtoToPolicyRecord: 'TPolicyRecordDTO -> Result<'TPolicyRecord, string array>
 
-        abstract member policyRecordToDTO: 'TPolicyRecord -> Result<'TPolicyRecordDTO, string>
+        abstract member policyRecordToDTO: 'TPolicyRecord -> Result<'TPolicyRecordDTO, string array>
 
 
         // --- RUNS ---
@@ -184,9 +184,9 @@ module AbstractDataStore =
 
         // --- STEP RESULTS ---
 
-        abstract member dtoToStepResults: 'TStepResultsDTO -> Result<'TStepResults, string>
+        abstract member dtoToStepResults: 'TStepResultsDTO -> Result<'TStepResults, string array>
 
-        abstract member stepResultsToDTO: 'TStepResults -> Result<'TStepResultsDTO, string>
+        abstract member stepResultsToDTO: 'TStepResults -> Result<'TStepResultsDTO, string array>
 
 
         // --- POLICY DATA ---
@@ -373,23 +373,23 @@ module AbstractDataStore =
                         delete_existing_run_failures AS (
                             DELETE FROM {schema}.{runFailureDispatcher.PgTableName}
                             WHERE {fieldName<RunFailureDTO, _> <@ _.run_uid @>} = @current_run_uid
-                                AND {fieldName<RunFailureDTO, _> <@ _.policy_id @>} IN (
-                                    SELECT policy_id FROM outstanding_cases)
+                                AND {fieldName<RunFailureDTO, _> <@ _.policy_id @>}
+                                    IN (SELECT policy_id FROM outstanding_cases)
                         ),
 
                         -- ALthough unlikely, remove any existing step results for these records.
                         delete_existing_results AS (
                             DELETE FROM {schema}.{stepResultsDispatcher.PgTableName}
                             WHERE {fieldName<StepResults_BaseDTO, _> <@ _.run_uid @>} = @current_run_uid
-                                AND {fieldName<StepResults_BaseDTO, _> <@ _.policy_id @>} IN (
-                                    SELECT policy_id FROM outstanding_cases)
+                                AND {fieldName<StepResults_BaseDTO, _> <@ _.policy_id @>}
+                                    IN (SELECT policy_id FROM outstanding_cases)
                         ),
 
                         delete_existing_data_stages AS (
                             DELETE FROM {schema}.{dataStageDispatcher.PgTableName}
                             WHERE {fieldName<DataStage_BaseDTO, _> <@ _.run_uid @>} = @current_run_uid
-                                AND {fieldName<DataStage_BaseDTO, _> <@ _.policy_id @>} IN (
-                                    SELECT policy_id FROM outstanding_cases)
+                                AND {fieldName<DataStage_BaseDTO, _> <@ _.policy_id @>}
+                                    IN (SELECT policy_id FROM outstanding_cases)
                         )
 
                     SELECT

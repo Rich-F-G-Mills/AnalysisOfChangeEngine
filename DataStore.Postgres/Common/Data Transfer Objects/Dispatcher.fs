@@ -222,11 +222,14 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         sqlColumnsSelector
                         filterColSelector
 
+                let prepareParameters (paramsCol: NpgsqlParameterCollection, value) =
+                    do ignore <| paramsCol.Add (toSqlParamValue value)
+
                 let execute value =
                     use dbCommand =
                         dataSource.CreateCommand sqlCommand
 
-                    do ignore <| dbCommand.Parameters.Add (toSqlParamValue value)
+                    do prepareParameters (dbCommand.Parameters, value)
                     
                     use dbReader =
                         dbCommand.ExecuteReader ()
@@ -244,7 +247,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         use dbCommand =
                             dataSource.CreateCommand sqlCommand
 
-                        do ignore <| dbCommand.Parameters.Add (toSqlParamValue value)
+                        do prepareParameters (dbCommand.Parameters, value)
                     
                         use! dbReader =
                             dbCommand.ExecuteReaderAsync ()
@@ -294,12 +297,15 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         filterColSelector1
                         filterColSelector2
 
+                let prepareParameters (paramsCol: NpgsqlParameterCollection, value1, value2) =
+                    do ignore <| paramsCol.Add (toSqlParamValue1 value1)
+                    do ignore <| paramsCol.Add (toSqlParamValue2 value2)
+
                 let execute value1 value2 =
                     use dbCommand =
                         dataSource.CreateCommand sqlCommand
 
-                    do ignore <| dbCommand.Parameters.Add (toSqlParamValue1 value1)
-                    do ignore <| dbCommand.Parameters.Add (toSqlParamValue2 value2)
+                    do prepareParameters (dbCommand.Parameters, value1, value2)
                     
                     use dbReader =
                         dbCommand.ExecuteReader ()
@@ -314,8 +320,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         use dbCommand =
                             dataSource.CreateCommand sqlCommand
 
-                        do ignore <| dbCommand.Parameters.Add (toSqlParamValue1 value1)
-                        do ignore <| dbCommand.Parameters.Add (toSqlParamValue2 value2)
+                        do prepareParameters (dbCommand.Parameters, value1, value2)
                     
                         use! dbReader =
                             dbCommand.ExecuteReaderAsync ()
@@ -352,13 +357,16 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         filterColSelector2
                         filterColSelector3
 
+                let prepareParameters (paramsCol: NpgsqlParameterCollection, value1, value2, value3) =
+                    do ignore <| paramsCol.Add (toSqlParamValue1 value1)
+                    do ignore <| paramsCol.Add (toSqlParamValue2 value2)
+                    do ignore <| paramsCol.Add (toSqlParamValue3 value3)
+
                 let execute value1 value2 value3 =
                     use dbCommand =
                         dataSource.CreateCommand sqlCommand
 
-                    do ignore <| dbCommand.Parameters.Add (toSqlParamValue1 value1)
-                    do ignore <| dbCommand.Parameters.Add (toSqlParamValue2 value2)
-                    do ignore <| dbCommand.Parameters.Add (toSqlParamValue3 value3)
+                    do prepareParameters (dbCommand.Parameters, value1, value2, value3)
                     
                     use dbReader =
                         dbCommand.ExecuteReader ()
@@ -373,9 +381,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         use dbCommand =
                             dataSource.CreateCommand sqlCommand
 
-                        do ignore <| dbCommand.Parameters.Add (toSqlParamValue1 value1)
-                        do ignore <| dbCommand.Parameters.Add (toSqlParamValue2 value2)
-                        do ignore <| dbCommand.Parameters.Add (toSqlParamValue3 value3)
+                        do prepareParameters (dbCommand.Parameters, value1, value2, value3)
                     
                         use! dbReader =
                             dbCommand.ExecuteReaderAsync ()
@@ -437,12 +443,15 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         filterColSelector1
                         filterColSelector2
 
+                let prepareParameters (paramsCol: NpgsqlParameterCollection, value1, values2) =
+                    do ignore <| paramsCol.Add (toSqlParamValue1 value1)
+                    do ignore <| paramsCol.Add (toSqlParamValueArray2 values2)
+
                 let execute value1 values2 =
                     use dbCommand =
                         dataSource.CreateCommand sqlCommand
 
-                    do ignore <| dbCommand.Parameters.Add (toSqlParamValue1 value1)
-                    do ignore <| dbCommand.Parameters.Add (toSqlParamValueArray2 values2)
+                    do prepareParameters (dbCommand.Parameters, value1, values2)
                     
                     use dbReader =
                         dbCommand.ExecuteReader ()
@@ -456,8 +465,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         use dbCommand =
                             dataSource.CreateCommand sqlCommand
 
-                        do ignore <| dbCommand.Parameters.Add (toSqlParamValue1 value1)
-                        do ignore <| dbCommand.Parameters.Add (toSqlParamValueArray2 values2)
+                        do prepareParameters (dbCommand.Parameters, value1, values2)
                     
                         use! dbReader =
                             dbCommand.ExecuteReaderAsync ()
@@ -480,6 +488,70 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
             this.MakeEquality1Multiple1Selector (column1, column2, combinedSqlRecordSelector, combinedRecordParser)
 
 
+        member private this.MakeEquality2Multiple1Selector
+            (column1: Expr<'TBaseRow -> 'TValue1>, column2: Expr<'TBaseRow -> 'TValue2>, column3: Expr<'TBaseRow -> 'TValue3>, sqlColumnsSelector, parser: DbDataReader -> 'TRow) =
+                let filterColSelector1, toSqlParamValue1, _ =
+                    this.GetEqualitySelectorDetails column1
+
+                let filterColSelector2, toSqlParamValue2, _ =
+                    this.GetEqualitySelectorDetails column2
+
+                let filterColSelector3, _, toSqlParamValueArray3 =
+                    this.GetEqualitySelectorDetails column3
+
+                let sqlCommand =
+                    sprintf "%s WHERE (%s = $1) AND (%s = $2) AND (%s = ANY($3))"
+                        sqlColumnsSelector
+                        filterColSelector1
+                        filterColSelector2
+                        filterColSelector3
+
+                let prepareParameters (paramsCol: NpgsqlParameterCollection, value1, value2, values3) =
+                    do ignore <| paramsCol.Add (toSqlParamValue1 value1)
+                    do ignore <| paramsCol.Add (toSqlParamValue2 value2)
+                    do ignore <| paramsCol.Add (toSqlParamValueArray3 values3)
+
+                let execute value1 value2 values3 =
+                    use dbCommand =
+                        dataSource.CreateCommand sqlCommand
+
+                    do prepareParameters (dbCommand.Parameters, value1, value2, values3)
+                    
+                    use dbReader =
+                        dbCommand.ExecuteReader ()
+                    [
+                        while dbReader.Read () do
+                            yield parser dbReader
+                    ]
+
+                let executeAsync value1 value2 values3 =
+                    backgroundTask {
+                        use dbCommand =
+                            dataSource.CreateCommand sqlCommand
+
+                        do prepareParameters (dbCommand.Parameters, value1, value2, values3)
+                    
+                        use! dbReader =
+                            dbCommand.ExecuteReaderAsync ()
+
+                        let rowsRead =
+                            new LinkedList<_> ()
+
+                        while! dbReader.ReadAsync () do
+                            do ignore <| rowsRead.AddLast (parser dbReader)
+
+                        return  rowsRead
+                    }
+
+                {|
+                    Execute         = execute
+                    ExecuteAsync    = executeAsync
+                |}
+
+        member this.MakeCombinedEquality2Multiple1Selector (column1, column2, column3) =
+            this.MakeEquality2Multiple1Selector (column1, column2, column3, combinedSqlRecordSelector, combinedRecordParser)
+
+
         member this.MakeEquality1Remover
             (column: Expr<'TBaseRow -> 'TValue>) =
                 let filterColSelector, toSqlParamValue, _ =
@@ -491,14 +563,14 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         tableName 
                         filterColSelector
 
-                let prepareParameters (paramsCol: NpgsqlParameterCollection) value =
+                let prepareParameters (paramsCol: NpgsqlParameterCollection, value) =
                     do ignore <| paramsCol.Add (toSqlParamValue value)
 
                 let executeNonQuery value =
                     use dbCommand =
                         dataSource.CreateCommand sqlCommand
 
-                    do prepareParameters dbCommand.Parameters value
+                    do prepareParameters (dbCommand.Parameters, value)
 
                     dbCommand.ExecuteNonQuery ()
 
@@ -507,7 +579,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         use dbCommand =
                             dataSource.CreateCommand sqlCommand
 
-                        do prepareParameters dbCommand.Parameters value
+                        do prepareParameters (dbCommand.Parameters, value)
 
                         return! dbCommand.ExecuteNonQueryAsync ()
                     }                    
@@ -541,7 +613,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         filterColSelector1
                         filterColSelector2
 
-                let prepareParameters (paramsCol: NpgsqlParameterCollection) value1 value2 =
+                let prepareParameters (paramsCol: NpgsqlParameterCollection, value1, value2) =
                     do ignore <| paramsCol.Add (toSqlParamValue1 value1)
                     do ignore <| paramsCol.Add (toSqlParamValue2 value2)
 
@@ -549,7 +621,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                     use dbCommand =
                         dataSource.CreateCommand sqlCommand
 
-                    do prepareParameters dbCommand.Parameters value1 value2
+                    do prepareParameters (dbCommand.Parameters, value1, value2)
 
                     dbCommand.ExecuteNonQuery ()
 
@@ -557,7 +629,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                     let dbBatchCommand = 
                         new NpgsqlBatchCommand (sqlCommand)
 
-                    do prepareParameters dbBatchCommand.Parameters value1 value2
+                    do prepareParameters (dbBatchCommand.Parameters, value1, value2)
 
                     dbBatchCommand
 
@@ -585,7 +657,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         filterColSelector2
                         filterColSelector3
 
-                let prepareParameters (paramsCol: NpgsqlParameterCollection) value1 value2 value3 =
+                let prepareParameters (paramsCol: NpgsqlParameterCollection, value1, value2, value3) =
                     do ignore <| paramsCol.Add (toSqlParamValue1 value1)
                     do ignore <| paramsCol.Add (toSqlParamValue2 value2)
                     do ignore <| paramsCol.Add (toSqlParamValue3 value3)
@@ -594,7 +666,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                     use dbCommand =
                         dataSource.CreateCommand sqlCommand
 
-                    do prepareParameters dbCommand.Parameters value1 value2 value3
+                    do prepareParameters (dbCommand.Parameters, value1, value2, value3)
 
                     dbCommand.ExecuteNonQuery ()
 
@@ -602,7 +674,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                     let dbBatchCommand = 
                         new NpgsqlBatchCommand (sqlCommand)
 
-                    do prepareParameters dbBatchCommand.Parameters value1 value2 value3
+                    do prepareParameters (dbBatchCommand.Parameters, value1, value2, value3)
 
                     dbBatchCommand
 
@@ -628,7 +700,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         filterColSelector1
                         filterColSelector2
 
-                let prepareParameters (paramsCol: NpgsqlParameterCollection) value1 values2 =
+                let prepareParameters (paramsCol: NpgsqlParameterCollection, value1, values2) =
                     do ignore <| paramsCol.Add (toSqlParamValue1 value1)
                     do ignore <| paramsCol.Add (toSqlParamValueArray2 values2)
 
@@ -636,7 +708,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                     use dbCommand =
                         dataSource.CreateCommand sqlCommand
 
-                    do prepareParameters dbCommand.Parameters value1 values2
+                    do prepareParameters (dbCommand.Parameters, value1, values2)
 
                     dbCommand.ExecuteNonQuery ()
 
@@ -645,7 +717,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                         use dbCommand =
                             dataSource.CreateCommand sqlCommand
 
-                        do prepareParameters dbCommand.Parameters value1 values2
+                        do prepareParameters (dbCommand.Parameters, value1, values2)
 
                         return! dbCommand.ExecuteNonQueryAsync ()
                     }                    
@@ -654,7 +726,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                     let dbBatchCommand = 
                         new NpgsqlBatchCommand (sqlCommand)
 
-                    do prepareParameters dbBatchCommand.Parameters value1 values2
+                    do prepareParameters (dbBatchCommand.Parameters, value1, values2)
 
                     dbBatchCommand
 
@@ -725,7 +797,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
             ) with get
 
         member this.MakeRowInserter () =
-            let prepareParameters (paramsCol: NpgsqlParameterCollection) row =
+            let prepareParameters (paramsCol: NpgsqlParameterCollection, row) =
                 let rowParams: NpgsqlParameter list =
                     this.getRowInsertParameters.Value row
 
@@ -736,7 +808,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                 use dbCommand =
                     dataSource.CreateCommand sqlInsertRowCommand
 
-                do prepareParameters dbCommand.Parameters row
+                do prepareParameters (dbCommand.Parameters, row)
 
                 dbCommand.ExecuteNonQuery ()
 
@@ -745,7 +817,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                     use dbCommand =
                         dataSource.CreateCommand sqlInsertRowCommand
 
-                    do prepareParameters dbCommand.Parameters row
+                    do prepareParameters (dbCommand.Parameters, row)
 
                     return! dbCommand.ExecuteNonQueryAsync ()
                 }                
@@ -754,11 +826,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                 let dbBatchCommand = 
                     new NpgsqlBatchCommand (sqlInsertRowCommand)
 
-                let rowParams =
-                    this.getRowInsertParameters.Value row
-
-                for rowParam in rowParams do
-                    do ignore <| dbBatchCommand.Parameters.Add rowParam
+                do prepareParameters (dbBatchCommand.Parameters, row)
 
                 dbBatchCommand
 
@@ -769,7 +837,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
             |}
 
         member this.MakeRowsInserter () =
-            let prepareBatchCommand (dbBatch: NpgsqlBatch) rows =
+            let prepareBatchCommand (dbBatch: NpgsqlBatch, rows) =
                 for row in rows do
                     // Doesn't implement IDisposable so no need for 'use' here.
                     let dbBatchCommand =
@@ -785,7 +853,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                 use dbBatch =
                     dataSource.CreateBatch ()
 
-                do prepareBatchCommand dbBatch rows
+                do prepareBatchCommand (dbBatch, rows)
 
                 dbBatch.ExecuteNonQuery ()
 
@@ -794,7 +862,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                     use dbBatch =
                         dataSource.CreateBatch ()
 
-                    do prepareBatchCommand dbBatch rows
+                    do prepareBatchCommand (dbBatch, rows)
 
                     return! dbBatch.ExecuteNonQueryAsync ()
                 }
@@ -817,7 +885,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
             {|
                 ExecuteNonQuery         = executeNonQuery
                 executeNonQueryAsync    = executeNonQueryAsync
-                AsBatchCommand          = asBatchCommands
+                AsBatchCommands         = asBatchCommands
             |}
 
 

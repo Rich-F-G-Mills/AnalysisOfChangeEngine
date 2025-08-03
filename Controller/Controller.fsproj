@@ -11,11 +11,15 @@
     <Compile Include="Walk Analyser\SourceParser.fs" />
     <Compile Include="Walk Analyser\WalkParser.fs" />
     <Compile Include="Evaluator.fs" />
-    <Compile Include="CalculationLoop.fs" />
+    <Compile Include="Calculation Loop\Common.fs" />
+    <Compile Include="Calculation Loop\Telemetry.fs" />
+    <Compile Include="Calculation Loop\PolicyReader.fs" />
+    <Compile Include="Calculation Loop\Instance.fs" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Threading.Tasks.Dataflow" Version="9.0.6" />
+    <PackageReference Include="System.Reactive" Version="6.0.1" PrivateAssets="all" />
+    <PackageReference Include="System.Threading.Tasks.Dataflow" Version="9.0.6" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

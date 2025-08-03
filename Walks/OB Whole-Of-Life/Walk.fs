@@ -249,7 +249,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                 Validator =
                     // No doubt we could do something convoluted here. However, given such
                     // changes aren't (regularly) expected, would have minimal benefit.
-                    noValidator            
+                    StepValidationOutcome.noValidator            
             }
         )
 
@@ -301,7 +301,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                         <@ _.Step1_RestatedAdjustments_SAS @>
 
                 Validator =
-                    noValidator
+                    StepValidationOutcome.noValidator
             }
         )
 
@@ -314,7 +314,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                         <@ _.Step2_RestatedActuals_SAS @>
 
                 Validator =
-                    noValidator
+                    StepValidationOutcome.noValidator
             }
         )
             
@@ -327,7 +327,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                         <@ _.Step3_RestatedDeductions_SAS @>
                     
                 Validator =
-                    noValidator
+                    StepValidationOutcome.noValidator
             }
         )   
         
@@ -340,7 +340,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                         <@ _.Step4_MoveToClosingDate_SAS @>
 
                 Validator =
-                    noValidator
+                    StepValidationOutcome.noValidator
             }
         )
 
@@ -350,7 +350,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                 DataChanger =
                     dataChanger_RollForward
                 Validator =
-                    noValidator
+                    StepValidationOutcome.noValidator
             }
         )
 
@@ -363,7 +363,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                         <@ _.Step5_Adjustments_SAS @>
 
                 Validator =
-                    noValidator
+                    StepValidationOutcome.noValidator
             }
         )
 
@@ -376,7 +376,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                         <@ _.Step6_Premiums_SAS @>
 
                 Validator =
-                    noValidator
+                    StepValidationOutcome.noValidator
             }
         )
 
@@ -389,7 +389,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                         <@ _.Step7_Deductions_SAS @>
 
                 Validator =
-                    noValidator
+                    StepValidationOutcome.noValidator
             }
         )
 
@@ -402,7 +402,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                         <@ _.Step8_MortalityCharge_SAS @>
 
                 Validator =
-                    noValidator
+                    StepValidationOutcome.noValidator
             }
         )
 
@@ -415,7 +415,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                         <@ _.Step9_InvestmentReturn_SAS @>
 
                 Validator =
-                    noValidator
+                    StepValidationOutcome.noValidator
             }
         )
 
@@ -431,7 +431,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                         } : OBWholeOfLife.StepResults @>
 
                 Validator =
-                    noValidator
+                    StepValidationOutcome.noValidator
             }
         )
 
@@ -447,7 +447,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                         } : OBWholeOfLife.StepResults @>
 
                 Validator =
-                    noValidator
+                    StepValidationOutcome.noValidator
             }
         )
 
@@ -463,7 +463,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                         } : OBWholeOfLife.StepResults @>
 
                 Validator =
-                    noValidator
+                    StepValidationOutcome.noValidator
             }
         )
 
@@ -493,7 +493,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                         } : OBWholeOfLife.StepResults @>
 
                 Validator =
-                    noValidator
+                    StepValidationOutcome.noValidator
             }
         )
 
@@ -503,7 +503,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                 DataChanger =
                     dataChanger_RecentPaidUps
                 Validator =
-                    noValidator
+                    StepValidationOutcome.noValidator
             }
         )
 
@@ -512,11 +512,11 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
     override val MoveToClosingData =
         createStep.moveToClosingData {            
             Validator =
-                noValidator
+                StepValidationOutcome.noValidator
         }
  
     override val AddNewRecords =
         createStep.addNewRecords {
             Validator =
-                noValidator
+                StepValidationOutcome.noValidator
         }

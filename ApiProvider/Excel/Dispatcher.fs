@@ -16,14 +16,6 @@ module Dispatcher =
     open AnalysisOfChangeEngine.Common
 
 
-    [<NoEquality; NoComparison>]
-    type ExcelRequestTelemetry =
-        {
-            EndpointIdx     : int
-            ProcessingStart : DateTime
-            ProcessingEnd   : DateTime
-        }
-
     // See the README.md for what's going on here!
     type IExcelDispatcher<'TStepRelatedInputs, 'TPolicyRelatedInputs> =
         interface
@@ -32,16 +24,18 @@ module Dispatcher =
             abstract member ExecuteAsync :
                 PropertyInfo array
                     -> 'TStepRelatedInputs * 'TPolicyRelatedInputs
-                    -> Task<ApiRequestOutcome * ExcelRequestTelemetry option>
+                    -> OnApiRequestProcessingStart
+                    -> Task<ApiRequestOutcome>
         end
 
     [<NoEquality; NoComparison>]
     type private ExcelCalcRequest<'TStepRelatedInputs, 'TPolicyRelatedInputs> =
         {
-            StepRelatedInputs   : 'TStepRelatedInputs
-            PolicyRelatedInputs : 'TPolicyRelatedInputs
-            RequiredOutputs     : PropertyInfo array
-            Callback            : (ApiRequestOutcome * ExcelRequestTelemetry option) -> unit
+            StepRelatedInputs           : 'TStepRelatedInputs
+            PolicyRelatedInputs         : 'TPolicyRelatedInputs
+            RequiredOutputs             : PropertyInfo array
+            OnApiRequestProcessingStart : OnApiRequestProcessingStart
+            OutcomeCallback             : ApiRequestOutcome -> unit
         }
 
 
@@ -117,7 +111,10 @@ module Dispatcher =
             let dispatchers =
                 (excelApps, workbooksFound, writers)
                 |||> Array.zip3 
-                |> Array.mapi (fun idx (app, workbook, writer) ->                         
+                |> Array.mapi (fun idx (app, workbook, writer) ->  
+                    let endpointId =
+                        Some (EndpointId $"Excel #{idx}")
+
                     let cachedRanges =
                         // In theory, this should NEVER be accessed concurrently.
                         new Dictionary<string, Excel.Range> ()
@@ -166,8 +163,9 @@ module Dispatcher =
                                 failwithf "Unsupported output type '%s'." pi.PropertyType.FullName
 
                     let action request =
-                        let processingStart =
-                            DateTime.Now
+                        // Start timing the processing of this API request.
+                        use _ =
+                            request.OnApiRequestProcessingStart endpointId
 
                         do writer (request.StepRelatedInputs, request.PolicyRelatedInputs)
                         // This will be another, more onerous, blocking action.
@@ -195,14 +193,7 @@ module Dispatcher =
 
                                     Error (ApiRequestFailure.CalculationFailure combinedReasons)
 
-                        let requestTelemetry =
-                            {
-                                EndpointIdx     = idx
-                                ProcessingStart = processingStart
-                                ProcessingEnd   = DateTime.Now
-                            }
-
-                        do request.Callback (outputs, Some requestTelemetry)
+                        do request.OutcomeCallback outputs
 
                     new ActionBlock<_> (action, actionBlockOptions))
 
@@ -219,28 +210,27 @@ module Dispatcher =
 
                         // TODO - Should we dispose of the links as well?
         
-                    member _.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) =
+                    member _.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) onApiRequestProcessingStart =
                         let tcs =
                             new TaskCompletionSource<_> () 
                             
                         let newCalcRequest =
                             {
-                                StepRelatedInputs   = stepRelatedInputs
-                                PolicyRelatedInputs = policyRelatedInputs
-                                RequiredOutputs     = requiredOutputs
-                                Callback            = tcs.SetResult
+                                StepRelatedInputs           = stepRelatedInputs
+                                PolicyRelatedInputs         = policyRelatedInputs
+                                RequiredOutputs             = requiredOutputs
+                                OnApiRequestProcessingStart = onApiRequestProcessingStart
+                                OutcomeCallback             = tcs.SetResult
                             }
 
                         // This is non-blocking. Given the buffer block is unbounded,
-                        // this _should_ never fail.
+                        // this _should_ never fail in the normal course of business.
                         if not (bufferBlock.Post newCalcRequest) then
                             let timestamp =
                                 DateTime.Now
 
-                            tcs.SetResult 
-                                (Error
-                                    (ApiRequestFailure.CallFailure
-                                        [| "Unable to submit Excel request." |]), None)
+                            do tcs.SetResult 
+                                (Error (ApiRequestFailure.CallFailure [| "Unable to submit Excel request." |]))
 
                         tcs.Task
             }

@@ -5,10 +5,13 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
-  <ItemGroup />
-
   <ItemGroup>
-    <Compile Include="Library.fs" />
+    <Compile Include="Common.fs" />
+    <Compile Include="UidWrappers.fs" />
+    <Compile Include="ApiRequestor.fs" />
+    <Compile Include="Steps.fs" />
+    <Compile Include="Walk.fs" />
+    <Compile Include="Evaluation.fs" />
     <None Include="README.md" />
   </ItemGroup>
 

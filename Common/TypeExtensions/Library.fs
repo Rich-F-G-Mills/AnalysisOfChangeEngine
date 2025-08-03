@@ -7,11 +7,14 @@ module TypeExtensions =
 
     open System
     open System.Collections.Generic
+    open System.Collections.Concurrent
 
 
-    type IDictionary<'K, 'V> with
+    type Dictionary<'K, 'V> with
         // I was afronted that this method was available for concurrent dictionaries,
         // but not for vanilla ones. Until now!
+        // However, need to be careful that this doesn't get used on concurrent dictionaries which
+        // inherit from IDictionary.
         member this.GetOrAdd (key: 'K, valueFactory: unit -> 'V) =
             match this.TryGetValue key with
             | true, value ->
@@ -24,6 +27,14 @@ module TypeExtensions =
                 do this.[key] <- value
 
                 value
+
+    type ConcurrentDictionary<'K, 'V> with
+        
+        member this.GetOrAdd (key: 'K, valueFactory: 'K -> 'V) =
+            let fn : Func<'K, 'V> =
+                valueFactory
+
+            this.GetOrAdd (key, fn)
 
 
     let private midnightTimeOnly =
@@ -71,10 +82,13 @@ module TypeExtensions =
             | Ok value' as value when predicate value' -> value
             | Ok value' -> Error onFail
 
-        let inline requireSomeWith (error: unit -> 'error) (option: 'ok option) =
-            match option with
+        let inline requireSomeWith (onError: unit -> 'error) = function
             | Some x -> Ok x
-            | None -> Error (error ())
+            | None -> Error (onError ())
+
+        let inline requireNoneWith (onSome: 'T -> 'error) = function
+            | Some x -> Error (onSome x)
+            | None -> Ok ()
 
 
     [<RequireQualifiedAccess>]

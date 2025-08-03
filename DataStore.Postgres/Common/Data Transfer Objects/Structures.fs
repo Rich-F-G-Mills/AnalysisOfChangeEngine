@@ -147,6 +147,8 @@ module internal PolicyDataDTO =
                         let! records =
                             recordGetter.ExecuteAsync extractionUid' policyIds
 
+                        // We're not gauranteed to get a response for all policy records.
+                        // We return a map to make it explicit as to which records we have.
                         let records' =
                             records
                             |> Seq.map (fun (baseRec, augRec) -> baseRec.policy_id, augRec)
@@ -419,6 +421,8 @@ type internal StepResults_BaseDTO =
     {
         run_uid                 : Guid
         step_uid                : Guid
+        // In theory, we could live without this. However, it does make it easier to
+        // track down the policy characteristics run for a given step.
         used_data_stage_uid     : Guid option
         policy_id               : string
     }
@@ -431,7 +435,8 @@ module internal StepResultsDTO =
         
     type internal IDispatcher<'TAugRow> =
         interface
-            abstract member PgTableName     : string with get
+            abstract member PgTableName         : string with get
+            abstract member GetStepResultsAsync : RunUid -> StepUid -> string array -> Task<Map<string, 'TAugRow>>
         end
 
     let internal buildDispatcher<'TAugRowDTO> (schema, dataSource) =
@@ -440,10 +445,29 @@ module internal StepResultsDTO =
             PostgresTableDispatcher<StepResults_BaseDTO, 'TAugRowDTO>
                 (pgTableName, schema, dataSource)
 
+        let stepResultsSelector =
+            dispatcher.MakeCombinedEquality2Multiple1Selector 
+                (<@ _.run_uid @>, <@ _.step_uid @>, <@ _.policy_id @>)
+
         {
             new IDispatcher<'TAugRowDTO> with                  
                 member _.PgTableName
-                    with get () = pgTableName                   
+                    with get () = pgTableName        
+                    
+                member _.GetStepResultsAsync (RunUid runUid') (StepUid stepUid') policyRecords =
+                    backgroundTask {
+                        let! records =
+                            stepResultsSelector.ExecuteAsync runUid' stepUid' policyRecords
+
+                        // We're not gauranteed to get a response for all policy records.
+                        // We return a map to make it explicit as to which records we have.
+                        let records' =
+                            records
+                            |> Seq.map (fun (baseRec, augRec) -> baseRec.policy_id, augRec)
+                            |> Map.ofSeq
+                            
+                        return records'
+                    }                    
         }
 
 
