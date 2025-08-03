@@ -9,6 +9,7 @@ module CalculationLoop =
     open System.Threading
     open System.Threading.Tasks
     open System.Threading.Tasks.Dataflow
+    open System.Reactive.Linq
     open System.Reactive.Subjects
     open AnalysisOfChangeEngine
     open AnalysisOfChangeEngine.Controller.CalculationLoop
@@ -39,7 +40,7 @@ module CalculationLoop =
 
 
     type private IProcessedRecordSink<'TPolicyRecord, 'TStepResults> =
-        inherit ITargetBlock<ProcessedRecord<'TPolicyRecord, 'TStepResults>>
+        inherit ITargetBlock<ProcessedRecordOutcome<'TPolicyRecord, 'TStepResults>>
 
 
     type internal CalculationLoop<'TPolicyRecord, 'TStepResults>
@@ -71,10 +72,44 @@ module CalculationLoop =
                     | _ ->
                         failwith "Unexpected loop parameters."
 
-                fun pendingReads ->
-                    backgroundTask {
-                        let! policiesRead =
-                            inner pendingReads
+                fun (pendingReads: PendingReadRequest array) ->
+                    backgroundTask {                       
+                        let pendingPolicyIds =
+                            pendingReads
+                            |> Array.map _.PolicyId
+
+                        let readStart =
+                            DateTime.Now
+
+                        let! policyRecords =
+                            inner pendingPolicyIds
+
+                        let readEnd =
+                            DateTime.Now
+
+                        let newReadIdx =
+                            Interlocked.Increment &currentReadIdx
+
+                        let readTelemetryEvent =
+                            {
+                                Idx                         = newReadIdx
+                                ReadStart                   = readStart
+                                ReadEnd                     = readEnd
+                            }
+
+                        do telemetrySubject.OnNext (TelemetryEvent.DataStoreRead readTelemetryEvent)
+
+                        let requestsPendingEvaluation =
+                            (pendingReads, policyRecords)
+                            ||> Seq.map2 (fun pendingRead ->
+                                    Result.map (fun policyRecord ->
+                                        {
+                                            PolicyId            = pendingRead.PolicyId
+                                            PolicyRecord        = policyRecord
+                                            RequestSubmitted    = pendingRead.RequestSubmitted
+                                        }))
+
+                        return requestsPendingEvaluation
                     }
                     
 
@@ -101,14 +136,19 @@ module CalculationLoop =
                     RequestSubmitted = DateTime.Now
                 }
 
+            member val internal Telemetry =
+                telemetrySubject.AsObservable ()
+
 
     type INewOnlyCalculationLoop<'TPolicyRecord> =
+        inherit IObservable<TelemetryEvent>
         inherit IDisposable
 
         abstract member PostAsync: NewPolicyId          -> Task<bool>
 
     type ICalculationLoop<'TPolicyRecord> =
         inherit INewOnlyCalculationLoop<'TPolicyRecord>
+        inherit IObservable<TelemetryEvent>
         inherit IDisposable
 
         abstract member PostAsync: ExitedPolicyId       -> Task<bool>
@@ -118,7 +158,7 @@ module CalculationLoop =
     [<RequireQualifiedAccess>]
     module CalculationLoop =
     
-        let createClosingOnly (closingPolicyReader) =
+        let createClosingOnly<'TPolicyRecord, 'TStepResults> (closingPolicyReader) =
             let calcLoop =
                 new CalculationLoop<'TPolicyRecord, 'TStepResults>
                     (None, None, closingPolicyReader)
@@ -128,12 +168,16 @@ module CalculationLoop =
                     member this.PostAsync (NewPolicyId policyId) =
                         calcLoop.PostAsync (PolicyId.New policyId)
 
+                interface IObservable<TelemetryEvent> with
+                    member this.Subscribe observer =
+                        calcLoop.Telemetry.Subscribe observer
+
                 interface IDisposable with
-                    member this.Dispose() =
+                    member this.Dispose () =
                         ()
             }
 
-        let create (openingPolicyReader, priorClosingStepResultGetter, closingPolicyReader) =
+        let create<'TPolicyRecord, 'TStepResults> (openingPolicyReader, priorClosingStepResultGetter, closingPolicyReader) =
             let calcLoop =
                 new CalculationLoop<'TPolicyRecord, 'TStepResults>
                     (Some openingPolicyReader, Some priorClosingStepResultGetter, closingPolicyReader)
@@ -148,6 +192,10 @@ module CalculationLoop =
 
                     member this.PostAsync (NewPolicyId policyId) =
                         calcLoop.PostAsync (PolicyId.New policyId)
+
+                interface IObservable<TelemetryEvent> with
+                    member this.Subscribe observer =
+                        calcLoop.Telemetry.Subscribe observer
 
                 interface IDisposable with
                     member this.Dispose() =

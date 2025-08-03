@@ -162,14 +162,14 @@ module Evaluator =
                     let stepResults =
                         (parsedSources, responseArrayHydrators)
                         ||> List.map2 (fun source hydrator ->
-                            let invokerArgs =
-                                // Hydrator requires our grouped API responses.
-                                Array.init source.ApiCalls.Count (hydrator consolidatedResponses)
+                                let invokerArgs =
+                                    // Hydrator requires our grouped API responses.
+                                    Array.init source.ApiCalls.Count (hydrator consolidatedResponses)
 
-                            let stepResult =
-                                source.Invoker (policyRecord, invokerArgs)
+                                let stepResult =
+                                    source.Invoker (policyRecord, invokerArgs)
                                     
-                            stepResult)
+                                stepResult)
 
                     do assert (stepResults.Length = parsedSources.Length)
 
@@ -474,7 +474,7 @@ module Evaluator =
                 let dataSourceByStep =
                     (groupingsForProfile.StepHeaders, groupingsForProfile.TelemetryDataSources)
                     ||> List.map2 (fun headers dataSource ->
-                        List.replicate headers.Length dataSource)
+                            List.replicate headers.Length dataSource)
                     |> List.concat
 
                 do assert (dataSourceByStep.Length = parsedWalk.ParsedSteps.Length)                                

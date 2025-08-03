@@ -44,10 +44,9 @@ module internal Common =
     [<NoEquality; NoComparison>]
     type internal PendingEvaluationRequest<'TPolicyRecord, 'TStepResults> =
         {
-            PolicyId            : string
+            PolicyId            : PolicyId
             PolicyRecord        : PolicyRecord<'TPolicyRecord, 'TStepResults>
             RequestSubmitted    : DateTime
-            ReadIdx             : int
         }
 
     [<RequireQualifiedAccess>]
@@ -61,25 +60,6 @@ module internal Common =
     type internal PendingEvaluationRequestOutcome<'TPolicyRecord, 'TStepResults> =
         Result<PendingEvaluationRequest<'TPolicyRecord, 'TStepResults>, PendingEvaluationRequestFailure list>
 
-
-    [<RequireQualifiedAccess>]
-    [<NoEquality; NoComparison>]
-    type internal ProcessingFailure =
-        | PreEvaluationFailure of PendingEvaluationRequestFailure list
-        | PostEvaluationFailure of EvaluationFailure list
-
     type internal ProcessedRecordOutcome<'TPolicyRecord, 'TStepResults> =
-        Result<EvaluatedPolicyWalk<'TPolicyRecord, 'TStepResults>, ProcessingFailure>
+        Result<EvaluatedPolicyWalk<'TPolicyRecord, 'TStepResults>, EvaluationFailure list>
 
-
-    /// Relfects a policy that has been run through the walk. Regardless of whether it was
-    /// sucessful or not.
-    [<NoEquality; NoComparison>]
-    type internal ProcessedRecord<'TPolicyRecord, 'TStepResults> =
-        {
-            PolicyId            : string
-            RequestSubmitted    : DateTime
-            Outcome             : ProcessedRecordOutcome<'TPolicyRecord, 'TStepResults>
-            ReadIdx             : int
-            WriteIdx            : int
-        }

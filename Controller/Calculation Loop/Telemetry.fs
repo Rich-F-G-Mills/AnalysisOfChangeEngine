@@ -34,8 +34,6 @@ type DataStoreReadEvent =
         Idx                         : int
         ReadStart                   : DateTime
         ReadEnd                     : DateTime
-        CountPolicyRecords          : int
-        CountIndividualStepResults  : int
     }
 
 [<NoEquality; NoComparison>]
@@ -44,9 +42,6 @@ type DataStoreWriteEvent =
         Idx                         : int
         WriteStart                  : DateTime
         WriteEnd                    : DateTime
-        CountDataStageRecords       : int
-        CountIndividualStepResults  : int     
-        CountFailureRecords         : int
     }
 
 

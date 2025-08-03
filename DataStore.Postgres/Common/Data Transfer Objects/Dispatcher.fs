@@ -46,7 +46,7 @@ module internal RecordParser =
             let columnParsers =
                 (transferableTypes, columnIdxs) 
                 ||> Array.map2 (fun tt idx ->
-                    tt.ReadSqlColumnExpr (dataReaderVar, idx))
+                        tt.ReadSqlColumnExpr (dataReaderVar, idx))
                 |> Array.toList
 
             let newDtoExpr =
