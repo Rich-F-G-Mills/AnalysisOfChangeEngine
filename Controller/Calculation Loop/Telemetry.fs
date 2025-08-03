@@ -18,12 +18,19 @@ type ApiRequestTelemetryData =
     }
 
 [<NoEquality; NoComparison>]
-type EvaluationRequestTelemetryData =
+type FailedPolicyReadTelemetryData =
     {
         PolicyId            : string
-        RequestSubmitted    : DateTime
-        ProcessingStart     : DateTime
-        ProcessingEnd       : DateTime
+        DataStoreReadIdx    : int
+        DataStoreWriteIdx   : int
+    }
+
+[<NoEquality; NoComparison>]
+type EvaluationCompletedTelemetryData =
+    {
+        PolicyId            : string
+        EvaluationStart     : DateTime
+        EvaluationEnd       : DateTime
         DataStoreReadIdx    : int
         DataStoreWriteIdx   : int
     }
@@ -31,24 +38,25 @@ type EvaluationRequestTelemetryData =
 [<NoEquality; NoComparison>]
 type DataStoreReadEvent =
     {
-        Idx                         : int
-        ReadStart                   : DateTime
-        ReadEnd                     : DateTime
+        Idx                 : int
+        ReadStart           : DateTime
+        ReadEnd             : DateTime
     }
 
 [<NoEquality; NoComparison>]
 type DataStoreWriteEvent =
     {
-        Idx                         : int
-        WriteStart                  : DateTime
-        WriteEnd                    : DateTime
+        Idx                 : int
+        WriteStart          : DateTime
+        WriteEnd            : DateTime
     }
 
 
 [<RequireQualifiedAccess>]
 [<NoEquality; NoComparison>]
 type TelemetryEvent =
-    | ApiRequest        of ApiRequestTelemetryData
-    | EvaluationRequest of EvaluationRequestTelemetryData
-    | DataStoreRead     of DataStoreReadEvent
-    | DataStoreWrite    of DataStoreWriteEvent
+    | ApiRequest            of ApiRequestTelemetryData
+    | FailedPolicyRad       of FailedPolicyReadTelemetryData
+    | EvaluationCompleted   of EvaluationCompletedTelemetryData
+    | DataStoreRead         of DataStoreReadEvent
+    | DataStoreWrite        of DataStoreWriteEvent

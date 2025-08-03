@@ -24,11 +24,11 @@ module Evaluator =
     // failed evaluations.
     let private failureMapper (requestor: AbstractApiRequestor<_>) = function
         | ApiRequestFailure.CalculationFailure reasons ->
-            EvaluationFailure.ApiCalculationFailure (requestor.Name, reasons)
+            WalkEvaluationFailure.ApiCalculationFailure (requestor.Name, reasons)
         | ApiRequestFailure.CallFailure reasons ->
-            EvaluationFailure.ApiCallFailure (requestor.Name, reasons)
+            WalkEvaluationFailure.ApiCallFailure (requestor.Name, reasons)
         | ApiRequestFailure.Cancelled ->
-            EvaluationFailure.Cancelled
+            WalkEvaluationFailure.Cancelled
 
 
     // We need to at least give a type hint for the abstract requestor, otherwise
@@ -39,8 +39,8 @@ module Evaluator =
             match acc, apiRequstor, apiResponse with
             // Once we've been cancelled, we don't care about anything else.
             | _, _, Error ApiRequestFailure.Cancelled
-            | Error [ EvaluationFailure.Cancelled ], _, _ ->
-                Error [ EvaluationFailure.Cancelled ]
+            | Error [ WalkEvaluationFailure.Cancelled ], _, _ ->
+                Error [ WalkEvaluationFailure.Cancelled ]
             // No prior failures and current requestor was successful.
             | Ok acc', requestor, Ok results ->
                 Ok (acc' |> Map.add requestor results)
@@ -216,7 +216,7 @@ module Evaluator =
                     let! newRecordForDataStage =
                         dcs.DataChanger (openingPolicyRecord, priorPolicyRecord, closingPolicyRecord)
                         |> Result.mapError (fun reason ->
-                            [ EvaluationFailure.DataChangeFailure (dcs, [| reason |]) ])
+                            [ WalkEvaluationFailure.DataChangeFailure (dcs, [| reason |]) ])
 
                     let recordToPassOn =
                         newRecordForDataStage
@@ -357,10 +357,10 @@ module Evaluator =
                     (policyRecordForPriorStage, policyRecordForStage, Some currentStepResults) xs
             | StepValidationOutcome.Completed issues, _ ->
                 // We have some issues, so return them.
-                Some [ EvaluationFailure.ValidationFailure (hdr, issues) ]
+                Some [ WalkEvaluationFailure.ValidationFailure (hdr, issues) ]
             | StepValidationOutcome.Aborted reason, _ ->
                 // We have an aborted validation, so return it.
-                Some [ EvaluationFailure.ValidationAborted (hdr, [| reason |]) ]
+                Some [ WalkEvaluationFailure.ValidationAborted (hdr, [| reason |]) ]
 
         | [] ->
             None
@@ -369,7 +369,7 @@ module Evaluator =
     // Short-hand as type inference is sometimes struggling.
     type private DataStageEvaluator<'TPolicyRecord, 'TStepResults> =
         ('TPolicyRecord * (RequestorName -> OnApiRequestProcessingStart))
-            -> Task<Result<'TStepResults list, EvaluationFailure list>>
+            -> Task<Result<'TStepResults list, WalkEvaluationFailure list>>
 
 
     // Note that priorStepResults is for the prior step, NOT the prior stage. Not to say
@@ -419,7 +419,7 @@ module Evaluator =
     // A short-hand alias used when type inference struggles.
     type private ProfileEvaluator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord: equality> =
         'TPolicyRecord * 'TStepResults option * 'TPolicyRecord list * (StepDataSource -> RequestorName -> OnApiRequestProcessingStart) -> 
-            Task<Result<(StepDataSource * 'TStepResults) list, EvaluationFailure list>>
+            Task<Result<(StepDataSource * 'TStepResults) list, WalkEvaluationFailure list>>
 
 
     let private createRemainingPolicyEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord: equality>
@@ -607,11 +607,11 @@ module Evaluator =
                         return evaluationOutcome
 
                     | StepValidationOutcome.Completed issues ->
-                        return! Error [ EvaluationFailure.ValidationFailure
+                        return! Error [ WalkEvaluationFailure.ValidationFailure
                             (openingReRunStepHdr, issues) ]
 
                     | StepValidationOutcome.Aborted reason ->
-                        return! Error [ EvaluationFailure.ValidationAborted
+                        return! Error [ WalkEvaluationFailure.ValidationAborted
                             (openingReRunStepHdr, [| reason |]) ]
                 }
 
@@ -651,11 +651,11 @@ module Evaluator =
                         return evaluationOutcome
 
                     | StepValidationOutcome.Completed issues ->
-                        return! Error [ EvaluationFailure.ValidationFailure
+                        return! Error [ WalkEvaluationFailure.ValidationFailure
                             (newRecordsStepHdr, issues) ]
 
                     | StepValidationOutcome.Aborted reason ->
-                        return! Error [ EvaluationFailure.ValidationAborted
+                        return! Error [ WalkEvaluationFailure.ValidationAborted
                             (newRecordsStepHdr, [| reason |]) ]
                 }        
 

@@ -65,7 +65,7 @@ module internal Locator =
             |> Array.choose tryGetExcelApplicationForProcess
 
         // We will only include a workbook for a given application provided
-        // only one workbook within that application satisfies the selector predicate.
+        // ONLY ONE workbook within that application satisfies the selector predicate.
         excelApplications
         |> Array.choose (fun app ->
             app.Workbooks

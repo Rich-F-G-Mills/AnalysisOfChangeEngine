@@ -25,6 +25,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Common\StateMonad\Common.StateMonad.fsproj" />
     <ProjectReference Include="..\Common\TypeExtensions\Common.TypeExtensions.fsproj" />
+    <ProjectReference Include="..\Controller.Core\Controller.Core.fsproj" />
     <ProjectReference Include="..\Core\Core.fsproj" />
   </ItemGroup>
 
