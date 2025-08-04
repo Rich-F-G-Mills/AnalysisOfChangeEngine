@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Common\TypeExtensions\Common.TypeExtensions.fsproj" />
     <ProjectReference Include="..\..\Common\TypePatterns\Common.TypePatterns.fsproj" />
+    <ProjectReference Include="..\..\Controller.Core\Controller.Core.fsproj" />
     <ProjectReference Include="..\..\Core\Core.fsproj" />
   </ItemGroup>
 

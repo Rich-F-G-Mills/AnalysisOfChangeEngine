@@ -168,7 +168,7 @@ module Runner =
 
             let someExitedPolicyRecords =
                 outstandingRecords
-                |> Seq.choose (function | Choice1Of3 policyId -> Some policyId.Value | _ -> None)
+                |> Seq.choose (function | Choice1Of3 (ExitedPolicyId policyId) -> Some policyId | _ -> None)
                 |> Seq.truncate 5
                 |> Seq.toArray
                 |> dataStore.GetPolicyRecordsAsync priorExtractionUid
@@ -178,7 +178,7 @@ module Runner =
 
             let someRemainingPolicyRecords =
                 outstandingRecords
-                |> Seq.choose (function | Choice2Of3 policyId -> Some policyId.Value | _ -> None)
+                |> Seq.choose (function | Choice2Of3 (RemainingPolicyId policyId) -> Some policyId | _ -> None)
                 //|> Seq.skip 6
                 |> Seq.truncate 10
                 |> Seq.toArray
@@ -211,7 +211,7 @@ module Runner =
 
             let someNewPolicyRecords =
                 outstandingRecords
-                |> Seq.choose (function | Choice3Of3 policyId -> Some policyId.Value | _ -> None)
+                |> Seq.choose (function | Choice3Of3 (NewPolicyId policyId) -> Some policyId | _ -> None)
                 |> Seq.truncate 5
                 |> Seq.toArray
                 |> dataStore.GetPolicyRecordsAsync currentExtractionUid
@@ -250,39 +250,7 @@ module Runner =
 
             let remainingResults =
                 remainingResultOutcomes
-                |> Map.map (fun _ -> fst)
-                |> Map.map (fun _ ->
-                    Result.map (_.StepResults >> Map.map (fun _ -> snd)))
-
-            let apiTelemetry =
-                //exitedResults.Values
-                //|> Seq.append newResults.Values
-                remainingResultOutcomes.Values
-                |> Seq.map snd
-                |> Seq.collect _.ApiRequestTelemetry
-                |> Seq.toList
-
-            let minApiStart =
-                apiTelemetry
-                |> Seq.map _.ProcessingStart
-                |> Seq.min
-
-            let maxApiEnd =
-                apiTelemetry
-                |> Seq.map _.ProcessingEnd
-                |> Seq.max
-
-
-            do printfn "\nMin start: %s\nMax end: %s"
-                (minApiStart.ToString   ("yyyy-MM-dd HH:mm:ss:FFF"))
-                (maxApiEnd.ToString     ("yyyy-MM-dd HH:mm:ss:FFF"))
-
-            let apiTelemetryByEndPoint =
-                apiTelemetry
-                |> List.groupBy _.EndpointId
-                |> Map.ofList
-
-            do printfn "\n\n%A\n\n" apiTelemetryByEndPoint                
+                |> Map.map (fun _ -> Result.map _.StepResults)        
 
             do printfn "\n\n%A\n\n" remainingResults            
 

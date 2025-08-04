@@ -548,6 +548,9 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                     ExecuteAsync    = executeAsync
                 |}
 
+        member this.MakeAugEquality2Multiple1Selector (column1, column2, column3) =
+            this.MakeEquality2Multiple1Selector (column1, column2, column3, augSqlRecordSelector, augOnlyRecordParser)
+
         member this.MakeCombinedEquality2Multiple1Selector (column1, column2, column3) =
             this.MakeEquality2Multiple1Selector (column1, column2, column3, combinedSqlRecordSelector, combinedRecordParser)
 
@@ -865,27 +868,11 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                     do prepareBatchCommand (dbBatch, rows)
 
                     return! dbBatch.ExecuteNonQueryAsync ()
-                }
-                
-            let asBatchCommands rows =
-                rows |>
-                List.map (fun row ->
-                    let dbBatchCommand = 
-                        new NpgsqlBatchCommand (sqlInsertRowCommand)
-
-                    let rowParams =
-                        this.getRowInsertParameters.Value row
-
-                    for rowParam in rowParams do
-                        do ignore <| dbBatchCommand.Parameters.Add rowParam
-
-                    dbBatchCommand
-                )                
+                }            
 
             {|
                 ExecuteNonQuery         = executeNonQuery
                 executeNonQueryAsync    = executeNonQueryAsync
-                AsBatchCommands         = asBatchCommands
             |}
 
 

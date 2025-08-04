@@ -140,7 +140,7 @@ module Dispatcher =
                         // primitive types (eg. int, bool, ...)
                         match excelValue with
                             | _ when app.WorksheetFunction.IsError excelValue ->
-                                Error (ApiRequestFailure.CalculationFailure [| "Value not available." |])
+                                Error (ApiRequestFailure.CalculationFailure [ "Value not available." ])
 
                             | :? float32 when pi.PropertyType = typeof<float32> ->
                                 Ok excelValue
@@ -155,7 +155,7 @@ module Dispatcher =
                             | _ when pi.PropertyType = typeof<float32> ->
                                 Error
                                     (ApiRequestFailure.CalculationFailure
-                                        [| "Unable to cast value to float32." |])
+                                        [ "Unable to cast value to float32." ])
 
                             | _ ->
                                 // If we're here, the developer has done something daft and
@@ -184,12 +184,13 @@ module Dispatcher =
                                     // failure of multiple reasons.
                                     let combinedReasons =
                                         failures
-                                        |> Array.collect (function
+                                        |> Seq.collect (function
                                             | ApiRequestFailure.CalculationFailure reasons ->
                                                 reasons
                                             | _ ->
                                                 // This should not/cannot happen!
                                                 failwith "Unexpected failure.")
+                                        |> Seq.toList
 
                                     Error (ApiRequestFailure.CalculationFailure combinedReasons)
 
@@ -230,7 +231,7 @@ module Dispatcher =
                                 DateTime.Now
 
                             do tcs.SetResult 
-                                (Error (ApiRequestFailure.CallFailure [| "Unable to submit Excel request." |]))
+                                (Error (ApiRequestFailure.CallFailure [ "Unable to submit Excel request." ]))
 
                         tcs.Task
             }

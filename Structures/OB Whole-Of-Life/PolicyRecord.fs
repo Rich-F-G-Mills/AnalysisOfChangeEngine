@@ -123,12 +123,6 @@ module OBWholeOfLife =
                 ]
 
             match validationFailures with
-            | [] ->
-                Ok (PolicyRecord r)
-
-            | _ ->
-                let joinedReasons =
-                    String.Join (Environment.NewLine, validationFailures)
-
-                Error (sprintf "Invalid policy record due to the following reasons:%s%s" Environment.NewLine joinedReasons)
+            | []    -> Ok (PolicyRecord r)
+            | _     -> Error validationFailures
          

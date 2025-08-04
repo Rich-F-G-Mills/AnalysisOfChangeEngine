@@ -27,8 +27,6 @@ module Evaluator =
             WalkEvaluationFailure.ApiCalculationFailure (requestor.Name, reasons)
         | ApiRequestFailure.CallFailure reasons ->
             WalkEvaluationFailure.ApiCallFailure (requestor.Name, reasons)
-        | ApiRequestFailure.Cancelled ->
-            WalkEvaluationFailure.Cancelled
 
 
     // We need to at least give a type hint for the abstract requestor, otherwise
@@ -37,10 +35,6 @@ module Evaluator =
         (acc: Result<Map<AbstractApiRequestor<_>, obj array>, _>)
         (apiRequstor, apiResponse) =
             match acc, apiRequstor, apiResponse with
-            // Once we've been cancelled, we don't care about anything else.
-            | _, _, Error ApiRequestFailure.Cancelled
-            | Error [ WalkEvaluationFailure.Cancelled ], _, _ ->
-                Error [ WalkEvaluationFailure.Cancelled ]
             // No prior failures and current requestor was successful.
             | Ok acc', requestor, Ok results ->
                 Ok (acc' |> Map.add requestor results)
@@ -215,14 +209,17 @@ module Evaluator =
                 result {
                     let! newRecordForDataStage =
                         dcs.DataChanger (openingPolicyRecord, priorPolicyRecord, closingPolicyRecord)
-                        |> Result.mapError (fun reason ->
-                            [ WalkEvaluationFailure.DataChangeFailure (dcs, [| reason |]) ])
+                        |> Result.mapError (fun reasons ->
+                            [ WalkEvaluationFailure.DataChangeFailure (dcs, reasons) ])
 
                     let recordToPassOn =
                         newRecordForDataStage
                         |> Option.defaultValue priorPolicyRecord
 
-                    return! inner recordToPassOn dcss
+                    let! remainingDataStages =
+                        inner recordToPassOn dcss 
+
+                    return newRecordForDataStage::remainingDataStages
                 }
                 
             | [] ->
@@ -348,10 +345,10 @@ module Evaluator =
             // We now need to move between our world of possible validation issues to
             // the world of evaluation failures.
             match stepValidationOutcome, xs with
-            | StepValidationOutcome.Completed [||], [] ->
+            | StepValidationOutcome.Completed [], [] ->
                 // No issues and nothing else left to validate within this stage.
                 None
-            | StepValidationOutcome.Completed [||], xs ->
+            | StepValidationOutcome.Completed [], xs ->
                 // No issues, so carry on.
                 tryFindValidationFailureWithinProfileStage<_, _, 'TApiCollection>
                     (policyRecordForPriorStage, policyRecordForStage, Some currentStepResults) xs
@@ -360,7 +357,7 @@ module Evaluator =
                 Some [ WalkEvaluationFailure.ValidationFailure (hdr, issues) ]
             | StepValidationOutcome.Aborted reason, _ ->
                 // We have an aborted validation, so return it.
-                Some [ WalkEvaluationFailure.ValidationAborted (hdr, [| reason |]) ]
+                Some [ WalkEvaluationFailure.ValidationAborted (hdr, reason) ]
 
         | [] ->
             None
@@ -595,7 +592,7 @@ module Evaluator =
                         openingReRunStep.Validator (policyRecord, priorClosingStepResults, stepResults)
 
                     match validationOutcome with
-                    | StepValidationOutcome.Completed [||] ->
+                    | StepValidationOutcome.Completed [] ->
                         let evaluationOutcome : EvaluatedPolicyWalk<'TPolicyRecord, _> =
                             {
                                 InteriorDataChanges =
@@ -612,7 +609,7 @@ module Evaluator =
 
                     | StepValidationOutcome.Aborted reason ->
                         return! Error [ WalkEvaluationFailure.ValidationAborted
-                            (openingReRunStepHdr, [| reason |]) ]
+                            (openingReRunStepHdr, reason) ]
                 }
 
     // Note the comments for the exited policy evaluator above.
@@ -638,7 +635,7 @@ module Evaluator =
                         newRecordsStep.Validator (policyRecord, stepResults)
 
                     match validationOutcome with
-                    | StepValidationOutcome.Completed [||] ->
+                    | StepValidationOutcome.Completed [] ->
                         let evaluationOutcome : EvaluatedPolicyWalk<'TPolicyRecord, _> =
                             {
                                 InteriorDataChanges =
@@ -656,7 +653,7 @@ module Evaluator =
 
                     | StepValidationOutcome.Aborted reason ->
                         return! Error [ WalkEvaluationFailure.ValidationAborted
-                            (newRecordsStepHdr, [| reason |]) ]
+                            (newRecordsStepHdr, reason) ]
                 }        
 
 
@@ -688,7 +685,7 @@ module Evaluator =
                 nullDisposable
 
             {
-                new IPolicyEvaluator<_, _> with
+                new IPolicyWalkEvaluator<_, _> with
 
                     member _.Execute (ExitedPolicy _ as exitedPolicyRecord, priorClosingStepResults) =
                         exitedRecordEvaluator (exitedPolicyRecord, priorClosingStepResults, nullTelemetryCallback)

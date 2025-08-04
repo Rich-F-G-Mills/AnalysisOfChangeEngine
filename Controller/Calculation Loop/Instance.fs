@@ -43,7 +43,8 @@ module CalculationLoop =
         (openingPolicyGetter: IPolicyGetter<'TPolicyRecord> option,
          priorClosingStepResultGetter: IStepResultsGetter<'TStepResults> option,
          closingPolicyGetter: IPolicyGetter<'TPolicyRecord>,
-         walkEvaluator: IPolicyWalkEvaluator<'TPolicyRecord, 'TStepResults>) =
+         walkEvaluator: IPolicyWalkEvaluator<'TPolicyRecord, 'TStepResults>,
+         outputWriter: IProcessedOutputWriter<'TPolicyRecord, 'TStepResults>) =
 
             let mutable currentReadIdx = -1
             let mutable currentWriteIdx = -1
@@ -131,6 +132,74 @@ module CalculationLoop =
                         })
                     }
 
+            let outputWriter writeRequests : Task =
+                backgroundTask {
+                    let newWriteIdx =
+                        Interlocked.Increment &currentWriteIdx
+
+                    let processedOutputs =
+                        writeRequests
+                        |> Array.map (function
+                            | OutputRequest.CompletedEvaluation request ->
+                                let telemetryEvent =
+                                    TelemetryEvent.EvaluationCompleted {
+                                        PolicyId            = request.PolicyId.Underlying
+                                        EvaluationStart     = request.EvaluationStart
+                                        EvaluationEnd       = request.EvaluationEnd
+                                        DataStoreReadIdx    = request.DataReadIdx
+                                        DataStoreWriteIdx   = newWriteIdx
+                                    }
+
+                                do telemetrySubject.OnNext telemetryEvent
+
+                                match request.WalkOutcome with
+                                | Ok evaluatedWalk ->
+                                    {
+                                        PolicyId    = request.PolicyId.Underlying
+                                        WalkOutcome = Ok evaluatedWalk
+                                    }
+
+                                | Error evaluationFailure ->
+                                    {
+                                        PolicyId    = request.PolicyId.Underlying
+                                        WalkOutcome = Error (ProcessedPolicyFailure.EvaluationFailures evaluationFailure)
+                                    }
+
+                            | OutputRequest.FailedPolicyRead request ->
+                                let telemetryEvent =
+                                    TelemetryEvent.FailedPolicyRead {
+                                        PolicyId            = request.PolicyId.Underlying
+                                        DataStoreReadIdx    = request.DataReadIdx
+                                        DataStoreWriteIdx   = newWriteIdx
+                                    }
+
+                                do telemetrySubject.OnNext telemetryEvent
+
+                                {
+                                    PolicyId    = request.PolicyId.Underlying
+                                    WalkOutcome = Error (ProcessedPolicyFailure.ReadFailures request.FailureReasons)
+                                }
+                        )
+
+                    let writeStart =
+                        DateTime.Now
+
+                    do! outputWriter.WriteProcessedOutputAsync processedOutputs
+
+                    let writeEnd =
+                        DateTime.Now
+
+                    let writeTelemetryEvent =
+                        TelemetryEvent.DataStoreWrite {
+                            Idx                 = newWriteIdx
+                            WriteStart          = writeStart
+                            WriteEnd            = writeEnd
+                        }
+
+                    do telemetrySubject.OnNext writeTelemetryEvent
+                }                
+                
+
             let policyIdBatcher =
                 new BatchBlock<_> (
                     25,
@@ -149,13 +218,29 @@ module CalculationLoop =
                     )
                 )
 
-
             let policyEvaluationBlock =
-                new TransformBlock<_, _> (
-                    null,
-                    new DataflowBlockOptions (
+                new TransformBlock<_, OutputRequest<_, _>> (
+                    policyEvaluator,
+                    new ExecutionDataflowBlockOptions (
                         BoundedCapacity = 100,
                         MaxDegreeOfParallelism = 5
+                    )
+                )
+
+            let outputBatcher =
+                new BatchBlock<_> (
+                    25,
+                    new GroupingDataflowBlockOptions (
+                        BoundedCapacity = 100
+                    )
+                )
+
+            let writerBlock =
+                new ActionBlock<_> (
+                    outputWriter,
+                    new ExecutionDataflowBlockOptions (
+                        BoundedCapacity = 100,
+                        MaxDegreeOfParallelism = 1
                     )
                 )
 
@@ -167,75 +252,94 @@ module CalculationLoop =
             let readerLink =
                 policyIdBatcher.LinkTo (policyReaderBlock, linkOptions)
 
+            let evaluatorLink =
+                policyReaderBlock.LinkTo (policyEvaluationBlock, linkOptions)
 
-            member internal _.PostAsync (policyId) =
-                policyIdBatcher.SendAsync {
-                    PolicyId = policyId
-                    RequestSubmitted = DateTime.Now
-                }
+            let outputBatchLink =
+                policyEvaluationBlock.LinkTo (outputBatcher, linkOptions)
+
+            let outputLink =
+                outputBatcher.LinkTo (writerBlock, linkOptions)
+
+            do ignore <| writerBlock.Completion.ContinueWith (fun _ -> do telemetrySubject.OnCompleted ())
+
+            member internal _.PostAsync policyId =
+                policyIdBatcher.SendAsync policyId
 
             member val internal Telemetry =
                 telemetrySubject.AsObservable ()
 
+            member _.Complete () =
+                do policyIdBatcher.Complete ()
+
+            member val Completion =
+                outputBatcher.Completion
+
 
     type INewOnlyCalculationLoop<'TPolicyRecord> =
         inherit IObservable<TelemetryEvent>
-        inherit IDisposable
 
-        abstract member PostAsync: NewPolicyId          -> Task<bool>
+        abstract member PostAsync   : NewPolicyId          -> Task<bool>
+        abstract member Complete    : Unit -> Unit
+        abstract member Completion  : Task
 
     type ICalculationLoop<'TPolicyRecord> =
         inherit INewOnlyCalculationLoop<'TPolicyRecord>
         inherit IObservable<TelemetryEvent>
-        inherit IDisposable
 
-        abstract member PostAsync: ExitedPolicyId       -> Task<bool>
-        abstract member PostAsync: RemainingPolicyId    -> Task<bool>        
+        abstract member PostAsync   : ExitedPolicyId       -> Task<bool>
+        abstract member PostAsync   : RemainingPolicyId    -> Task<bool>
 
 
     [<RequireQualifiedAccess>]
     module CalculationLoop =
     
-        let createClosingOnly<'TPolicyRecord, 'TStepResults> (closingPolicyReader) =
-            let calcLoop =
-                new CalculationLoop<'TPolicyRecord, 'TStepResults>
-                    (None, None, closingPolicyReader)
+        let createClosingOnly<'TPolicyRecord, 'TStepResults>
+            (closingPolicyGetter, walkEvaluator, outputWriter) =
+                let calcLoop =
+                    new CalculationLoop<'TPolicyRecord, 'TStepResults>
+                        (None, None, closingPolicyGetter, walkEvaluator, outputWriter)
 
-            {
-                new INewOnlyCalculationLoop<'TPolicyRecord> with
-                    member this.PostAsync (NewPolicyId policyId) =
-                        calcLoop.PostAsync (CohortedPolicyId.New policyId)
+                {
+                    new INewOnlyCalculationLoop<'TPolicyRecord> with
+                        member this.PostAsync (NewPolicyId policyId) =
+                            calcLoop.PostAsync (CohortedPolicyId.New policyId)
 
-                interface IObservable<TelemetryEvent> with
-                    member this.Subscribe observer =
-                        calcLoop.Telemetry.Subscribe observer
+                        member this.Complete () =
+                            do calcLoop.Complete ()
 
-                interface IDisposable with
-                    member this.Dispose () =
-                        ()
-            }
+                        member this.Completion
+                            with get() = calcLoop.Completion
 
-        let create<'TPolicyRecord, 'TStepResults> (openingPolicyReader, priorClosingStepResultGetter, closingPolicyReader) =
-            let calcLoop =
-                new CalculationLoop<'TPolicyRecord, 'TStepResults>
-                    (Some openingPolicyReader, Some priorClosingStepResultGetter, closingPolicyReader)
+                    interface IObservable<TelemetryEvent> with
+                        member this.Subscribe observer =
+                            calcLoop.Telemetry.Subscribe observer
+                }
 
-            {
-                new ICalculationLoop<'TPolicyRecord> with
-                    member this.PostAsync (ExitedPolicyId policyId) =
-                        calcLoop.PostAsync (CohortedPolicyId.Exited policyId)
+        let create<'TPolicyRecord, 'TStepResults>
+            (openingPolicyReader, priorClosingStepResultGetter, closingPolicyGetter, walkEvaluator, outputWriter) =
+                let calcLoop =
+                    new CalculationLoop<'TPolicyRecord, 'TStepResults>
+                        (Some openingPolicyReader, Some priorClosingStepResultGetter, closingPolicyGetter, walkEvaluator, outputWriter)
 
-                    member this.PostAsync (RemainingPolicyId policyId) =
-                        calcLoop.PostAsync (CohortedPolicyId.Remaining policyId)
+                {
+                    new ICalculationLoop<'TPolicyRecord> with
+                        member _.PostAsync (ExitedPolicyId policyId) =
+                            calcLoop.PostAsync (CohortedPolicyId.Exited policyId)
 
-                    member this.PostAsync (NewPolicyId policyId) =
-                        calcLoop.PostAsync (CohortedPolicyId.New policyId)
+                        member _.PostAsync (RemainingPolicyId policyId) =
+                            calcLoop.PostAsync (CohortedPolicyId.Remaining policyId)
 
-                interface IObservable<TelemetryEvent> with
-                    member this.Subscribe observer =
-                        calcLoop.Telemetry.Subscribe observer
+                        member _.PostAsync (NewPolicyId policyId) =
+                            calcLoop.PostAsync (CohortedPolicyId.New policyId)
 
-                interface IDisposable with
-                    member this.Dispose() =
-                        ()
-            }
+                        member _.Complete () =
+                            do calcLoop.Complete ()
+
+                        member _.Completion
+                            with get() = calcLoop.Completion
+
+                    interface IObservable<TelemetryEvent> with
+                        member _.Subscribe observer =
+                            calcLoop.Telemetry.Subscribe observer
+                }

@@ -11,6 +11,7 @@ module AbstractDataStore =
     open Npgsql
     open FsToolkit.ErrorHandling
     open AnalysisOfChangeEngine
+    open AnalysisOfChangeEngine.Controller
     open AnalysisOfChangeEngine.DataStore.Postgres.DataTransferObjects
 
 
@@ -96,9 +97,9 @@ module AbstractDataStore =
 
         // --- POLICY DATA ---
 
-        abstract member dtoToPolicyRecord: 'TPolicyRecordDTO -> Result<'TPolicyRecord, string array>
+        abstract member dtoToPolicyRecord: 'TPolicyRecordDTO -> Result<'TPolicyRecord, string list>
 
-        abstract member policyRecordToDTO: 'TPolicyRecord -> Result<'TPolicyRecordDTO, string array>
+        abstract member policyRecordToDTO: 'TPolicyRecord -> Result<'TPolicyRecordDTO, string list>
 
 
         // --- RUNS ---
@@ -437,12 +438,9 @@ module AbstractDataStore =
                 use dbReader =
                     dbCommand.ExecuteReader ()
 
-                let recordParser =
-                    OutstandingPolicyIdDTO.recordParser >> OutstandingPolicyIdDTO.toUnderlying
-
                 return [
                     while dbReader.Read () do
-                        yield recordParser dbReader
+                        yield OutstandingPolicyIdDTO.recordParser dbReader
                 ]
             }
 

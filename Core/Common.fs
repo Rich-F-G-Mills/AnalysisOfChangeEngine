@@ -37,50 +37,23 @@ type StepDataSource =
 type ExitedPolicy<'TPolicyRecord> =
     | ExitedPolicy of Opening: 'TPolicyRecord
 
-    member this.PolicyRecord =
-        match this with
-        | ExitedPolicy policyRecord ->
-            policyRecord
-
 [<NoEquality; NoComparison>]
 type RemainingPolicy<'TPolicyRecord> =
-    | RemainingPolicy of Opening: 'TPolicyRecord * Closing: 'TPolicyRecord
-
-    member this.PolicyRecords =
-        match this with
-        | RemainingPolicy (openingPolicyRecord, closingPolicyRecord) ->
-            openingPolicyRecord, closingPolicyRecord                
+    | RemainingPolicy of Opening: 'TPolicyRecord * Closing: 'TPolicyRecord          
         
 [<NoEquality; NoComparison>]
 type NewPolicy<'TPolicyRecord> =
     | NewPolicy of Closing: 'TPolicyRecord
 
-    member this.PolicyRecord =
-        match this with
-        | NewPolicy policyRecord ->
-            policyRecord
-
 
 [<NoEquality; NoComparison>]
 type ExitedPolicyId =
     | ExitedPolicyId of string
-        
-    member this.Value =
-        match this with
-        | ExitedPolicyId id -> id
 
 [<NoEquality; NoComparison>]
 type RemainingPolicyId =
     | RemainingPolicyId of string
-        
-    member this.Value =
-        match this with
-        | RemainingPolicyId id -> id
 
 [<NoEquality; NoComparison>]
 type NewPolicyId =
     | NewPolicyId of string
-        
-    member this.Value =
-        match this with
-        | NewPolicyId id -> id

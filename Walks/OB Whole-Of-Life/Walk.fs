@@ -224,7 +224,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                     StepValidationOutcome.Empty
 
                 | (_, Some _, _) ->                            
-                    StepValidationOutcome.Completed [| "Regression mis-match." |]
+                    StepValidationOutcome.Completed [ "Regression mis-match." ]
 
                 | (_, None, _) when config.IgnoreOpeningMismatches ->
                     StepValidationOutcome.Empty
@@ -288,7 +288,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                     //| (_, beforeResults, afterResults) ->
                         //do printfn "\n\n-----------------\n%A\n-----------------\n%A\n\n" beforeResults afterResults
 
-                        StepValidationOutcome.Completed [| "Mismatch between opening position in AoC logic." |]
+                        StepValidationOutcome.Completed [ "Mismatch between opening position in AoC logic." ]
             }
         )          
 

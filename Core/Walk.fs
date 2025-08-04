@@ -90,20 +90,20 @@ type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRe
 type WalkEvaluationFailure =
     /// Indicates that, although a response was received from the API,
     /// it failed either in part or in entirety.
-    | ApiCalculationFailure     of RequestorName: string    * Reasons: string array        
+    | ApiCalculationFailure     of RequestorName: string    * Reasons: string list        
     /// Indicates that an API call failed to execute. This would,
     /// for example, be the case if the API was not available.
-    | ApiCallFailure            of RequestorName: string    * Reasons: string array
+    | ApiCallFailure            of RequestorName: string    * Reasons: string list
     /// A data-change step could not successfully transform the policy record
     /// for a given step.
-    | DataChangeFailure         of StepHeader: IStepHeader  * Reasons: string array
+    | DataChangeFailure         of StepHeader: IStepHeader  * Reasons: string list
     /// Indicates that the validation logic was successfully applied with errors
     /// having been identified.
-    | ValidationFailure         of StepHeader: IStepHeader  * Reasons: string array
+    | ValidationFailure         of StepHeader: IStepHeader  * Reasons: string list
     /// Indicates that the validation logic was unable to run for a specified reason.
-    | ValidationAborted         of StepHeader: IStepHeader  * Reasons: string array
+    | ValidationAborted         of StepHeader: IStepHeader  * Reason: string
     /// It was not possible to construct a step result for a given policy.
-    | StepConstructionFailure   of StepHeader: IStepHeader  * Reasons: string array
+    | StepConstructionFailure   of StepHeader: IStepHeader  * Reasons: string list
         
 type EvaluatedPolicyWalk<'TPolicyRecord, 'TStepResults> =
     {

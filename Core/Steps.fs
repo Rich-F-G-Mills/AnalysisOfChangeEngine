@@ -91,17 +91,17 @@ Design Decision:
 type StepValidationOutcome =
     /// Indicates that the validation logic was successfully applied, regardless of
     /// whether this led to validation errors being recognised (or not).
-    | Completed of Errors: string array
+    | Completed of Errors: string list
     /// Indicates that the validation logic was unable to run for a specified reason.
     | Aborted of Reason: string
 
     /// Alias for a completed validation without any issues raised.
     static member val Empty =
-        Completed [||] with get
+        Completed [] with get
 
     /// Helper function that provides no validation at all.
     static member noValidator _ : StepValidationOutcome =
-        StepValidationOutcome.Completed [||]
+        StepValidationOutcome.Completed []
 
 /// Step validator that receives the current policy record followed by
 /// the prior (where available) and current step results.
@@ -129,7 +129,7 @@ type AddNewRecordsStepValidator<'TPolicyRecord, 'TStepResults> =
 /// is returned, it is always assumed that a data change has occurred.
 type PolicyRecordChanger<'TPolicyRecord> =
     // Opening * Prior * Closing -> Optional Revised
-    'TPolicyRecord * 'TPolicyRecord * 'TPolicyRecord -> Result<'TPolicyRecord option, string>
+    'TPolicyRecord * 'TPolicyRecord * 'TPolicyRecord -> Result<'TPolicyRecord option, string list>
 
 
 /// Required interface for any step that has a source definition.

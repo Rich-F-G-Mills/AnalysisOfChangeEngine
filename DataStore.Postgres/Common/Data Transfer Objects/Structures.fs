@@ -3,6 +3,7 @@ namespace AnalysisOfChangeEngine.DataStore.Postgres.DataTransferObjects
 
 open System
 open System.Data.Common
+open System.Reflection
 open System.Threading.Tasks
 open FSharp.Reflection
 open Npgsql
@@ -433,10 +434,11 @@ module internal StepResultsDTO =
     let [<Literal>] private pgTableName =
         "step_results"
         
-    type internal IDispatcher<'TAugRow> =
+    type internal IDispatcher<'TAugRowDTO> =
         interface
-            abstract member PgTableName         : string with get
-            abstract member GetStepResultsAsync : RunUid -> StepUid -> string array -> Task<Map<string, 'TAugRow>>
+            abstract member PgTableName                 : string with get
+            abstract member GetRowsAsync                : RunUid -> StepUid -> string array -> Task<Map<string, 'TAugRowDTO>>
+            abstract member GetRowInsertBatchCommand    : StepResults_BaseDTO * 'TAugRowDTO -> NpgsqlBatchCommand
         end
 
     let internal buildDispatcher<'TAugRowDTO> (schema, dataSource) =
@@ -449,15 +451,18 @@ module internal StepResultsDTO =
             dispatcher.MakeCombinedEquality2Multiple1Selector 
                 (<@ _.run_uid @>, <@ _.step_uid @>, <@ _.policy_id @>)
 
+        let stepResultsInserter =
+            dispatcher.MakeRowInserter ()
+
         {
             new IDispatcher<'TAugRowDTO> with                  
                 member _.PgTableName
                     with get () = pgTableName        
                     
-                member _.GetStepResultsAsync (RunUid runUid') (StepUid stepUid') policyRecords =
+                member _.GetRowsAsync (RunUid runUid') (StepUid stepUid') policyIds =
                     backgroundTask {
                         let! records =
-                            stepResultsSelector.ExecuteAsync runUid' stepUid' policyRecords
+                            stepResultsSelector.ExecuteAsync runUid' stepUid' policyIds
 
                         // We're not gauranteed to get a response for all policy records.
                         // We return a map to make it explicit as to which records we have.
@@ -467,23 +472,25 @@ module internal StepResultsDTO =
                             |> Map.ofSeq
                             
                         return records'
-                    }                    
+                    }
+                    
+                member _.GetRowInsertBatchCommand (baseRow, augRow) = 
+                    stepResultsInserter.AsBatchCommand (baseRow, augRow)
         }
 
 
 [<RequireQualifiedAccess>]
 [<NoEquality; NoComparison>]
 [<PostgresCommonEnumeration("cohort_membership")>]
-type CohortMembershipDTO =
+type private CohortMembershipDTO =
     | EXITED
     | REMAINING
     | NEW
 
 [<NoEquality; NoComparison>]
-type OutstandingPolicyIdDTO =
+type private OutstandingPolicyIdDTO =
     {
         policy_id               : string
-        // had_run_error           : bool
         cohort                  : CohortMembershipDTO
     }
 
@@ -495,21 +502,24 @@ module internal OutstandingPolicyIdDTO =
     let private recordFields =
         FSharpType.GetRecordFields
             // We know the type is private, so we can be specific about our binding flags.
-            (typeof<OutstandingPolicyIdDTO>)
+            (typeof<OutstandingPolicyIdDTO>, BindingFlags.NonPublic)
 
     let private recordTransferableTypes =
         recordFields
         |> Array.map (fun pi -> TransferableType.InvokeGetFor pi.PropertyType)
 
     // Type inferencing can't seem to cope without the type hint.
-    let internal recordParser : DbDataReader -> OutstandingPolicyIdDTO =
+    let private dtoRecordParser : DbDataReader -> OutstandingPolicyIdDTO =
         RecordParser.Create<OutstandingPolicyIdDTO>
             (recordTransferableTypes, [| 0 .. recordFields.Length - 1 |])
 
-    let internal toUnderlying = function
+    let private toUnderlying = function
         | { policy_id = pid; cohort = CohortMembershipDTO.EXITED } ->
             Choice1Of3 (ExitedPolicyId pid)
         | { policy_id = pid; cohort = CohortMembershipDTO.REMAINING } ->
             Choice2Of3 (RemainingPolicyId pid)
         | { policy_id = pid; cohort = CohortMembershipDTO.NEW } ->
             Choice3Of3 (NewPolicyId pid)
+
+    let internal recordParser : DbDataReader -> _ =
+        dtoRecordParser >> toUnderlying

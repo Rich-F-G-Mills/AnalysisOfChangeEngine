@@ -8,6 +8,7 @@ module OBWholeOfLife =
     open System
     open Npgsql
     open FsToolkit.ErrorHandling
+    open AnalysisOfChangeEngine.Common
     open AnalysisOfChangeEngine.Structures.PolicyRecords
     open AnalysisOfChangeEngine.Structures.StepResults
 
@@ -181,14 +182,15 @@ module OBWholeOfLife =
                         Ok (OBWholeOfLife.LivesBasis.JointLife (firstLife, secondLife, int joint_val_age'))
 
                     | _ ->
-                        Error "Invalid combination of life data provided."
+                        Error [ "Invalid combination of life data provided." ]
 
                 let! isTaxable =
                     tableCodes
                     |> Map.tryFind policyRecord.table_code
                     |> Option.map _.is_taxable
-                    |> Result.requireSome
-                        (sprintf "Table code %s not found in table_codes." policyRecord.table_code)
+                    // Defer allocation of a string list if possible!
+                    |> Result.requireSomeWith (fun _ ->
+                         [ sprintf "Table code %s not found in table_codes." policyRecord.table_code ])
 
                 let rawPolicyRecord: OBWholeOfLife.RawPolicyRecord =
                     {                

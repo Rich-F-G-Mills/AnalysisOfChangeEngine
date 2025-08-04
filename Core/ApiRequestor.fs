@@ -24,16 +24,16 @@ type OnApiRequestProcessingStart =
 type ApiRequestFailure =
     /// Indicates that, although a response was received from the API,
     /// it failed either in part or in entirety.
-    | CalculationFailure of Reasons: string array
+    | CalculationFailure of Reasons: string list
     /// Indicates that an API call failed to execute. This would,
     /// for example, be the case if the API was not available.
-    | CallFailure of Reasons: string array
-    /// Cancelled by the user.
-    | Cancelled
+    | CallFailure of Reasons: string list
 
 /// Represents the outcome of an asynchronous execution
 /// performed by an IApiRequestor object,
 type ApiRequestOutcome =
+    // Given we will want to directly index into the objects returned by the API,
+    // an array is preferable to a list.
     Result<obj array, ApiRequestFailure>
 
 
@@ -144,4 +144,3 @@ type WrappedApiRequestor<'TPolicyRecord, 'TResponse> =
             match this with
             | WrappedApiRequestor abstractApiRequestor ->
                 abstractApiRequestor
-

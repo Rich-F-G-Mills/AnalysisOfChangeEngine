@@ -24,7 +24,7 @@ module Core =
     type PolicyGetterFailure =
         /// Indicates that, although the required record was found, it could
         /// not be successfully parsed into a corresponding policy record object.
-        | ParseFailure of Reasons: string array
+        | ParseFailure of Reasons: string list
         /// No record could be found with the requisite ID.
         | NotFound
 
@@ -42,6 +42,7 @@ module Core =
         end
 
 
+    // As above, using an interface allows IDisposable to be implemented if needed.
     type IStepResultsGetter<'TStepResults> =
         interface
             /// Only records which could be successfully found will be included in the map.
@@ -56,8 +57,8 @@ module Core =
     type PolicyReadFailure =
         | OpeningRecordNotFound
         | ClosingRecordNotFound
-        | OpeningRecordParseFailure of Reasons: string array
-        | ClosingRecordParseFailure of Reasons: string array
+        | OpeningRecordParseFailure of Reasons: string list
+        | ClosingRecordParseFailure of Reasons: string list
 
     [<RequireQualifiedAccess>]
     [<NoEquality; NoComparison>]
@@ -72,3 +73,11 @@ module Core =
             PolicyId    : string
             WalkOutcome : Result<EvaluatedPolicyWalk<'TPolicyRecord, 'TStepResults>, ProcessedPolicyFailure>
         }
+
+    type IProcessedOutputWriter<'TPolicyRecord, 'TStepResults> =
+        interface
+            /// Only records which could be successfully found will be included in the map.
+            abstract member WriteProcessedOutputAsync :
+                ProcessedPolicyOutcome<'TPolicyRecord, 'TStepResults> array
+                    -> Task<Unit>
+        end

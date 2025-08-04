@@ -56,7 +56,7 @@ type DataStoreWriteEvent =
 [<NoEquality; NoComparison>]
 type TelemetryEvent =
     | ApiRequest            of ApiRequestTelemetryData
-    | FailedPolicyRad       of FailedPolicyReadTelemetryData
+    | FailedPolicyRead      of FailedPolicyReadTelemetryData
     | EvaluationCompleted   of EvaluationCompletedTelemetryData
     | DataStoreRead         of DataStoreReadEvent
     | DataStoreWrite        of DataStoreWriteEvent
