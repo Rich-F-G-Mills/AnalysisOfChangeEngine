@@ -5,11 +5,14 @@ namespace AnalysisOfChangeEngine
 module Runner =
 
     open System
+    open System.Reactive.Linq
+    open System.Reactive.Concurrency
     open System.Threading.Tasks
     open FsToolkit.ErrorHandling
     open Npgsql
     open AnalysisOfChangeEngine
     open AnalysisOfChangeEngine.Controller
+    open AnalysisOfChangeEngine.Controller.CalculationLoop
     open AnalysisOfChangeEngine.DataStore
     open AnalysisOfChangeEngine.DataStore.Postgres
     open AnalysisOfChangeEngine.Walks
@@ -155,104 +158,42 @@ module Runner =
                     (if isSourceChange then "S" else " ")
                     step.Description
 
+            let openingPolicyGetter =
+                dataStore.CreatePolicyGetter priorExtractionUid
 
-            let somePolicyIds =
-                outstandingRecords
-                |> Seq.choose (function
-                    | Choice1Of3 (ExitedPolicyId policyId) ->
-                        Some policyId
-                    | _ ->
-                        None) 
-                |> Seq.take 5
-                |> Seq.toArray
+            let closingPolicyGetter =
+                dataStore.CreatePolicyGetter currentExtractionUid
 
-            let someExitedPolicyRecords =
-                outstandingRecords
-                |> Seq.choose (function | Choice1Of3 (ExitedPolicyId policyId) -> Some policyId | _ -> None)
-                |> Seq.truncate 5
-                |> Seq.toArray
-                |> dataStore.GetPolicyRecordsAsync priorExtractionUid
-                |> _.Result
-                |> Map.map (fun _ -> Result.map ExitedPolicy)
-                |> Map.map (fun _ -> Result.defaultWith (fun _ -> failwith "Failed"))
+            let priorClosingResultsGetter =
+                {
+                    new IStepResultsGetter<OBWholeOfLife.StepResults> with
+                        member _.GetStepResultsAsync _ =
+                            Task.FromResult Map.empty
+                }
 
-            let someRemainingPolicyRecords =
-                outstandingRecords
-                |> Seq.choose (function | Choice2Of3 (RemainingPolicyId policyId) -> Some policyId | _ -> None)
-                //|> Seq.skip 6
-                |> Seq.truncate 10
-                |> Seq.toArray
-                |> function
-                    | policyIds ->
-                        backgroundTask {
-                            let! records =
-                                Task.WhenAll(
-                                    dataStore.GetPolicyRecordsAsync priorExtractionUid policyIds,
-                                    dataStore.GetPolicyRecordsAsync currentExtractionUid policyIds
-                                )
-
-                            let openingRecords =
-                                records[0]
-                                |> Map.map (fun _ -> Result.defaultWith (fun _ -> failwith "Failed"))
-
-                            let closingRecords =
-                                records[1]
-                                |> Map.map (fun _ -> Result.defaultWith (fun _ -> failwith "Failed"))
-
-                            let combinedRecords =
-                                policyIds
-                                |> Seq.map (fun policyId ->
-                                    policyId, RemainingPolicy (openingRecords[policyId], closingRecords[policyId]))
-                                |> Map.ofSeq
-
-                            return combinedRecords
-                        }                        
-                |> _.Result
-
-            let someNewPolicyRecords =
-                outstandingRecords
-                |> Seq.choose (function | Choice3Of3 (NewPolicyId policyId) -> Some policyId | _ -> None)
-                |> Seq.truncate 5
-                |> Seq.toArray
-                |> dataStore.GetPolicyRecordsAsync currentExtractionUid
-                |> _.Result
-                |> Map.map (fun _ -> Result.map NewPolicy)
-                |> Map.map (fun _ -> Result.defaultWith (fun _ -> failwith "Failed"))
-            
             let evaluator =
                 Evaluator.create logger walk walk.ApiCollection
-            
-            //let exitedResults =
-            //    someExitedPolicyRecords
-            //    |> Map.map (fun _ -> evaluator.Execute)
 
-            
-            let remainingResultOutcomes =
-                someRemainingPolicyRecords
-                |> Map.map (fun _ rr -> evaluator.Execute (rr, None))
+            let outputWriter =
+                {
+                    new IProcessedOutputWriter<OBWholeOfLife.PolicyRecord, OBWholeOfLife.StepResults> with
+                        member _.WriteProcessedOutputAsync _ =
+                            backgroundTask {
+                                do! Task.Delay (TimeSpan.FromMilliseconds 100)
+                            }
+                }
 
-            //let newResults =
-            //    someNewPolicyRecords
-            //    |> Map.map (fun _ -> evaluator.Execute)
+            let calculationLoop =
+                createCalculationLoop
+                    (openingPolicyGetter, priorClosingResultsGetter, closingPolicyGetter, evaluator, outputWriter)
 
-            //let exitedResults =
-            //    exitedResults
-            //    |> Map.map (fun _ -> _.Result)
-
-            let remainingResultOutcomes =
-                remainingResultOutcomes
-                |> Map.map (fun _ -> _.Result)
-
-            //let newResults =
-            //    newResults
-            //    |> Map.map (fun _ -> _.Result)
-
-
-            let remainingResults =
-                remainingResultOutcomes
-                |> Map.map (fun _ -> Result.map _.StepResults)        
-
-            do printfn "\n\n%A\n\n" remainingResults            
+            use scheduler =
+                new EventLoopScheduler ()
+                    
+            use _ =
+                calculationLoop.Telemetry
+                |> _.ObserveOn(scheduler)
+                |> _.Subscribe(printfn "%A")  
 
             return 0
         }

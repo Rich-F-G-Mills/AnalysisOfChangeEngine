@@ -10,6 +10,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="System.Reactive" Version="6.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Controller\Controller.fsproj" />
     <ProjectReference Include="..\Core\Core.fsproj" />
     <ProjectReference Include="..\DataStore.Postgres\OB Whole-Of-Life\DataStore.Postgres.OBWholeOfLife.fsproj" />
