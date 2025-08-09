@@ -8,6 +8,23 @@ module Types =
     open System
     open AnalysisOfChangeEngine
 
+
+    [<NoEquality; NoComparison>]
+    type ExtractionUid =
+        | ExtractionUid of Guid
+
+        member this.Value =
+            match this with
+            | ExtractionUid uid -> uid
+
+    [<NoEquality; NoComparison>]
+    type SessionUid =
+        | SessionUid of Guid
+
+        member this.Value =
+            match this with
+            | SessionUid uid -> uid
+
     
     [<NoEquality; NoComparison>]
     type SessionContext =

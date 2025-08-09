@@ -185,9 +185,9 @@ module AbstractDataStore =
 
         // --- STEP RESULTS ---
 
-        abstract member dtoToStepResults: 'TStepResultsDTO -> Result<'TStepResults, string array>
+        abstract member dtoToStepResults: 'TStepResultsDTO -> Result<'TStepResults, string list>
 
-        abstract member stepResultsToDTO: 'TStepResults -> Result<'TStepResultsDTO, string array>
+        abstract member stepResultsToDTO: 'TStepResults -> Result<'TStepResultsDTO, string list>
 
 
         // --- POLICY DATA ---
@@ -453,3 +453,159 @@ module AbstractDataStore =
                     member _.GetPolicyRecordsAsync policyIds =
                         this.GetPolicyRecordsAsync extractionUid policyIds
             }
+
+
+        member private this.ConstructDataChangeWriteCommands
+            (constructBaseDataStageDTO, constructRunFailureDTO) =
+                Map.toSeq
+                // Use the applicative variant so that we get all errors, rather than
+                // just the first.
+                >> Seq.traverseResultA (fun (dataStageUid, policyRecord) ->
+                    result {                                                    
+                        let constructDataChangeWriteFailureCommand =
+                            Some
+                            >> constructRunFailureDTO (Some dataStageUid, RunFailureTypeDTO.DATA_CHANGE_WRITE_FAILURE)
+                            >> runFailureDispatcher.GetRowInsertBatchCommand
+
+                        let! policyRecordDTO =
+                            this.policyRecordToDTO policyRecord
+                            |> Result.mapError (List.map constructDataChangeWriteFailureCommand) 
+
+                        let dataStageBaseDTO =
+                            constructBaseDataStageDTO dataStageUid
+                                                        
+                        return dataStageDispatcher.GetRowInsertBatchCommand
+                            (dataStageBaseDTO, policyRecordDTO)
+                    })
+                // Convert everything to a sequence.
+                >> Result.eitherMap Seq.ofArray Seq.concat
+
+        member private this.ConstructStepResultsWriteCommands
+            (constructBaseStepResultDTO, constructFailureDTO) =
+                Map.toSeq
+                >> Seq.traverseResultA (fun (stepUid, (stepDataSource, stepResults)) ->
+                    result {
+                        let dataStageUsedDTO =
+                            match stepDataSource with
+                            | StepDataSource.DataChangeStep dataChangeStepUid ->
+                                Some dataChangeStepUid.Uid
+                            | _ ->
+                                None
+
+                        let constructStepResultWriteFailureCommand =
+                            Some
+                            >> constructFailureDTO (Some stepUid) RunFailureTypeDTO.STEP_RESULTS_WRITE_FAILURE
+                            >> runFailureDispatcher.GetRowInsertBatchCommand
+
+                        let stepResultsBaseDTO =
+                            constructBaseStepResultDTO (stepUid, dataStageUsedDTO)
+
+                        let! stepResultsDTO =
+                            this.stepResultsToDTO stepResults
+                            |> Result.mapError (Seq.map constructStepResultWriteFailureCommand)
+                                                        
+                        return stepResultsDispatcher.GetRowInsertBatchCommand
+                            (stepResultsBaseDTO, stepResultsDTO)
+                    })
+                // Convert everything to a sequence.
+                >> Result.eitherMap Seq.ofArray Seq.concat
+
+        static member private ProcessSuccessfulWalk
+            (constructDataChangeWriteCommands, constructStepResultsWriteCommands, constructFailureDTO)
+            (policyId, outcome: EvaluatedPolicyWalk<'TPolicyRecord, 'TStepResults>) =
+                result {                                         
+                    // First, let's see if we can construct all of
+                    // the required data change write commands.
+                    let! dataChangeWrites =
+                        outcome.InteriorDataChanges
+                        |> constructDataChangeWriteCommands
+                            (constructFailureDTO, policyId)                                            
+
+                    // ...before trying to construct the step result
+                    // write commands.
+                    let! stepResultWrites =
+                        outcome.StepResults
+                        |> constructStepResultsWriteCommands
+                            (constructFailureDTO, policyId)
+
+                    // Provided we get this far, we can combine the
+                    // write commands from above.
+                    let combinedWriteCommands =
+                        stepResultWrites
+                        |> Seq.append dataChangeWrites
+
+                    return combinedWriteCommands
+                }
+                |> Result.either id id
+
+        static member private ProcessFailedWalk (policyId, failure) = 0
+            
+
+        // Before anyone says anything, I realise there are a lot of allocations
+        // going on here. However, this function does NOT lie on the critical
+        // path and I therefore do not anticipate this leading to undue GC pressure.
+        member this.CreateOutputWriter (RunUid currentRunUid') (SessionUid sessionUid') =
+            let constructBaseStepResultDTO policyId (stepUid, usedDataStageUid) =
+                {
+                    run_uid             = currentRunUid'
+                    session_uid         = sessionUid'
+                    policy_id           = policyId
+                    step_uid            = stepUid
+                    used_data_stage_uid = usedDataStageUid
+                }
+
+            let constructBaseDataStageDTO policyId dataStageUid =
+                {
+                    run_uid             = currentRunUid'
+                    session_uid         = sessionUid'
+                    data_stage_uid      = dataStageUid
+                    policy_id           = policyId                
+                }
+
+            let constructRunFailureDTO =
+                RunFailureDTO.constructFrom (currentRunUid', sessionUid')
+
+            let constructDataChangeWriteCommands' policyId =
+                this.ConstructDataChangeWriteCommands
+                    (constructBaseDataStageDTO policyId, constructRunFailureDTO policyId)
+
+            let constructStepResultsWriteCommands' =
+                this.ConstructStepResultsWriteCommands
+                    (constructBaseStepResultDTO, constructRunFailureDTO )
+
+            let processSuccessfulWalk' =
+                AbstractPostgresDataStore<_, _, _, _>.ProcessSuccessfulWalk
+                    (constructDataChangeWriteCommands', constructStepResultsWriteCommands')
+
+            {
+                new IProcessedOutputWriter<'TPolicyRecord, 'TStepResults> with
+                    member _.WriteProcessedOutputAsync processedOutputs =
+                        let constructFailureDTO policyId stepUid errType reason =
+                            {
+                                run_uid     = currentRunUid'
+                                session_uid = sessionUid'
+                                policy_id   = policyId
+                                step_uid    = stepUid
+                                error_type  = errType
+                                reason      = reason
+                            }  
+
+                        let processSuccessfulWalk'' =
+                            processSuccessfulWalk' constructFailureDTO
+
+
+                        backgroundTask {
+                            processedOutputs
+                            |> Seq.map (function
+                                | { PolicyId = policyId; WalkOutcome = Ok outcome } ->
+                                    processSuccessfulWalk'' (policyId, outcome)                                    
+
+                                | { PolicyId = policyId; WalkOutcome = Error failure } ->
+                                    0
+                                    
+                                )
+                        }
+                        
+
+            }
+            

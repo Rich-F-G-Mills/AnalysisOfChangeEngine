@@ -26,7 +26,7 @@ type FailedPolicyReadTelemetryData =
     }
 
 [<NoEquality; NoComparison>]
-type EvaluationCompletedTelemetryData =
+type ProcessingCompletedTelemetryData =
     {
         PolicyId            : string
         EvaluationStart     : DateTime
@@ -57,6 +57,6 @@ type DataStoreWriteEvent =
 type TelemetryEvent =
     | ApiRequest            of ApiRequestTelemetryData
     | FailedPolicyRead      of FailedPolicyReadTelemetryData
-    | EvaluationCompleted   of EvaluationCompletedTelemetryData
+    | ProcessingCompleted   of ProcessingCompletedTelemetryData
     | DataStoreRead         of DataStoreReadEvent
     | DataStoreWrite        of DataStoreWriteEvent

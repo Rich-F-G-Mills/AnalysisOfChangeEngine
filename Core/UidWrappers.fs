@@ -22,14 +22,6 @@ type RunUid =
         | RunUid uid -> uid
 
 [<NoEquality; NoComparison>]
-type ExtractionUid =
-    | ExtractionUid of Guid
-
-    member this.Value =
-        match this with
-        | ExtractionUid uid -> uid
-
-[<NoEquality; NoComparison>]
 type StepUid =
     | StepUid of Guid
 

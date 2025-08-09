@@ -23,7 +23,11 @@ type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRe
     (logger: ILogger) as this =
 
         let _interiorSteps =
-            new List<IStepHeader> ()       
+            new List<IStepHeader> ()   
+            
+        // We only permit source change steps to be used after the closing step.
+        let _postNewRecordsSteps =
+            new List<SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>> ()
 
 
         /// Required step.
@@ -68,6 +72,10 @@ type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRe
             step
 
 
+        member this.registerPostNewRecordsStep (step: SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
+            do _postNewRecordsSteps.Add step
+
+
         /// Provides an enumeration of all steps, both required and user supplied in the appropriate order.
         member val AllSteps =
             // Must be a sequence or we get an error about using
@@ -78,6 +86,7 @@ type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRe
                 yield! _interiorSteps
                 yield this.MoveToClosingData :> IStepHeader
                 yield this.AddNewRecords :> IStepHeader
+                yield! _postNewRecordsSteps |> Seq.cast<IStepHeader>
             } with get
 
         interface IWalk with

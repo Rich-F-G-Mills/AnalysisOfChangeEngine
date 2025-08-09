@@ -147,7 +147,7 @@ module CalculationLoop =
                         |> Array.map (function
                             | OutputRequest.CompletedEvaluation request ->
                                 let telemetryEvent =
-                                    TelemetryEvent.EvaluationCompleted {
+                                    TelemetryEvent.ProcessingCompleted {
                                         PolicyId            = request.PolicyId.Underlying
                                         EvaluationStart     = request.EvaluationStart
                                         EvaluationEnd       = request.EvaluationEnd
@@ -254,19 +254,19 @@ module CalculationLoop =
                     PropagateCompletion = true
                 )
 
-            let readerLink =
+            // TODO - Should we care about these?
+            let _ =
                 policyIdBatcher.LinkTo (policyReaderBlock, linkOptions)
 
-            let evaluatorLink =
+            let _ =
                 policyReaderBlock.LinkTo (policyEvaluationBlock, linkOptions)
 
-            let outputBatchLink =
+            let _ =
                 policyEvaluationBlock.LinkTo (outputBatcher, linkOptions)
 
-            let outputLink =
+            let _ =
                 outputBatcher.LinkTo (writerBlock, linkOptions)
 
-            do ignore <| writerBlock.Completion.ContinueWith (fun _ -> do telemetrySubject.OnCompleted ())
 
             member internal _.PostAsync policyId =
                 policyIdBatcher.SendAsync policyId
@@ -278,12 +278,15 @@ module CalculationLoop =
                 do policyIdBatcher.Complete ()
 
             member val Completion =
-                outputBatcher.Completion
+                writerBlock.Completion
+                    // Only consider ourselves completed once we've already notified
+                    // as such with the telemetry observable.
+                    .ContinueWith (fun _ -> do telemetrySubject.OnCompleted ())
 
 
     type INewOnlyCalculationLoop<'TPolicyRecord> =
         abstract member PostAsync   : NewPolicyId          -> Task<bool>
-        abstract member Telemetry    : IObservable<TelemetryEvent>
+        abstract member Telemetry   : IObservable<TelemetryEvent>
         abstract member Complete    : Unit -> Unit
         abstract member Completion  : Task
 

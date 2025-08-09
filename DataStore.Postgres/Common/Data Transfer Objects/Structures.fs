@@ -8,6 +8,7 @@ open System.Threading.Tasks
 open FSharp.Reflection
 open Npgsql
 open AnalysisOfChangeEngine
+open AnalysisOfChangeEngine.Controller
 open AnalysisOfChangeEngine.DataStore.Postgres
 
 
@@ -19,6 +20,7 @@ open AnalysisOfChangeEngine.DataStore.Postgres
 type internal DataStage_BaseDTO =
     {
         run_uid         : Guid
+        session_uid     : Guid
         data_stage_uid  : Guid
         policy_id       : string
     }
@@ -29,9 +31,11 @@ module internal DataStageDTO =
     let [<Literal>] private pgTableName =
         "data_stages"
 
-    type internal IDispatcher =
+    type internal IDispatcher<'TAugRowDTO> =
         interface
             abstract member PgTableName     : string with get
+            abstract member GetRowInsertBatchCommand
+                : DataStage_BaseDTO * 'TAugRowDTO -> NpgsqlBatchCommand
         end
 
     let internal buildDispatcher<'TAugRowDTO> (schema, dataSource) =
@@ -40,10 +44,16 @@ module internal DataStageDTO =
             new PostgresTableDispatcher<DataStage_BaseDTO, 'TAugRowDTO>
                 (pgTableName, schema, dataSource)
 
+        let dataStagesInserter =
+            dispatcher.MakeRowInserter ()
+
         {
-            new IDispatcher with
+            new IDispatcher<'TAugRowDTO> with
                 member _.PgTableName
-                    with get () = pgTableName                  
+                    with get () = pgTableName
+                    
+                member _.GetRowInsertBatchCommand (baseRow, augRow) = 
+                    dataStagesInserter.AsBatchCommand (baseRow, augRow)
         }
 
 
@@ -305,19 +315,23 @@ type internal RunFailureTypeDTO =
     | VALIDATION_FAILURE
     | API_CALL_FAILURE
     | API_CALCULATION_FAILURE
-    | STEP_CONSTRUCTION_FAILURE    
+    | STEP_CONSTRUCTION_FAILURE 
+    | STEP_RESULTS_WRITE_FAILURE
+    | DATA_CHANGE_WRITE_FAILURE
 
 [<NoEquality; NoComparison>]
 type internal RunFailureDTO =
     {           
         run_uid                 : Guid
+        session_uid             : Guid
         policy_id               : string
         step_uid                : Guid option
         error_type              : RunFailureTypeDTO
+        // Not all error types require a corresponding reason.
         reason                  : string option   
     }
 
-[<AbstractClass>]
+[<RequireQualifiedAccess>]
 module internal RunFailureDTO =
     
     let [<Literal>] private pgTableName =
@@ -325,7 +339,8 @@ module internal RunFailureDTO =
 
     type internal IDispatcher =
         interface
-            abstract member PgTableName     : string with get
+            abstract member PgTableName                 : string with get
+            abstract member GetRowInsertBatchCommand    : RunFailureDTO -> NpgsqlBatchCommand
         end
 
     let internal buildDispatcher (schema, dataSource) =
@@ -333,11 +348,80 @@ module internal RunFailureDTO =
             new PostgresTableDispatcher<RunFailureDTO, Unit>
                 (pgTableName, schema, dataSource)
 
+        let runFailureInserter =
+            dispatcher.MakeRowInserter ()
+
         {
             new IDispatcher with
                 member _.PgTableName
-                    with get () = pgTableName                  
+                    with get () = pgTableName   
+                    
+                member _.GetRowInsertBatchCommand failure = 
+                    runFailureInserter.AsBatchCommand (failure, ())
         }
+
+    let internal constructFrom (runUid, sessionUid) policyId =
+        let constructFrom' (stepUid, errorType) reason =
+            {
+                run_uid = runUid
+                session_uid = sessionUid
+                policy_id = policyId
+                step_uid = stepUid
+                error_type = errorType
+                reason = reason
+            }
+            
+        function 
+        | ProcessedPolicyFailure.ReadFailures readFailures ->
+            readFailures
+            |> Seq.collect (function
+                | PolicyReadFailure.OpeningRecordNotFound ->
+                    seq { constructFrom' (None, RunFailureTypeDTO.OPENING_RECORD_NOT_FOUND) None }
+                | PolicyReadFailure.OpeningRecordParseFailure reasons ->
+                    reasons
+                    |> Seq.map (Some >> constructFrom' (None, RunFailureTypeDTO.OPENING_RECORD_PARSE_FAILURE))
+                | PolicyReadFailure.ClosingRecordNotFound ->
+                    seq { constructFrom' (None, RunFailureTypeDTO.CLOSING_RECORD_NOT_FOUND) None }
+                | PolicyReadFailure.ClosingRecordParseFailure reasons ->
+                    reasons
+                    |> Seq.map (Some >> constructFrom' (None, RunFailureTypeDTO.CLOSING_RECORD_PARSE_FAILURE)))
+
+        | ProcessedPolicyFailure.EvaluationFailures evaluationFailures ->
+            evaluationFailures
+            |> Seq.collect (function
+                | WalkEvaluationFailure.ApiCalculationFailure (requestorName, reasons) ->
+                    reasons
+                    |> Seq.map (sprintf "[%s] %s" requestorName >> Some >>
+                        constructFrom' (None, RunFailureTypeDTO.API_CALCULATION_FAILURE))
+                | WalkEvaluationFailure.ApiCallFailure (requestorName, reasons) ->
+                    reasons
+                    |> Seq.map (sprintf "[%s] %s" requestorName >> Some >>
+                        constructFrom' (None, RunFailureTypeDTO.API_CALL_FAILURE))
+                | WalkEvaluationFailure.DataChangeFailure (stepHdr, reasons) ->
+                    reasons
+                    |> Seq.map (Some >>
+                        constructFrom' (Some stepHdr.Uid, RunFailureTypeDTO.DATA_CHANGE_RECORD_FAILURE))
+                | WalkEvaluationFailure.ValidationFailure (stepHdr, reasons) ->
+                    reasons
+                    |> Seq.map (Some >>
+                        constructFrom' (Some stepHdr.Uid, RunFailureTypeDTO.VALIDATION_FAILURE))
+                | WalkEvaluationFailure.ValidationAborted (stepHdr, reason) ->
+                    seq { constructFrom' (Some stepHdr.Uid, RunFailureTypeDTO.VALIDATION_ABORTED) (Some reason) }
+                | WalkEvaluationFailure.StepConstructionFailure (stepHdr, reasons) ->
+                    reasons
+                    |> Seq.map (Some >>
+                        constructFrom' (Some stepHdr.Uid, RunFailureTypeDTO.STEP_CONSTRUCTION_FAILURE)))
+
+        | ProcessedPolicyFailure.PolicyWriteFailure writeFailure ->
+            match writeFailure with
+            | PolicyWriteFailure.DataStageWriteFailure (stepHdr, reasons) ->
+                reasons
+                |> Seq.map (Some >>
+                    constructFrom' (Some stepHdr.Uid, RunFailureTypeDTO.DATA_CHANGE_WRITE_FAILURE))
+            | PolicyWriteFailure.StepResultsWriteFailure (stepHdr, reasons) ->
+                reasons
+                |> Seq.map (Some >>
+                    constructFrom' (Some stepHdr.Uid, RunFailureTypeDTO.STEP_RESULTS_WRITE_FAILURE))
 
     
 [<NoEquality; NoComparison>]
@@ -421,6 +505,7 @@ module internal StepHeaderDTO =
 type internal StepResults_BaseDTO =
     {
         run_uid                 : Guid
+        session_uid             : Guid
         step_uid                : Guid
         // In theory, we could live without this. However, it does make it easier to
         // track down the policy characteristics run for a given step.
@@ -477,6 +562,7 @@ module internal StepResultsDTO =
                 member _.GetRowInsertBatchCommand (baseRow, augRow) = 
                     stepResultsInserter.AsBatchCommand (baseRow, augRow)
         }
+
 
 
 [<RequireQualifiedAccess>]

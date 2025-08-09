@@ -62,10 +62,18 @@ module Core =
 
     [<RequireQualifiedAccess>]
     [<NoEquality; NoComparison>]
+    type PolicyWriteFailure =
+        | DataStageWriteFailure     of StepHeader: IStepHeader * Reasons: string list 
+        | StepResultsWriteFailure   of StepHeader: IStepHeader * Reasons: string list
+
+    [<RequireQualifiedAccess>]
+    [<NoEquality; NoComparison>]
     type ProcessedPolicyFailure =
         // If we've got read failures, then we won't have actually evaluated anything!
         | ReadFailures of PolicyReadFailure list
         | EvaluationFailures of WalkEvaluationFailure list
+        // There can only be one of these failures.
+        | PolicyWriteFailure of PolicyWriteFailure
 
     [<NoEquality; NoComparison>]
     type ProcessedPolicyOutcome<'TPolicyRecord, 'TStepResults> =

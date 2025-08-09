@@ -337,8 +337,8 @@ module Evaluator =
                     hdr.Validator (policyRecordForPriorStage, currentStepResults)
                 | Some _, :? RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> ->
                     StepValidationOutcome.Empty
-                // We do NOT want a catch-all here. In the event another step type gets introduces,
-                // I want this to fail... At least at runtime!
+                // We do NOT want a catch-all here. In the event another step type gets introduced,
+                // I want this to explicitly fail... At least at runtime!
                 | _ ->
                     failwith "Unexpected error."
 
@@ -450,16 +450,16 @@ module Evaluator =
             let createProfileEvaluator groupingProfileIdxs : ProfileEvaluator<'TPolicyRecord, 'TStepResults> =
                 let groupingsForProfile =
                     cachedGroupingsForProfile.GetOrAdd (groupingProfileIdxs, fun _ ->
-                        do logger.LogDebug (sprintf "Creating groupings by profile for %A." groupingProfileIdxs)
+                        //do logger.LogDebug (sprintf "Creating groupings by profile for %A." groupingProfileIdxs)
 
                         getGroupingsByProfile groupingsByDataStage groupingProfileIdxs)
 
                 let evaluatorsByProfileStage =
                     (groupingsForProfile.StepUids, groupingsForProfile.ParsedSources)
                     ||> List.map2 (fun uids sources ->
-                            do logger.LogDebug
-                                (sprintf "Creating executor for %ix step UIDs starting with %O."
-                                    uids.Length groupingProfileIdxs.Head)
+                            //do logger.LogDebug
+                            //    (sprintf "Creating executor for %ix step UIDs starting with %O."
+                            //        uids.Length groupingProfileIdxs.Head)
 
                             // Again, ensure cached versions are used where available.
                             cachedEvaluatorsForUids.GetOrAdd (uids, fun _ -> createEvaluatorForSteps sources))
@@ -476,8 +476,8 @@ module Evaluator =
 
                 do assert (dataSourceByStep.Length = parsedWalk.ParsedSteps.Length)                                
 
-                do logger.LogDebug
-                    (sprintf "Created executor for profile %A." groupingProfileIdxs)
+                //do logger.LogDebug
+                //    (sprintf "Created executor for profile %A." groupingProfileIdxs)
 
                 // We CANNOT refer to the outer policy record information as this will create
                 // a closure to stale inputs.
@@ -598,7 +598,9 @@ module Evaluator =
                                 InteriorDataChanges =
                                     Map.empty
                                 StepResults         =
-                                    Map.singleton openingReRunStepHdr.Uid (StepDataSource.OpeningData, stepResults)
+                                    Map.singleton
+                                        openingReRunStepHdr.Uid
+                                        (StepDataSource.OpeningData, stepResults)
                             }
 
                         return evaluationOutcome
@@ -615,16 +617,35 @@ module Evaluator =
     // Note the comments for the exited policy evaluator above.
     let private createNewPolicyEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection>
         (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>) =
-            let newRecordsStepHdr, newRecordsParsedStep =
-                List.last parsedWalk.ParsedSteps
+            // Here we check to make sure that we can find the add new records step.
+            let newRecordsStepIdx =
+                parsedWalk.ParsedSteps
+                |> List.findIndex (function
+                    | :? AddNewRecordsStep<'TPolicyRecord, 'TStepResults>, _ -> true | _ -> false)
 
-            do assert checkStepType<AddNewRecordsStep<'TPolicyRecord, 'TStepResults>> newRecordsStepHdr
+            // This will include the add new records step above.
+            let parsedStepsForNewRecords =
+                parsedWalk.ParsedSteps
+                |> List.skip newRecordsStepIdx
 
+            // Given a type mismatch would lead to an exception, no need
+            // to do an assertion after this.
             let newRecordsStep : AddNewRecordsStep<'TPolicyRecord, 'TStepResults> =
-                downcast newRecordsStepHdr
+                downcast (fst <| List.head parsedStepsForNewRecords)
+
+            // Here we ensure that anything after the add new records step 
+            // is a source change step.
+            do  parsedStepsForNewRecords
+                |> List.tail
+                |> List.iter (fun (stepHdr, _) ->
+                    do assert checkStepType<SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>> stepHdr)
+
+            let parsedSourcesForNewRecords =
+                parsedStepsForNewRecords                
+                |> List.map snd
 
             let evaluator =
-                createEvaluatorForStep (newRecordsParsedStep)
+                createEvaluatorForSteps (parsedSourcesForNewRecords)
 
             fun (NewPolicy policyRecord, onApiRequestProcessingStart) ->
                 backgroundTaskResult {
@@ -641,7 +662,8 @@ module Evaluator =
                                 InteriorDataChanges =
                                     Map.empty
                                 StepResults         =
-                                    Map.singleton newRecordsStepHdr.Uid
+                                    Map.singleton
+                                        newRecordsStepHdr.Uid
                                         (StepDataSource.ClosingData, stepResults)
                             }
 

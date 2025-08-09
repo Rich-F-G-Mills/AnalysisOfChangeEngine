@@ -193,7 +193,32 @@ module Runner =
             use _ =
                 calculationLoop.Telemetry
                 |> _.ObserveOn(scheduler)
-                |> _.Subscribe(printfn "%A")  
+                |> _.Subscribe(printfn "%A")
+
+            let someOutstandingRecords =
+                outstandingRecords
+                |> List.take 5
+
+            let runner =
+                backgroundTask {
+                    for record in someOutstandingRecords do
+                        let! _ =
+                            match record with
+                            | Choice1Of3 (ExitedPolicyId _ as pid) ->
+                                calculationLoop.PostAsync pid
+                            | Choice2Of3 (RemainingPolicyId _ as pid) ->
+                                calculationLoop.PostAsync pid
+                            | Choice3Of3 (NewPolicyId _ as pid) ->
+                                calculationLoop.PostAsync pid
+
+                        ()
+
+                    do calculationLoop.Complete ()
+
+                    do! calculationLoop.Completion
+                }
+
+            do runner.Wait ()
 
             return 0
         }

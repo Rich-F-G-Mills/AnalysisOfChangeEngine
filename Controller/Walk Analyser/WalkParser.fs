@@ -171,10 +171,7 @@ module (*internal*) WalkParser =
                 |> Map.ofSeq 
             
             let allSteps =
-                Seq.toList walk.AllSteps
-
-            let allStepsRev =
-                List.rev allSteps                       
+                Seq.toList walk.AllSteps                   
 
             // Let's make sure our view of how the walk is structured correctly!
             // There is the risk that the required steps under the abstract walk are changed
@@ -182,9 +179,22 @@ module (*internal*) WalkParser =
             assert checkStepType<OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>> allSteps[0]
             assert checkStepType<RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults>> allSteps[1]
 
-            // TODO - Use 'from-end' indexing?            
-            assert checkStepType<MoveToClosingDataStep<'TPolicyRecord, 'TStepResults>> allStepsRev[1]
-            assert checkStepType<AddNewRecordsStep<'TPolicyRecord, 'TStepResults>> allStepsRev[0]
+            let moveToClosingDataStepIdx =
+                allSteps
+                // We don't use 'try' here as failure to find this step would be a disaster!
+                |> List.findIndex (function
+                    | :? MoveToClosingDataStep<'TPolicyRecord, 'TStepResults> -> true | _ -> false)
+
+            // We've already checked the presence of the move to closing step above.
+            // Now we need to make sure the following step is the addition of new records.
+            assert checkStepType<AddNewRecordsStep<'TPolicyRecord, 'TStepResults>> allSteps[moveToClosingDataStepIdx + 1]
+
+            // Finally, check that any step post-inclusion of new records are all source change steps.
+            do  allSteps
+                // This will exclude both of the move to closing data AND add new records steps above.
+                |> List.skip (moveToClosingDataStepIdx + 2)
+                |> List.iter (fun stepHdr ->
+                    do assert checkStepType<SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>> stepHdr)
 
             let uniqueStepUids =
                 allSteps

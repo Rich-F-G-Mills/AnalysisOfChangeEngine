@@ -16,6 +16,8 @@ type EndpointId =
 
 
 type OnApiRequestProcessingStart =
+    // Potentially, there may be some cases where an end-point ID
+    // is meaningless. As such, have made it optional.
     EndpointId option -> IDisposable
 
 

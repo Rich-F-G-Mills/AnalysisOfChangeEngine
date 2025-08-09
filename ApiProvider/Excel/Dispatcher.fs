@@ -173,8 +173,10 @@ module Dispatcher =
 
                         let outputs =
                             request.RequiredOutputs
-                            |> Array.map outputReader
-                            |> Array.sequenceResultA
+                            // Note that we use the applicable variant so that we get
+                            // all errors rather than just stopping at the first one
+                            // we encounter.
+                            |> Array.traverseResultA outputReader
                             |> function
                                 Ok results ->
                                     Ok results
@@ -227,9 +229,6 @@ module Dispatcher =
                         // This is non-blocking. Given the buffer block is unbounded,
                         // this _should_ never fail in the normal course of business.
                         if not (bufferBlock.Post newCalcRequest) then
-                            let timestamp =
-                                DateTime.Now
-
                             do tcs.SetResult 
                                 (Error (ApiRequestFailure.CallFailure [ "Unable to submit Excel request." ]))
 
