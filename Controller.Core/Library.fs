@@ -5,6 +5,7 @@ namespace AnalysisOfChangeEngine.Controller
 [<AutoOpen>]
 module Core =
 
+    open System
     open System.Threading.Tasks
     open AnalysisOfChangeEngine
 
@@ -63,8 +64,10 @@ module Core =
     [<RequireQualifiedAccess>]
     [<NoEquality; NoComparison>]
     type PolicyWriteFailure =
-        | DataStageWriteFailure     of StepHeader: IStepHeader * Reasons: string list 
-        | StepResultsWriteFailure   of StepHeader: IStepHeader * Reasons: string list
+        // We don't have sight of the step header at this point.
+        // We'll have to settle for just the UID.
+        | DataStageWriteFailure     of DataStageUid: Guid * Reasons: string list 
+        | StepResultsWriteFailure   of StepUid: Guid * Reasons: string list
 
     [<RequireQualifiedAccess>]
     [<NoEquality; NoComparison>]
