@@ -5,7 +5,14 @@ namespace AnalysisOfChangeEngine.Controller.CalculationLoop
 [<AutoOpen>]
 module internal PolicyReader =
 
+    open FsToolkit.ErrorHandling
     open AnalysisOfChangeEngine.Controller
+
+
+    let private combineErrors x y =
+        Result.either (fun _ -> List.empty) id x
+        |> List.append (Result.either (fun _ -> List.empty) id y)
+        |> Error
 
 
     let internal openingAndClosingReader<'TPolicyRecord, 'TStepResults>
@@ -58,48 +65,71 @@ module internal PolicyReader =
                 let exitedPolicyRecords =
                     exitedPolicyIds
                     |> Seq.map (fun pid ->
-                        match getOpeningPolicyRecord pid with
-                        | Ok policyRecord ->
-                            Ok (CohortedPolicyRecord.Exited (policyRecord, getPriorClosingStepResult pid))
-                        | Error PolicyGetterFailure.NotFound ->
-                            Error [ PolicyReadFailure.OpeningRecordNotFound ]
-                        | Error (PolicyGetterFailure.ParseFailure reasons) ->
-                            Error [ PolicyReadFailure.OpeningRecordParseFailure reasons ])
+                        let openingRecord =
+                            getOpeningPolicyRecord pid
+                            |> Result.mapError (function
+                                | PolicyGetterFailure.NotFound ->
+                                    [ PolicyReadFailure.OpeningRecordNotFound ]
+                                | (PolicyGetterFailure.ParseFailure reasons) ->
+                                    [ PolicyReadFailure.OpeningRecordParseFailure reasons ])
+
+                        let priorClosingStepResults =
+                            match getPriorClosingStepResult pid with
+                            | Some (Ok stepResults) ->
+                                Ok (Some stepResults)
+                            | Some (Error (StepResultsGetterFailure.ParseFailure reasons)) ->
+                                Error [ PolicyReadFailure.PriorClosingStepResultsParseFailure reasons ]
+                            | None ->
+                                Ok None
+
+                        match openingRecord, priorClosingStepResults with
+                        | Ok policyRecord, Ok priorClosingStepResults' ->
+                            Ok (CohortedPolicyRecord.Exited (policyRecord, priorClosingStepResults'))
+                        | Error failures1, Error failures2 ->
+                            Error (failures1 @ failures2)
+                        | Error failures1, Ok _ ->
+                            Error failures1
+                        | Ok _, Error failures2 ->
+                            Error failures2)
                     |> Seq.zip exitedPolicyIds
 
                 let remainingPolicyRecords =
                     remainingPolicyIds
                     |> Seq.map (fun pid ->
                         let openingPolicyRecord =
-                            match getOpeningPolicyRecord pid with
-                            | Ok openingRecord ->
-                                Ok openingRecord
-                            | Error PolicyGetterFailure.NotFound ->
-                                Error [ PolicyReadFailure.OpeningRecordNotFound ]
-                            | Error (PolicyGetterFailure.ParseFailure reasons) ->
-                                Error [ PolicyReadFailure.OpeningRecordParseFailure reasons ]
+                            getOpeningPolicyRecord pid
+                            |> Result.mapError (function
+                                | PolicyGetterFailure.NotFound ->
+                                    [ PolicyReadFailure.OpeningRecordNotFound ]
+                                | PolicyGetterFailure.ParseFailure reasons ->
+                                    [ PolicyReadFailure.OpeningRecordParseFailure reasons ])
                                             
                         let closingPolicyRecord =
-                            match getClosingPolicyRecord pid with
-                            | Ok openingRecord ->
-                                Ok openingRecord
-                            | Error PolicyGetterFailure.NotFound ->
-                                Error [ PolicyReadFailure.ClosingRecordNotFound ]
-                            | Error (PolicyGetterFailure.ParseFailure reasons) ->
-                                Error [ PolicyReadFailure.ClosingRecordParseFailure reasons ]
+                            getClosingPolicyRecord pid
+                            |> Result.mapError (function
+                                | PolicyGetterFailure.NotFound ->
+                                    [ PolicyReadFailure.ClosingRecordNotFound ]
+                                | PolicyGetterFailure.ParseFailure reasons ->
+                                    [ PolicyReadFailure.ClosingRecordParseFailure reasons ])
 
                         let priorClosingStepResult =
-                            getPriorClosingStepResult pid
+                            match getPriorClosingStepResult pid with
+                            | Some (Ok stepResults) ->
+                                Ok (Some stepResults)
+                            | Some (Error (StepResultsGetterFailure.ParseFailure reasons)) ->
+                                Error [ PolicyReadFailure.PriorClosingStepResultsParseFailure reasons ]
+                            | None ->
+                                Ok None
 
-                        match openingPolicyRecord, closingPolicyRecord with
-                        | Ok openingPolicyRecord', Ok closingPolicyRecord' ->
-                            Ok (CohortedPolicyRecord.Remaining (openingPolicyRecord', closingPolicyRecord', priorClosingStepResult))
-                        | Error openingFailures, Ok _ ->
-                            Error openingFailures
-                        | Ok _, Error closingFailures ->
-                            Error closingFailures
-                        | Error openingFailures, Error closingFailures ->
-                            Error (openingFailures @ closingFailures))
+                        // TODO - There is undou 
+                        match openingPolicyRecord, priorClosingStepResult, closingPolicyRecord with
+                        | Ok openingPolicyRecord', Ok priorClosingStepResult', Ok closingPolicyRecord' ->
+                            Ok (CohortedPolicyRecord.Remaining (openingPolicyRecord', closingPolicyRecord', priorClosingStepResult'))
+                        | _ ->
+                            Error List.empty
+                            |> combineErrors openingPolicyRecord
+                            |> combineErrors priorClosingStepResult
+                            |> combineErrors closingPolicyRecord)
                     |> Seq.zip remainingPolicyIds
 
                 let newPolicyRecords =

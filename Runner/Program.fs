@@ -5,9 +5,9 @@ namespace AnalysisOfChangeEngine
 module Runner =
 
     open System
+    open System.IO
     open System.Reactive.Linq
     open System.Reactive.Concurrency
-    open System.Threading.Tasks
     open FsToolkit.ErrorHandling
     open Npgsql
     open AnalysisOfChangeEngine
@@ -64,16 +64,19 @@ module Runner =
                 new DateOnly (today.Year, today.Month, 1)
 
             let priorRunUid =
-                RunUid (Guid "1dd045cb-068c-4a55-842f-fd37722de30b")
+                RunUid (Guid "1368816c-979e-4fde-8e0d-73e8d4f9b8de")
 
             let currentRunUid =
-                RunUid (Guid "3d8ddea7-992b-4c13-ab70-85d1697b0304")
+                RunUid (Guid "40b70255-1c18-488f-821c-492a2835c810")
 
             let priorExtractionUid =
                 ExtractionUid (Guid "3f1a56c8-9d23-42d7-a5b1-874f01b87e1f")
 
             let currentExtractionUid =
                 ExtractionUid (Guid "d49cb0ab-79e9-4b39-bc0d-47ae8b19e092")
+
+            let sessionUid =
+                SessionUid (Guid.NewGuid ())
 
             let openingRunDate =
                 closingRunDate.AddMonths -1
@@ -85,8 +88,8 @@ module Runner =
                 new NpgsqlConnectionStringBuilder(
                     Host        = "localhost",
                     Port        = 5432,
-                    Database    =  "analysis_of_change",
-                    Username    =  "postgres",
+                    Database    = "analysis_of_change",
+                    Username    = "postgres",
                     Password    = "internet"
                 )
 
@@ -113,11 +116,11 @@ module Runner =
             let! walk =
                 OBWholeOfLife.Walk.create (logger, walkConfig)
 
-            //let priorRun =
-            //    dataStore.CreateRun ("Monthly MI", None, None, openingRunDate, openingExtractionUid, walk)
+            //let priorRunUid =
+            //    dataStore.CreateRun ("Monthly MI", None, None, openingRunDate, priorExtractionUid, walk)
 
-            //let currentRun =
-            //    dataStore.CreateRun ("Monthly MI", None, Some priorRun.Uid, closingRunDate, closingExtractionUid, walk)
+            //let currentRunUid =
+            //    dataStore.CreateRun ("Monthly MI", None, Some priorRunUid, closingRunDate, currentExtractionUid, walk)
 
             let! priorRun =
                 dataStore.TryGetRunHeader priorRunUid
@@ -136,6 +139,7 @@ module Runner =
 
             do printfn "Opening run UID: %O" priorRun.Uid.Value
             do printfn "Closing run UID: %O\n\n" currentRun.Uid.Value
+            do printfn "Session UID    : %O\n\n" sessionUid.Value
 
             do printfn "Steps: (%i found)" (walk.AllSteps |> Seq.length)
 
@@ -161,31 +165,24 @@ module Runner =
             let openingPolicyGetter =
                 dataStore.CreatePolicyGetter priorExtractionUid
 
+            let priorClosingStepResultsGetter =
+                dataStore.CreateStepResultsGetter priorRunUid (StepUid walk.FinalStep.Uid)
+
             let closingPolicyGetter =
                 dataStore.CreatePolicyGetter currentExtractionUid
-
-            let priorClosingResultsGetter =
-                {
-                    new IStepResultsGetter<OBWholeOfLife.StepResults> with
-                        member _.GetStepResultsAsync _ =
-                            Task.FromResult Map.empty
-                }
 
             let evaluator =
                 Evaluator.create logger walk walk.ApiCollection
 
             let outputWriter =
-                {
-                    new IProcessedOutputWriter<OBWholeOfLife.PolicyRecord, OBWholeOfLife.StepResults> with
-                        member _.WriteProcessedOutputAsync _ =
-                            backgroundTask {
-                                do! Task.Delay (TimeSpan.FromMilliseconds 100)
-                            }
-                }
+                dataStore.CreateOutputWriter (currentRunUid, sessionUid)
 
             let calculationLoop =
                 createCalculationLoop
-                    (openingPolicyGetter, priorClosingResultsGetter, closingPolicyGetter, evaluator, outputWriter)
+                    (openingPolicyGetter, priorClosingStepResultsGetter, closingPolicyGetter, evaluator, outputWriter)
+
+            use telemetrySink =
+                new StreamWriter ("C:\\Users\\Millch\\Desktop\\telemetry.txt")
 
             use scheduler =
                 new EventLoopScheduler ()
@@ -193,7 +190,7 @@ module Runner =
             use _ =
                 calculationLoop.Telemetry
                 |> _.ObserveOn(scheduler)
-                |> _.Subscribe(printfn "%A")
+                |> _.Subscribe(sprintf "%A" >> telemetrySink.WriteLine)
 
             let someOutstandingRecords =
                 outstandingRecords

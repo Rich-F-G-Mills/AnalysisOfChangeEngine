@@ -1,5 +1,5 @@
 ﻿
-namespace AnalysisOfChangeEngine.Controller.CalculationLoop
+namespace AnalysisOfChangeEngine.Controller.Telemetry
 
 open System
 open AnalysisOfChangeEngine

@@ -317,25 +317,31 @@ module Evaluator =
         We have the a complication in that the opening re-run step can be run without any prior step results.
         Arguably, we could have separate execution and validation logic for the opening re-run step.
         However, this would lead to extra complexity for seemingly dogmatic reasons.    
+
+        Note that this logic is also used for new records where the first step run is (not surprisingly) the
+        add new records step. This step doesn't require knowledge of the previous step result.
     *)
     let rec private tryFindValidationFailureWithinProfileStage<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord: equality>
         (policyRecordForPriorStage, policyRecordForStage, priorStepResults: 'TStepResults option)
         : (IStepHeader * 'TStepResults) list -> _ = function
         | (hdr, currentStepResults)::xs ->
             let stepValidationOutcome =
-                match priorStepResults, hdr with
+                match policyRecordForPriorStage, priorStepResults, hdr with
                 // Only the opening re-run step can have no prior results.
-                | _, (:? OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> as hdr) ->
+                | Some _, _, (:? OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> as hdr) ->
                     hdr.Validator (policyRecordForStage, priorStepResults, currentStepResults)
-                | Some priorStepResults', (:? SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> as hdr) ->
+                | Some _, Some priorStepResults', (:? SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> as hdr) ->
                     hdr.Validator (policyRecordForStage, priorStepResults', currentStepResults)
-                | Some priorStepResults', (:? DataChangeStep<'TPolicyRecord, 'TStepResults> as hdr) ->
-                    hdr.Validator (policyRecordForPriorStage, priorStepResults', policyRecordForStage, currentStepResults)
-                | Some priorStepResults', (:? MoveToClosingDataStep<'TPolicyRecord, 'TStepResults> as hdr) ->
-                    hdr.Validator (policyRecordForPriorStage, priorStepResults', policyRecordForStage, currentStepResults)
-                | Some _, (:? AddNewRecordsStep<'TPolicyRecord, 'TStepResults> as hdr) ->
-                    hdr.Validator (policyRecordForPriorStage, currentStepResults)
-                | Some _, :? RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> ->
+                | Some policyRecordForPriorStage', Some priorStepResults', (:? DataChangeStep<'TPolicyRecord, 'TStepResults> as hdr) ->
+                    hdr.Validator (policyRecordForPriorStage', priorStepResults', policyRecordForStage, currentStepResults)
+                | Some policyRecordForPriorStage', Some priorStepResults', (:? MoveToClosingDataStep<'TPolicyRecord, 'TStepResults> as hdr) ->
+                    hdr.Validator (policyRecordForPriorStage', priorStepResults', policyRecordForStage, currentStepResults)
+                // Need to be careful regarding the policy record for the prior stage.
+                // If we being called for a remaining policy, then it will be available.
+                // However, for a new record, there won't be anything there.
+                | _, Some _, (:? AddNewRecordsStep<'TPolicyRecord, 'TStepResults> as hdr) ->
+                    hdr.Validator (policyRecordForStage, currentStepResults)
+                | Some _, Some _, :? RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> ->
                     StepValidationOutcome.Empty
                 // We do NOT want a catch-all here. In the event another step type gets introduced,
                 // I want this to explicitly fail... At least at runtime!
@@ -387,7 +393,7 @@ module Evaluator =
                     // We need to explicitly specify the API collection type as it cannot
                     // be inferred. Failure to do so means that type-based pattern matches will fail.
                     |> tryFindValidationFailureWithinProfileStage<_, _, 'TApiCollection>
-                        (policyRecordForPriorStage, policyRecordForStage, priorStepResults)
+                        (Some policyRecordForPriorStage, policyRecordForStage, priorStepResults)
 
                 do! validationIssues |> Result.requireNoneWith id
               
@@ -457,9 +463,9 @@ module Evaluator =
                 let evaluatorsByProfileStage =
                     (groupingsForProfile.StepUids, groupingsForProfile.ParsedSources)
                     ||> List.map2 (fun uids sources ->
-                            //do logger.LogDebug
-                            //    (sprintf "Creating executor for %ix step UIDs starting with %O."
-                            //        uids.Length groupingProfileIdxs.Head)
+                            do logger.LogDebug
+                                (sprintf "Creating executor for %ix step UIDs starting with %O."
+                                    uids.Length groupingProfileIdxs.Head)
 
                             // Again, ensure cached versions are used where available.
                             cachedEvaluatorsForUids.GetOrAdd (uids, fun _ -> createEvaluatorForSteps sources))
@@ -615,7 +621,7 @@ module Evaluator =
                 }
 
     // Note the comments for the exited policy evaluator above.
-    let private createNewPolicyEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+    let private createNewPolicyEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord: equality>
         (parsedWalk: ParsedWalk<'TPolicyRecord, 'TStepResults>) =
             // Here we check to make sure that we can find the add new records step.
             let newRecordsStepIdx =
@@ -628,10 +634,9 @@ module Evaluator =
                 parsedWalk.ParsedSteps
                 |> List.skip newRecordsStepIdx
 
-            // Given a type mismatch would lead to an exception, no need
-            // to do an assertion after this.
-            let newRecordsStep : AddNewRecordsStep<'TPolicyRecord, 'TStepResults> =
-                downcast (fst <| List.head parsedStepsForNewRecords)
+            // Make sure we're dealing with the step we think we are!
+            do assert checkStepType<AddNewRecordsStep<'TPolicyRecord, 'TStepResults>>
+                (fst parsedStepsForNewRecords.Head)
 
             // Here we ensure that anything after the add new records step 
             // is a source change step.
@@ -640,49 +645,54 @@ module Evaluator =
                 |> List.iter (fun (stepHdr, _) ->
                     do assert checkStepType<SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>> stepHdr)
 
+            let stepHeadersForNewRecords =
+                parsedStepsForNewRecords
+                |> List.map fst
+
+            let stepUidsForNewRecords =
+                stepHeadersForNewRecords
+                |> List.map _.Uid
+
             let parsedSourcesForNewRecords =
                 parsedStepsForNewRecords                
                 |> List.map snd
 
             let evaluator =
-                createEvaluatorForSteps (parsedSourcesForNewRecords)
+                createEvaluatorForSteps parsedSourcesForNewRecords
 
             fun (NewPolicy policyRecord, onApiRequestProcessingStart) ->
                 backgroundTaskResult {
                     let! stepResults =
                         evaluator (policyRecord, onApiRequestProcessingStart StepDataSource.ClosingData)
 
-                    let validationOutcome =
-                        newRecordsStep.Validator (policyRecord, stepResults)
+                    let validationIssues =
+                        (stepHeadersForNewRecords, stepResults)
+                        ||> List.zip
+                        |> tryFindValidationFailureWithinProfileStage<_, _, 'TApiCollection>
+                            (None, policyRecord, None)
 
-                    match validationOutcome with
-                    | StepValidationOutcome.Completed [] ->
-                        let evaluationOutcome : EvaluatedPolicyWalk<'TPolicyRecord, _> =
-                            {
-                                InteriorDataChanges =
-                                    Map.empty
-                                StepResults         =
-                                    Map.singleton
-                                        newRecordsStepHdr.Uid
-                                        (StepDataSource.ClosingData, stepResults)
-                            }
+                    do! validationIssues |> Result.requireNoneWith id
 
-                        return evaluationOutcome
+                    // We need the type hint or the policy type can't be infered.
+                    let evaluatedWalk : EvaluatedPolicyWalk<'TPolicyRecord, _> =
+                        {
+                            InteriorDataChanges =
+                                Map.empty
+                            StepResults         =
+                                stepResults
+                                |> Seq.map (fun sr -> StepDataSource.ClosingData, sr)
+                                |> Seq.zip stepUidsForNewRecords
+                                |> Map.ofSeq                            
+                        }
 
-                    | StepValidationOutcome.Completed issues ->
-                        return! Error [ WalkEvaluationFailure.ValidationFailure
-                            (newRecordsStepHdr, issues) ]
-
-                    | StepValidationOutcome.Aborted reason ->
-                        return! Error [ WalkEvaluationFailure.ValidationAborted
-                            (newRecordsStepHdr, reason) ]
-                }        
+                    return evaluatedWalk
+                }
 
 
     let create
         (logger: ILogger)
         (walk: AbstractWalk<_, _, 'TApiCollection>)
-        apiCollection =
+        (apiCollection) =
             let parsedWalk =
                 WalkParser.execute walk apiCollection
 
@@ -707,7 +717,7 @@ module Evaluator =
                 nullDisposable
 
             {
-                new IPolicyWalkEvaluator<_, _> with
+                new IPolicyWalkEvaluator<'TPolicyRecord, 'TStepResults> with
 
                     member _.Execute (ExitedPolicy _ as exitedPolicyRecord, priorClosingStepResults) =
                         exitedRecordEvaluator (exitedPolicyRecord, priorClosingStepResults, nullTelemetryCallback)
@@ -726,4 +736,4 @@ module Evaluator =
 
                     member _.Execute (NewPolicy _ as newPolicyRecord, onApiRequestProcessingStart) =
                         newRecordEvaluator (newPolicyRecord, onApiRequestProcessingStart)
-            }               
+            }

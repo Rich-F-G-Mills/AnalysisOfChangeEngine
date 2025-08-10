@@ -11,7 +11,8 @@ open System.Threading.Tasks
 /// the various generic type parameters as used by an abstract walk instance.
 type IWalk =
     interface
-        abstract member AllSteps : IStepHeader seq
+        abstract member AllSteps    : IStepHeader seq
+        abstract member FinalStep   : IStepHeader
     end
 
 
@@ -72,8 +73,10 @@ type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRe
             step
 
 
+        // We only permit source change steps at this point.
         member this.registerPostNewRecordsStep (step: SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
             do _postNewRecordsSteps.Add step
+            step
 
 
         /// Provides an enumeration of all steps, both required and user supplied in the appropriate order.
@@ -89,9 +92,17 @@ type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRe
                 yield! _postNewRecordsSteps |> Seq.cast<IStepHeader>
             } with get
 
+        member val FinalStep =
+            this.AllSteps
+            |> Seq.last
+            :> IStepHeader
+
         interface IWalk with
             member this.AllSteps =
                 this.AllSteps
+
+            member this.FinalStep =
+                this.FinalStep
 
 
 [<RequireQualifiedAccess>]

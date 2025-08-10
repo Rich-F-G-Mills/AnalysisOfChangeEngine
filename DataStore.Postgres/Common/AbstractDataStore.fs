@@ -95,13 +95,6 @@ module AbstractDataStore =
             |> Option.map DataTransferObjects.ExtractionHeaderDTO.toUnderlying
 
 
-        // --- POLICY DATA ---
-
-        abstract member dtoToPolicyRecord: 'TPolicyRecordDTO -> Result<'TPolicyRecord, string list>
-
-        abstract member policyRecordToDTO: 'TPolicyRecord -> Result<'TPolicyRecordDTO, string list>
-
-
         // --- RUNS ---
 
         member _.TryGetRunHeader runUid =
@@ -189,8 +182,25 @@ module AbstractDataStore =
 
         abstract member stepResultsToDTO: 'TStepResults -> Result<'TStepResultsDTO, string list>
 
+        member this.GetStepResultsAsync runUid stepUid policyIds =
+            backgroundTask {
+                let! records =
+                    stepResultsDispatcher.GetRowsAsync runUid stepUid policyIds
+
+                let records' =
+                    records
+                    |> Map.map (fun _ ->
+                        this.dtoToStepResults >> Result.mapError StepResultsGetterFailure.ParseFailure)
+
+                return records'
+            }
+
 
         // --- POLICY DATA ---
+
+        abstract member dtoToPolicyRecord: 'TPolicyRecordDTO -> Result<'TPolicyRecord, string list>
+
+        abstract member policyRecordToDTO: 'TPolicyRecord -> Result<'TPolicyRecordDTO, string list>
 
         member this.GetPolicyRecordsAsync extractionUid policyIds =
             backgroundTask {
@@ -447,11 +457,18 @@ module AbstractDataStore =
 
         // --- INTERFACE FACTORIES ---
 
-        member this.CreatePolicyGetter (extractionUid: ExtractionUid) =
+        member this.CreatePolicyGetter extractionUid =
             {
                 new IPolicyGetter<'TPolicyRecord> with
                     member _.GetPolicyRecordsAsync policyIds =
                         this.GetPolicyRecordsAsync extractionUid policyIds
+            }
+
+        member this.CreateStepResultsGetter runUid stepUid =
+            {
+                new IStepResultsGetter<'TStepResults> with
+                    member _.GetStepResultsAsync policyIds =
+                        this.GetStepResultsAsync runUid stepUid policyIds
             }
 
 
@@ -536,13 +553,10 @@ module AbstractDataStore =
                 // a failure. We just need the underlying command sequence.
                 |> Result.either id id
 
-        static member private ProcessFailedWalk (policyId, failure) = 0
-            
-
         // Before anyone says anything, I realise there are a lot of allocations
         // going on here. However, this function does NOT lie on the critical
         // path and I therefore do not anticipate this leading to undue GC pressure.
-        member this.CreateOutputWriter (RunUid currentRunUid') (SessionUid sessionUid') =
+        member this.CreateOutputWriter (RunUid currentRunUid', SessionUid sessionUid') =
             let constructBaseStepResultDTO policyId (stepUid, usedDataStageUid) =
                 {
                     run_uid             = currentRunUid'
@@ -567,34 +581,42 @@ module AbstractDataStore =
                 new IProcessedOutputWriter<'TPolicyRecord, 'TStepResults> with
                     member _.WriteProcessedOutputAsync processedOutputs =                       
                         backgroundTask {
-                            processedOutputs
-                            |> Seq.map (fun processedOutput ->
-                                let constructRunFailureDTO' =
-                                    constructRunFailureDTO processedOutput.PolicyId
+                            let batchCommands =
+                                processedOutputs
+                                |> Seq.collect (fun processedOutput ->
+                                    let constructRunFailureDTO' =
+                                        constructRunFailureDTO processedOutput.PolicyId
 
-                                match processedOutput with
-                                | { PolicyId = policyId; WalkOutcome = Ok outcome } ->
-                                    let constructDataChangeWriteCommands' =
-                                        this.ConstructDataChangeWriteCommands
-                                            (constructBaseDataStageDTO policyId, constructRunFailureDTO')
+                                    match processedOutput.WalkOutcome with
+                                    | Ok outcome ->
+                                        let constructDataChangeWriteCommands' =
+                                            this.ConstructDataChangeWriteCommands
+                                                (constructBaseDataStageDTO processedOutput.PolicyId, constructRunFailureDTO')
 
-                                    let constructStepResultsWriteCommands' =
-                                        this.ConstructStepResultsWriteCommands
-                                            (constructBaseStepResultDTO policyId, constructRunFailureDTO')
+                                        let constructStepResultsWriteCommands' =
+                                            this.ConstructStepResultsWriteCommands
+                                                (constructBaseStepResultDTO processedOutput.PolicyId, constructRunFailureDTO')
 
-                                    let processSuccessfulWalk' =
-                                        AbstractPostgresDataStore<_, _, _, _>.ProcessSuccessfulWalk
-                                            (constructDataChangeWriteCommands', constructStepResultsWriteCommands')
+                                        let processSuccessfulWalk' =
+                                            AbstractPostgresDataStore<_, _, _, _>.ProcessSuccessfulWalk
+                                                (constructDataChangeWriteCommands', constructStepResultsWriteCommands')
 
-                                    processSuccessfulWalk' outcome                                   
+                                        processSuccessfulWalk' outcome
 
-                                | { PolicyId = policyId; WalkOutcome = Error failure } ->
-                                    let runFailureDTOs =
+                                    | Error failure ->
                                         constructRunFailureDTO' failure
-                                    
-                                )
-                        }
+                                        |> Seq.map runFailureDispatcher.GetRowInsertBatchCommand)
                         
+                            use batch =
+                                dataSource.CreateBatch ()
 
+                            do  batchCommands
+                                |> Seq.iter batch.BatchCommands.Add 
+
+                            // TODO - Safe to ignore the returned int?
+                            let! _ =
+                                batch.ExecuteNonQueryAsync ()
+
+                            return ()
+                        }
             }
-            

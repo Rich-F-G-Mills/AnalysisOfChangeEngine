@@ -87,10 +87,16 @@ module ExcelApi =
         type ExcelStepRelatedInputs =
             {
                 [<ExcelRangeAlias("INPUT_OPENING_CALC_DATE")>]
-                OpeningCalculationDate          : DateTime option
+                OpeningCalculationDate              : DateTime option
 
                 [<ExcelRangeAlias("INPUT_CALC_DATE")>]
-                ClosingCalculationDate          : DateTime        
+                ClosingCalculationDate              : DateTime        
+
+                [<ExcelRangeAlias("INPUT_FINAL_MONTH_INV_RETURN_PROPORTION")>]
+                FinalMonthInvReturnProportion       : float32
+
+                [<ExcelRangeAlias("INPUT_OVERRIDE_FINAL_UNSM_RETURN")>]
+                OverrideFinalMonthUnsmoothedReturn  : float32 option
             }
 
         [<NoEquality; NoComparison>]
@@ -282,8 +288,14 @@ module ExcelApi =
                 | Some openingRunDate' ->
                     let stepRelatedInputs: TransferTypes.ExcelStepRelatedInputs =
                         {
-                            OpeningCalculationDate = None
-                            ClosingCalculationDate = openingRunDate'.ToDateTimeMidnight ()
+                            OpeningCalculationDate =
+                                None
+                            ClosingCalculationDate =
+                                openingRunDate'.ToDateTimeMidnight ()
+                            FinalMonthInvReturnProportion =
+                                0.5f
+                            OverrideFinalMonthUnsmoothedReturn =
+                                None
                         }
 
                     let executor requiredOutputs (policyRecord, onApiRequestProcessingStart) =
@@ -312,6 +324,10 @@ module ExcelApi =
                         openingRunDate |> Option.map _.ToDateTimeMidnight()
                     ClosingCalculationDate =
                         closingRunDate.ToDateTimeMidnight ()
+                    FinalMonthInvReturnProportion =
+                        0.5f
+                    OverrideFinalMonthUnsmoothedReturn =
+                        None
                 }
 
             let executor requiredOutputs (policyRecord, onApiRequestProcessingStart) =
@@ -322,5 +338,60 @@ module ExcelApi =
 
             let apiRequestor =
                 ApiRequestor.create ("PX API [Post-Opening Regression]", executor)
+
+            WrappedApiRequestor apiRequestor
+
+
+    let createClosingMonthEndExcelRequestor
+        (dispatcher: IExcelDispatcher<_,_>) (closingRunDate: DateOnly)
+        : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs> =
+            let stepRelatedInputs: TransferTypes.ExcelStepRelatedInputs =
+                {
+                    OpeningCalculationDate =
+                        None
+                    ClosingCalculationDate =
+                        // Get the last working day of the current run month.
+                        closingRunDate.AddMonths(1).AddDays(-1).ToDateTimeMidnight ()
+                    FinalMonthInvReturnProportion =
+                        0.5f
+                    OverrideFinalMonthUnsmoothedReturn =
+                        None
+                }
+
+            let executor requiredOutputs (policyRecord, onApiRequestProcessingStart) =
+                let policyRelatedInputs =
+                    TransferTypes.ExcelPolicyRelatedInputs.ofUnderlying policyRecord                        
+
+                dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) onApiRequestProcessingStart 
+
+            let apiRequestor =
+                ApiRequestor.create ("PX API [Closing Month-End]", executor)
+
+            WrappedApiRequestor apiRequestor
+
+    let createValuationAssetSharesExcelRequestor
+        (dispatcher: IExcelDispatcher<_,_>) (closingRunDate: DateOnly)
+        : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs> =
+            let stepRelatedInputs: TransferTypes.ExcelStepRelatedInputs =
+                {
+                    OpeningCalculationDate =
+                        None
+                    ClosingCalculationDate =
+                        // Get the last working day of the current run month.
+                        closingRunDate.AddMonths(1).AddDays(-1).ToDateTimeMidnight ()
+                    FinalMonthInvReturnProportion =
+                        1.0f
+                    OverrideFinalMonthUnsmoothedReturn =
+                        Some 0.0f
+                }
+
+            let executor requiredOutputs (policyRecord, onApiRequestProcessingStart) =
+                let policyRelatedInputs =
+                    TransferTypes.ExcelPolicyRelatedInputs.ofUnderlying policyRecord                        
+
+                dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) onApiRequestProcessingStart 
+
+            let apiRequestor =
+                ApiRequestor.create ("PX API [Valuation Asset Shares]", executor)
 
             WrappedApiRequestor apiRequestor

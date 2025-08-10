@@ -205,3 +205,11 @@ type StepFactory (uidResolver: Guid -> string * string) as this =
                 Description = header.Description
                 Validator = details.Validator
             }
+
+    member _.moveToClosingMonthEnd<'TPolicyRecord, 'TStepResults, 'TApiCollection> details =
+        this.makeSourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+            (Guid ("3f8c9b7e-2a4d-4f3a-9e2e-7d1c8a9f6b2c")) details
+
+    member _.switchToValuationAssetShares<'TPolicyRecord, 'TStepResults, 'TApiCollection> details =
+        this.makeSourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+            (Guid ("9a1d4c3f-6b7e-4d2a-8f9c-3e2b1a7d5c4e")) details

@@ -315,6 +315,7 @@ type internal RunFailureTypeDTO =
     | VALIDATION_FAILURE
     | API_CALL_FAILURE
     | API_CALCULATION_FAILURE
+    | PRIOR_CLOSING_STEP_RESULTS_PARSE_FAILURE
     | STEP_CONSTRUCTION_FAILURE 
     | STEP_RESULTS_WRITE_FAILURE
     | DATA_CHANGE_WRITE_FAILURE
@@ -326,7 +327,7 @@ type internal RunFailureDTO =
         session_uid             : Guid
         policy_id               : string
         step_uid                : Guid option
-        error_type              : RunFailureTypeDTO
+        failure_type            : RunFailureTypeDTO
         // Not all error types require a corresponding reason.
         reason                  : string option   
     }
@@ -367,7 +368,7 @@ module internal RunFailureDTO =
                 session_uid = sessionUid
                 policy_id = policyId
                 step_uid = stepUid
-                error_type = errorType
+                failure_type = errorType
                 reason = reason
             }
             
@@ -384,7 +385,10 @@ module internal RunFailureDTO =
                     seq { constructFrom' (None, RunFailureTypeDTO.CLOSING_RECORD_NOT_FOUND) None }
                 | PolicyReadFailure.ClosingRecordParseFailure reasons ->
                     reasons
-                    |> Seq.map (Some >> constructFrom' (None, RunFailureTypeDTO.CLOSING_RECORD_PARSE_FAILURE)))
+                    |> Seq.map (Some >> constructFrom' (None, RunFailureTypeDTO.CLOSING_RECORD_PARSE_FAILURE))
+                | PolicyReadFailure.PriorClosingStepResultsParseFailure reasons ->
+                    reasons
+                    |> Seq.map (Some >> constructFrom' (None, RunFailureTypeDTO.PRIOR_CLOSING_STEP_RESULTS_PARSE_FAILURE)))
 
         | ProcessedPolicyFailure.EvaluationFailures evaluationFailures ->
             evaluationFailures
@@ -414,14 +418,14 @@ module internal RunFailureDTO =
 
         | ProcessedPolicyFailure.PolicyWriteFailure writeFailure ->
             match writeFailure with
-            | PolicyWriteFailure.DataStageWriteFailure (stepHdr, reasons) ->
+            | PolicyWriteFailure.DataStageWriteFailure (stepUid, reasons) ->
                 reasons
                 |> Seq.map (Some >>
-                    constructFrom' (Some stepHdr.Uid, RunFailureTypeDTO.DATA_CHANGE_WRITE_FAILURE))
-            | PolicyWriteFailure.StepResultsWriteFailure (stepHdr, reasons) ->
+                    constructFrom' (Some stepUid, RunFailureTypeDTO.DATA_CHANGE_WRITE_FAILURE))
+            | PolicyWriteFailure.StepResultsWriteFailure (stepUid, reasons) ->
                 reasons
                 |> Seq.map (Some >>
-                    constructFrom' (Some stepHdr.Uid, RunFailureTypeDTO.STEP_RESULTS_WRITE_FAILURE))
+                    constructFrom' (Some stepUid, RunFailureTypeDTO.STEP_RESULTS_WRITE_FAILURE))
 
     
 [<NoEquality; NoComparison>]

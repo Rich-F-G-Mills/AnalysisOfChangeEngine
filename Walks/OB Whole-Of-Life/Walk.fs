@@ -28,6 +28,8 @@ type ApiCollection =
     {
         xl_OpeningRegression        : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs>
         xl_PostOpeningRegression    : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs>
+        xl_ClosingMonthEnd          : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs>
+        xl_ValuationAssetShares     : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs>
     }
 
 
@@ -180,6 +182,14 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
             xl_PostOpeningRegression =
                 ExcelApi.createPostOpeningExcelRequestor
                     excelDispatcher (config.OpeningRunDate, config.ClosingRunDate)
+
+            xl_ClosingMonthEnd =
+                ExcelApi.createClosingMonthEndExcelRequestor
+                    excelDispatcher config.ClosingRunDate
+
+            xl_ValuationAssetShares =
+                ExcelApi.createValuationAssetSharesExcelRequestor
+                    excelDispatcher config.ClosingRunDate
         }
 
 
@@ -520,3 +530,63 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
             Validator =
                 StepValidationOutcome.noValidator
         }
+
+    // --- POST NEW RECORDS STEPS ---
+
+    member val MoveToClosingMonthEnd =
+        this.registerPostNewRecordsStep(
+            createStep.moveToClosingMonthEnd {
+                Source = <@
+                    fun from _ _ _ ->
+                        {                    
+                            UnsmoothedAssetShare =
+                                from.apiCall (_.xl_ClosingMonthEnd, _.UnsmoothedAssetShare)
+                            SmoothedAssetShare =
+                                from.apiCall (_.xl_ClosingMonthEnd, _.SmoothedAssetShare)
+                            GuaranteedDeathBenefit =
+                                from.apiCall (_.xl_ClosingMonthEnd, _.GuaranteedDeathBenefit)
+                            ExitBonusRate =
+                                from.apiCall (_.xl_ClosingMonthEnd, _.ExitBonusRate)
+                            UnpaidPremiums =
+                                from.apiCall (_.xl_ClosingMonthEnd, _.UnpaidPremiums)
+                            SurrenderBenefit =
+                                from.apiCall (_.xl_ClosingMonthEnd, _.CashSurrenderBenefit)
+                            DeathUpliftFactor =
+                                from.apiCall (_.xl_ClosingMonthEnd, _.DeathUpliftFactor)
+                            DeathBenefit =
+                                from.apiCall (_.xl_ClosingMonthEnd, _.DeathBenefit)
+                        } : OBWholeOfLife.StepResults @>
+
+                Validator =
+                    StepValidationOutcome.noValidator
+            }
+        )
+
+    member val SwitchToValuationAssetShares =
+        this.registerPostNewRecordsStep(
+            createStep.switchToValuationAssetShares {
+                Source = <@
+                    fun from _ _ _ ->
+                        {                    
+                            UnsmoothedAssetShare =
+                                from.apiCall (_.xl_ValuationAssetShares, _.UnsmoothedAssetShare)
+                            SmoothedAssetShare =
+                                from.apiCall (_.xl_ValuationAssetShares, _.SmoothedAssetShare)
+                            GuaranteedDeathBenefit =
+                                from.apiCall (_.xl_ValuationAssetShares, _.GuaranteedDeathBenefit)
+                            ExitBonusRate =
+                                from.apiCall (_.xl_ValuationAssetShares, _.ExitBonusRate)
+                            UnpaidPremiums =
+                                from.apiCall (_.xl_ValuationAssetShares, _.UnpaidPremiums)
+                            SurrenderBenefit =
+                                from.apiCall (_.xl_ValuationAssetShares, _.CashSurrenderBenefit)
+                            DeathUpliftFactor =
+                                from.apiCall (_.xl_ValuationAssetShares, _.DeathUpliftFactor)
+                            DeathBenefit =
+                                from.apiCall (_.xl_ValuationAssetShares, _.DeathBenefit)
+                        } : OBWholeOfLife.StepResults @>
+
+                Validator =
+                    StepValidationOutcome.noValidator
+            }
+        )

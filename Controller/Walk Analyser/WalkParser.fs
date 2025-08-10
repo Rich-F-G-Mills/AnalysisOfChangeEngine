@@ -158,7 +158,7 @@ module (*internal*) WalkParser =
         postOpeningDataStages
         
 
-    let (*internal*) execute<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord : equality>
+    let (*internal*) execute<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord: equality>
         (walk: AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection>)
         (apiCollection: 'TApiCollection) =
             let currentResultsVarDefMapping =

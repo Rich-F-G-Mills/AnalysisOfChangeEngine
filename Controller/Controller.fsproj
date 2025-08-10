@@ -12,7 +12,6 @@
     <Compile Include="Walk Analyser\WalkParser.fs" />
     <Compile Include="Evaluator.fs" />
     <Compile Include="Calculation Loop\Common.fs" />
-    <Compile Include="Calculation Loop\Telemetry.fs" />
     <Compile Include="Calculation Loop\PolicyReader.fs" />
     <Compile Include="Calculation Loop\Instance.fs" />
   </ItemGroup>
