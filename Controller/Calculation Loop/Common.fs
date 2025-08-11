@@ -31,6 +31,7 @@ type internal PolicyEvaluationRequest<'TPolicyRecord, 'TStepResults> =
     {
         PolicyId            : CohortedPolicyId
         PolicyRecord        : Result<CohortedPolicyRecord<'TPolicyRecord, 'TStepResults>, PolicyReadFailure list>
+        RequestSubmitted    : DateTime
         DataReadIdx         : int
     }
 
@@ -38,6 +39,7 @@ type internal PolicyEvaluationRequest<'TPolicyRecord, 'TStepResults> =
 type internal OutputCompletedEvaluationRequest<'TPolicyRecord, 'TStepResults> =
     {
         PolicyId            : CohortedPolicyId
+        RequestSubmitted    : DateTime
         EvaluationStart     : DateTime
         EvaluationEnd       : DateTime
         WalkOutcome         : Result<EvaluatedPolicyWalk<'TPolicyRecord, 'TStepResults>, WalkEvaluationFailure list>
@@ -48,6 +50,7 @@ type internal OutputCompletedEvaluationRequest<'TPolicyRecord, 'TStepResults> =
 type internal OutputFailedPolicyReadRequest<'TPolicyRecord, 'TStepResults> =
     {
         PolicyId            : CohortedPolicyId
+        RequestSubmitted    : DateTime
         FailureReasons      : PolicyReadFailure list
         DataReadIdx         : int
     }

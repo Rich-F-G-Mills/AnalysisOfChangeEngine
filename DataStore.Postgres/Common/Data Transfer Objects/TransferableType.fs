@@ -104,7 +104,7 @@ type internal TransferableType private () =
         upcast new NpgsqlParameter<'T> (TypedValue = value)
 
     static member makeTypedParameter<'T> (value, dataTypeName) : NpgsqlParameter =
-        // As above. Using multiple dispatch for those instances where a data type name is needed.
+        // As above. Using function overloads for those instances where a data type name is needed.
         upcast new NpgsqlParameter<'T> (TypedValue = value, DataTypeName = dataTypeName)
 
     // Cannot use let binding as generic. Same applies to the following below.

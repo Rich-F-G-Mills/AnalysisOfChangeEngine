@@ -337,7 +337,7 @@ module Evaluator =
                 | Some policyRecordForPriorStage', Some priorStepResults', (:? MoveToClosingDataStep<'TPolicyRecord, 'TStepResults> as hdr) ->
                     hdr.Validator (policyRecordForPriorStage', priorStepResults', policyRecordForStage, currentStepResults)
                 // Need to be careful regarding the policy record for the prior stage.
-                // If we being called for a remaining policy, then it will be available.
+                // If we're being called for a remaining policy, then it will be available.
                 // However, for a new record, there won't be anything there.
                 | _, Some _, (:? AddNewRecordsStep<'TPolicyRecord, 'TStepResults> as hdr) ->
                     hdr.Validator (policyRecordForStage, currentStepResults)
@@ -463,9 +463,9 @@ module Evaluator =
                 let evaluatorsByProfileStage =
                     (groupingsForProfile.StepUids, groupingsForProfile.ParsedSources)
                     ||> List.map2 (fun uids sources ->
-                            do logger.LogDebug
-                                (sprintf "Creating executor for %ix step UIDs starting with %O."
-                                    uids.Length groupingProfileIdxs.Head)
+                            //do logger.LogDebug
+                            //    (sprintf "Creating executor for %ix step UIDs starting with %O."
+                            //        uids.Length groupingProfileIdxs.Head)
 
                             // Again, ensure cached versions are used where available.
                             cachedEvaluatorsForUids.GetOrAdd (uids, fun _ -> createEvaluatorForSteps sources))
@@ -482,8 +482,10 @@ module Evaluator =
 
                 do assert (dataSourceByStep.Length = parsedWalk.ParsedSteps.Length)                                
 
-                //do logger.LogDebug
-                //    (sprintf "Created executor for profile %A." groupingProfileIdxs)
+                do logger.LogDebug
+                    (sprintf "Created executor for profile %A on thread #%i."
+                        groupingProfileIdxs
+                        Environment.CurrentManagedThreadId)
 
                 // We CANNOT refer to the outer policy record information as this will create
                 // a closure to stale inputs.

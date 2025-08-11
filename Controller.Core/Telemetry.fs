@@ -21,6 +21,7 @@ type ApiRequestTelemetryData =
 type FailedPolicyReadTelemetryData =
     {
         PolicyId            : string
+        RequestSubmitted    : DateTime
         DataStoreReadIdx    : int
         DataStoreWriteIdx   : int
     }
@@ -29,6 +30,7 @@ type FailedPolicyReadTelemetryData =
 type ProcessingCompletedTelemetryData =
     {
         PolicyId            : string
+        RequestSubmitted    : DateTime
         EvaluationStart     : DateTime
         EvaluationEnd       : DateTime
         DataStoreReadIdx    : int

@@ -4,53 +4,48 @@ open System.Reactive.Concurrency
 open System.Reactive.Disposables
 open System.Reactive.Subjects
 open System.Threading
+open System.Threading.Tasks.Dataflow
 open System.Reactive.Linq
 
 
 module internal Program =
 
-    let syncPrint =
-        new MailboxProcessor<_> (fun mbox ->
-            async {
-                while true do
-                    let! msg =
-                        mbox.Receive ()
+    [<EntryPoint>]
+    let main _ =
+        use cts =
+            new CancellationTokenSource ()
 
-                    do printfn "%s" msg
-            }
-        )
-
-    do syncPrint.Start ()
-
-    let source =
-        new Subject<_> ()
-
-    let scheduler =
-        new EventLoopScheduler ()
-
-    let _ =
-        source
-            .ObserveOn(NewThreadScheduler.Default)
-            .Subscribe(fun msg ->
-                do syncPrint.Post $"Processing on {Environment.CurrentManagedThreadId}: {msg}"
-
-                do Thread.Sleep (TimeSpan.FromSeconds 5)
+        let batchBlock =
+            new BatchBlock<int> (
+                3, 
+                new GroupingDataflowBlockOptions (
+                    CancellationToken = cts.Token
+                )
             )
 
-    let myThreads =
-        Array.init 3 (fun idx ->
-            new Thread(new ThreadStart (fun _ ->
-                do syncPrint.Post $"Beginning posts from {Environment.CurrentManagedThreadId}"
+        let actionBlock =
+            new ActionBlock<int []> (
+                fun items ->
+                    do printfn "Processing batch of %i items on thread %d"
+                        items.Length
+                        Environment.CurrentManagedThreadId
+            )
 
-                do source.OnNext ($"Calling on next with idx {idx} from {Environment.CurrentManagedThreadId}")
-                do source.OnNext ($"Calling on next with idx {idx} from {Environment.CurrentManagedThreadId}")
-                do source.OnNext ($"Calling on next with idx {idx} from {Environment.CurrentManagedThreadId}")
+        let linkOptions =
+            new DataflowLinkOptions (
+                PropagateCompletion = true
+            )
 
-                do syncPrint.Post $"Finished posts from {Environment.CurrentManagedThreadId}"
-            ))
-        )
+        let _ =
+            batchBlock.LinkTo (actionBlock, linkOptions)
 
-    myThreads
-    |> Array.iter _.Start()
+        do ignore <| batchBlock.Post (1)
+        do ignore <| batchBlock.Post (2)
 
-    do Thread.Sleep (TimeSpan.FromSeconds 10)
+        //do cts.Cancel ()
+        do batchBlock.Complete ()
+
+        do Thread.Sleep (1000)
+
+        0
+    

@@ -13,6 +13,7 @@ module CalculationLoop =
     open System.Reactive.Subjects
     open AnalysisOfChangeEngine
     open AnalysisOfChangeEngine.Controller
+    open AnalysisOfChangeEngine.Controller.Telemetry
 
 
     type internal CalculationLoop<'TPolicyRecord, 'TStepResults> internal
@@ -45,7 +46,8 @@ module CalculationLoop =
                                         PolicyId            = policyId
                                         RequestorName       = requestorName
                                         DataSource          = dataSource
-                                        EndpointId          = endpointId |> Option.map (function | EndpointId epid -> epid)
+                                        EndpointId          =
+                                            endpointId |> Option.map (function | EndpointId epid -> epid)
                                         RequestSubmitted    = requestSubmitted
                                         ProcessingStart     = processingStart
                                         ProcessingEnd       = DateTime.Now
@@ -64,10 +66,14 @@ module CalculationLoop =
                     | _ ->
                         failwith "Unexpected loop parameters."
 
-                fun (pendingPolicyIds: CohortedPolicyId array) ->
+                fun (pendingPolicies: (CohortedPolicyId * DateTime) array) ->
                     backgroundTask {
                         let readStart =
                             DateTime.Now
+
+                        let pendingPolicyIds =
+                            pendingPolicies
+                            |> Array.map fst
 
                         let! policyRecords =
                             inner pendingPolicyIds
@@ -90,11 +96,12 @@ module CalculationLoop =
                         do telemetrySubject.OnNext (TelemetryEvent.DataStoreRead readTelemetryEvent)
 
                         let requestsPendingEvaluation =
-                            (pendingPolicyIds, policyRecords)
-                            ||> Seq.map2 (fun pendingPolicyId policyRecord ->
+                            (pendingPolicies, policyRecords)
+                            ||> Seq.map2 (fun (pendingPolicyId, requestSubmitted) policyRecord ->
                                     {
                                         PolicyId            = pendingPolicyId
                                         PolicyRecord        = policyRecord
+                                        RequestSubmitted    = requestSubmitted
                                         DataReadIdx         = newReadIdx
                                     })
 
@@ -120,25 +127,30 @@ module CalculationLoop =
                                 walkEvaluator.Execute (NewPolicy policyRecord, notifyApiRequestSubmitted')
 
                         return (OutputRequest.CompletedEvaluation {
-                            PolicyId        = request.PolicyId
-                            EvaluationStart = evaluationStart
-                            EvaluationEnd   = DateTime.Now
-                            WalkOutcome     = evaluationOutcome
-                            DataReadIdx     = request.DataReadIdx
+                            PolicyId            = request.PolicyId
+                            RequestSubmitted    = request.RequestSubmitted
+                            EvaluationStart     = evaluationStart
+                            EvaluationEnd       = DateTime.Now
+                            WalkOutcome         = evaluationOutcome
+                            DataReadIdx         = request.DataReadIdx
                         })
                     }
 
                 | { PolicyRecord = Error readFailures } as request ->
                     backgroundTask {
                         return (OutputRequest.FailedPolicyRead {
-                            PolicyId        = request.PolicyId
-                            FailureReasons  = readFailures
-                            DataReadIdx     = request.DataReadIdx
+                            PolicyId            = request.PolicyId
+                            RequestSubmitted    = request.RequestSubmitted
+                            FailureReasons      = readFailures
+                            DataReadIdx         = request.DataReadIdx
                         })
                     }
 
             let outputWriter writeRequests : Task =
                 backgroundTask {
+                    let writeStart =
+                        DateTime.Now
+
                     let newWriteIdx =
                         Interlocked.Increment &currentWriteIdx
 
@@ -149,6 +161,7 @@ module CalculationLoop =
                                 let telemetryEvent =
                                     TelemetryEvent.ProcessingCompleted {
                                         PolicyId            = request.PolicyId.Underlying
+                                        RequestSubmitted    = request.RequestSubmitted
                                         EvaluationStart     = request.EvaluationStart
                                         EvaluationEnd       = request.EvaluationEnd
                                         DataStoreReadIdx    = request.DataReadIdx
@@ -167,13 +180,15 @@ module CalculationLoop =
                                 | Error evaluationFailure ->
                                     {
                                         PolicyId    = request.PolicyId.Underlying
-                                        WalkOutcome = Error (ProcessedPolicyFailure.EvaluationFailures evaluationFailure)
+                                        WalkOutcome =
+                                            Error (ProcessedPolicyFailure.EvaluationFailures evaluationFailure)
                                     }
 
                             | OutputRequest.FailedPolicyRead request ->
                                 let telemetryEvent =
                                     TelemetryEvent.FailedPolicyRead {
                                         PolicyId            = request.PolicyId.Underlying
+                                        RequestSubmitted    = request.RequestSubmitted
                                         DataStoreReadIdx    = request.DataReadIdx
                                         DataStoreWriteIdx   = newWriteIdx
                                     }
@@ -186,19 +201,13 @@ module CalculationLoop =
                                 }
                         )
 
-                    let writeStart =
-                        DateTime.Now
-
                     do! outputWriter.WriteProcessedOutputAsync processedOutputs
-
-                    let writeEnd =
-                        DateTime.Now
 
                     let writeTelemetryEvent =
                         TelemetryEvent.DataStoreWrite {
                             Idx                 = newWriteIdx
                             WriteStart          = writeStart
-                            WriteEnd            = writeEnd
+                            WriteEnd            = DateTime.Now
                         }
 
                     do telemetrySubject.OnNext writeTelemetryEvent
@@ -306,7 +315,7 @@ module CalculationLoop =
             {
                 new INewOnlyCalculationLoop<'TPolicyRecord> with
                     member _.PostAsync (NewPolicyId policyId) =
-                        calcLoop.PostAsync (CohortedPolicyId.New policyId)
+                        calcLoop.PostAsync (CohortedPolicyId.New policyId, DateTime.Now)
 
                     member _.Telemetry
                         with get () = calcLoop.Telemetry
@@ -327,13 +336,13 @@ module CalculationLoop =
             {
                 new ICalculationLoop<'TPolicyRecord> with
                     member _.PostAsync (ExitedPolicyId policyId) =
-                        calcLoop.PostAsync (CohortedPolicyId.Exited policyId)
+                        calcLoop.PostAsync (CohortedPolicyId.Exited policyId, DateTime.Now)
 
                     member _.PostAsync (RemainingPolicyId policyId) =
-                        calcLoop.PostAsync (CohortedPolicyId.Remaining policyId)
+                        calcLoop.PostAsync (CohortedPolicyId.Remaining policyId, DateTime.Now)
 
                     member _.PostAsync (NewPolicyId policyId) =
-                        calcLoop.PostAsync (CohortedPolicyId.New policyId)
+                        calcLoop.PostAsync (CohortedPolicyId.New policyId, DateTime.Now)
 
                     member _.Telemetry
                         with get () = calcLoop.Telemetry

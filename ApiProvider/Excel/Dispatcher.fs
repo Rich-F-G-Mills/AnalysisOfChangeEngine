@@ -19,8 +19,6 @@ module Dispatcher =
     // See the README.md for what's going on here!
     type IExcelDispatcher<'TStepRelatedInputs, 'TPolicyRelatedInputs> =
         interface
-            inherit IDisposable
-
             abstract member ExecuteAsync :
                 PropertyInfo array
                     -> 'TStepRelatedInputs * 'TPolicyRelatedInputs
@@ -115,6 +113,8 @@ module Dispatcher =
                     let endpointId =
                         Some (EndpointId $"Excel #{idx}")
 
+                    // Given the ranges are particular to a given workbook, each
+                    // range object cache must therefore be specific to that workbook.
                     let cachedRanges =
                         // In theory, this should NEVER be accessed concurrently.
                         new Dictionary<string, Excel.Range> ()
@@ -206,12 +206,6 @@ module Dispatcher =
         
             {
                 new IExcelDispatcher<'TStepRelatedInputs, 'TPolicyRelatedInputs> with
-                
-                    member _.Dispose (): unit =
-                        // The completion will be propogated on account of our link options.
-                        do bufferBlock.Complete ()
-
-                        // TODO - Should we dispose of the links as well?
         
                     member _.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) onApiRequestProcessingStart =
                         let tcs =
@@ -226,8 +220,9 @@ module Dispatcher =
                                 OutcomeCallback             = tcs.SetResult
                             }
 
-                        // This is non-blocking. Given the buffer block is unbounded,
-                        // this _should_ never fail in the normal course of business.
+                        // This is non-blocking. Given the buffer block is unbounded and
+                        // will never complete, this _should_ never fail in the normal
+                        // course of business.
                         if not (bufferBlock.Post newCalcRequest) then
                             do tcs.SetResult 
                                 (Error (ApiRequestFailure.CallFailure [ "Unable to submit Excel request." ]))

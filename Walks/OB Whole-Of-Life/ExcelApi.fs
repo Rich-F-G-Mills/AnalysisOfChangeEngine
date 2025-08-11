@@ -304,7 +304,7 @@ module ExcelApi =
 
                         dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) onApiRequestProcessingStart
 
-                    ApiRequestor.create (requestorName, executor)
+                    ApiRequestor.create ("Excel API [Opening]", executor)
 
                 | None ->
                     let executor _ _ =
@@ -337,7 +337,7 @@ module ExcelApi =
                 dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) onApiRequestProcessingStart 
 
             let apiRequestor =
-                ApiRequestor.create ("PX API [Post-Opening Regression]", executor)
+                ApiRequestor.create ("Excel API [Post-Opening Regression]", executor)
 
             WrappedApiRequestor apiRequestor
 
@@ -365,7 +365,7 @@ module ExcelApi =
                 dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) onApiRequestProcessingStart 
 
             let apiRequestor =
-                ApiRequestor.create ("PX API [Closing Month-End]", executor)
+                ApiRequestor.create ("Excel API [Closing Month-End]", executor)
 
             WrappedApiRequestor apiRequestor
 
@@ -392,6 +392,6 @@ module ExcelApi =
                 dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) onApiRequestProcessingStart 
 
             let apiRequestor =
-                ApiRequestor.create ("PX API [Valuation Asset Shares]", executor)
+                ApiRequestor.create ("Excel API [Valuation Asset Shares]", executor)
 
             WrappedApiRequestor apiRequestor

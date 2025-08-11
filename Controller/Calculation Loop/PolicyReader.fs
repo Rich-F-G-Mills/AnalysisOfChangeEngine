@@ -85,6 +85,7 @@ module internal PolicyReader =
                         match openingRecord, priorClosingStepResults with
                         | Ok policyRecord, Ok priorClosingStepResults' ->
                             Ok (CohortedPolicyRecord.Exited (policyRecord, priorClosingStepResults'))
+                        // TODO - Could replace this with the combine errors function.
                         | Error failures1, Error failures2 ->
                             Error (failures1 @ failures2)
                         | Error failures1, Ok _ ->

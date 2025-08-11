@@ -8,11 +8,13 @@ module Runner =
     open System.IO
     open System.Reactive.Linq
     open System.Reactive.Concurrency
+    open System.Text.Json
     open FsToolkit.ErrorHandling
     open Npgsql
     open AnalysisOfChangeEngine
     open AnalysisOfChangeEngine.Controller
     open AnalysisOfChangeEngine.Controller.CalculationLoop
+    open AnalysisOfChangeEngine.Controller.Telemetry
     open AnalysisOfChangeEngine.DataStore
     open AnalysisOfChangeEngine.DataStore.Postgres
     open AnalysisOfChangeEngine.Walks
@@ -186,15 +188,34 @@ module Runner =
 
             use scheduler =
                 new EventLoopScheduler ()
+
+            let jsonSerializerOptions =
+                new JsonSerializerOptions(
+                    DefaultIgnoreCondition =
+                        Serialization.JsonIgnoreCondition.WhenWritingNull
+                )
                     
             use _ =
                 calculationLoop.Telemetry
-                |> _.ObserveOn(scheduler)
-                |> _.Subscribe(sprintf "%A" >> telemetrySink.WriteLine)
+                    .ObserveOn(scheduler)
+                    .Select(function
+                        | TelemetryEvent.ApiRequest data ->                            
+                            JsonSerializer.Serialize (JsonFormatter.format data, jsonSerializerOptions)
+                        | TelemetryEvent.FailedPolicyRead data ->
+                            JsonSerializer.Serialize (JsonFormatter.format data, jsonSerializerOptions)
+                        | TelemetryEvent.ProcessingCompleted data ->
+                            JsonSerializer.Serialize (JsonFormatter.format data, jsonSerializerOptions)
+                        | TelemetryEvent.DataStoreRead data ->
+                            JsonSerializer.Serialize (JsonFormatter.format data, jsonSerializerOptions)
+                        | TelemetryEvent.DataStoreWrite data ->
+                            JsonSerializer.Serialize (JsonFormatter.format data, jsonSerializerOptions))
+                    .Subscribe (fun jsonContent ->
+                        telemetrySink.WriteLine jsonContent)
+
 
             let someOutstandingRecords =
                 outstandingRecords
-                |> List.take 5
+                |> List.take 8
 
             let runner =
                 backgroundTask {

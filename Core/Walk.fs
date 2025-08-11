@@ -59,7 +59,7 @@ type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRe
 
         (*
         Design Decision:
-            Using multiple dispatch, we can control the permitted types used for interior
+            Using function overloads, we can control the permitted types used for interior
             (ie. user defined) steps.
         *)
         /// Register an interior source change step.
@@ -92,10 +92,9 @@ type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRe
                 yield! _postNewRecordsSteps |> Seq.cast<IStepHeader>
             } with get
 
-        member val FinalStep =
-            this.AllSteps
-            |> Seq.last
-            :> IStepHeader
+        // Doing this as a val led to a runtime error.
+        member this.FinalStep =
+            Seq.last this.AllSteps
 
         interface IWalk with
             member this.AllSteps =
