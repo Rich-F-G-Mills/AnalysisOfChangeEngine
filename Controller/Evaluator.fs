@@ -327,21 +327,40 @@ module Evaluator =
         | (hdr, currentStepResults)::xs ->
             let stepValidationOutcome =
                 match policyRecordForPriorStage, priorStepResults, hdr with
-                // Only the opening re-run step can have no prior results.
-                | Some _, _, (:? OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> as hdr) ->
+                // The opening re-run step might not have prior closing results available.
+                // Regardless, there will NEVER be a prior stage.
+                | None, _, (:? OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> as hdr) ->
                     hdr.Validator (policyRecordForStage, priorStepResults, currentStepResults)
-                | Some _, Some priorStepResults', (:? SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> as hdr) ->
+                // For a new record, there won't be a prior stage, let alone any data for it.
+                // However, we will have data available for a remaining record.
+                // In either case, there will be prior step results available.
+                | _, Some priorStepResults', (:? SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection> as hdr) ->
                     hdr.Validator (policyRecordForStage, priorStepResults', currentStepResults)
+                // This will occur if the data-change step didn't actually lead to a change in data.
+                // As such, if there's been no change in data, and (by definition) no change in step
+                // results... Why run validation? We would expect prior results to be available, even
+                // if we're ignoring them here.
+                | None, Some _, :? DataChangeStep<'TPolicyRecord, 'TStepResults> ->
+                    StepValidationOutcome.Empty
                 | Some policyRecordForPriorStage', Some priorStepResults', (:? DataChangeStep<'TPolicyRecord, 'TStepResults> as hdr) ->
                     hdr.Validator (policyRecordForPriorStage', priorStepResults', policyRecordForStage, currentStepResults)
+                // Same situation as for the data change steps above.
+                | None, Some _, :? MoveToClosingDataStep<'TPolicyRecord, 'TStepResults> ->
+                    StepValidationOutcome.Empty
+                // Same situation as for the data change steps above.
                 | Some policyRecordForPriorStage', Some priorStepResults', (:? MoveToClosingDataStep<'TPolicyRecord, 'TStepResults> as hdr) ->
-                    hdr.Validator (policyRecordForPriorStage', priorStepResults', policyRecordForStage, currentStepResults)
-                // Need to be careful regarding the policy record for the prior stage.
-                // If we're being called for a remaining policy, then it will be available.
-                // However, for a new record, there won't be anything there.
-                | _, Some _, (:? AddNewRecordsStep<'TPolicyRecord, 'TStepResults> as hdr) ->
+                    hdr.Validator (policyRecordForPriorStage', priorStepResults', policyRecordForStage, currentStepResults)                
+                // If we're a new record, we won't have prior step results available. In which case,
+                // run our validation. We also won't have data for a prior stage.
+                | None, None, (:? AddNewRecordsStep<'TPolicyRecord, 'TStepResults> as hdr) ->
                     hdr.Validator (policyRecordForStage, currentStepResults)
-                | Some _, Some _, :? RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> ->
+                // If we're a remaining record, we will have prior step results available. As such,
+                // why run validation for a remaining record? There's no guarantee whether
+                // there will have been a prior stage or not. Hence, cannot restrict prior data.
+                | _, Some _, :? AddNewRecordsStep<'TPolicyRecord, 'TStepResults> ->
+                    StepValidationOutcome.Empty
+                // As per the opening re-run step, there is no prior stage and hence no corresponding data.
+                | None, Some _, :? RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> ->
                     StepValidationOutcome.Empty
                 // We do NOT want a catch-all here. In the event another step type gets introduced,
                 // I want this to explicitly fail... At least at runtime!
@@ -381,7 +400,7 @@ module Evaluator =
     // combined depending on how/if the policy data has changed as move through the walk.
     // Data-stages where no data change has occurred are grouped together.
     let rec private evaluateProfile<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord: equality>
-        onApiRequestProcessingStart (policyRecordForPriorStage: 'TPolicyRecord, priorStepResults: 'TStepResults option) = function
+        onApiRequestProcessingStart (policyRecordForPriorStage: 'TPolicyRecord option, priorStepResults: 'TStepResults option) = function
         | (policyRecordForStage: 'TPolicyRecord, (stepHdrsForStage, stageEvaluator: DataStageEvaluator<_, _>, dataSource: StepDataSource))::xs ->
             backgroundTaskResult {
                 let! stageResults =
@@ -393,7 +412,7 @@ module Evaluator =
                     // We need to explicitly specify the API collection type as it cannot
                     // be inferred. Failure to do so means that type-based pattern matches will fail.
                     |> tryFindValidationFailureWithinProfileStage<_, _, 'TApiCollection>
-                        (Some policyRecordForPriorStage, policyRecordForStage, priorStepResults)
+                        (policyRecordForPriorStage, policyRecordForStage, priorStepResults)
 
                 do! validationIssues |> Result.requireNoneWith id
               
@@ -406,7 +425,7 @@ module Evaluator =
                     // Furthermore, we also need to carry forward the results of the final step
                     // for this group.
                     evaluateProfile<_, _, 'TApiCollection>
-                        onApiRequestProcessingStart (policyRecordForStage, Some finalStepResultsForGroup) xs
+                        onApiRequestProcessingStart (Some policyRecordForStage, Some finalStepResultsForGroup) xs
 
                 // Inspect our remaining outcomes to see what we actually want to return.
                 return stageResults::remOutcomes                   
@@ -482,10 +501,10 @@ module Evaluator =
 
                 do assert (dataSourceByStep.Length = parsedWalk.ParsedSteps.Length)                                
 
-                do logger.LogDebug
-                    (sprintf "Created executor for profile %A on thread #%i."
-                        groupingProfileIdxs
-                        Environment.CurrentManagedThreadId)
+                //do logger.LogDebug
+                //    (sprintf "Created executor for profile %A on thread #%i."
+                //        groupingProfileIdxs
+                //        Environment.CurrentManagedThreadId)
 
                 // We CANNOT refer to the outer policy record information as this will create
                 // a closure to stale inputs.
@@ -500,7 +519,8 @@ module Evaluator =
                             ||> List.zip
                             // Again, the need to pass in the API collection type!
                             |> evaluateProfile<_, _, 'TApiCollection>
-                                onApiRequestProcessingStart (openingPolicyRecord', priorClosingStepResults')
+                                // There is no prior-stage and hence no such data.
+                                onApiRequestProcessingStart (None, priorClosingStepResults')
 
                         let walkResults' =
                             walkResults
@@ -671,6 +691,8 @@ module Evaluator =
                         (stepHeadersForNewRecords, stepResults)
                         ||> List.zip
                         |> tryFindValidationFailureWithinProfileStage<_, _, 'TApiCollection>
+                            // There is no prior stage for a new record. Hence, no corresponding data
+                            // no prior step results.
                             (None, policyRecord, None)
 
                     do! validationIssues |> Result.requireNoneWith id

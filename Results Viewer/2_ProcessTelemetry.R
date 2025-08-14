@@ -3,10 +3,16 @@ library (magrittr)
 
 
 telemetryEvents <-
-  readr::read_lines(
+  readr::read_file(
     file = 'C:\\Users\\Millch\\Desktop\\telemetry.txt'
   ) |>
+  stringr::str_split(
+    pattern =
+      stringr::regex('(?<=\\})(?=\\{)')
+  ) |>
+  unlist() |>
   purrr::map(jsonlite::fromJSON) |>
+  purrr::map(purrr::list_flatten, name_spec = '{inner}') |>
   purrr::map(dplyr::as_tibble) |>
   purrr::map_dfr(tidyr::nest, .by = event_type) |>
   dplyr::group_by(event_type) |>
@@ -40,30 +46,42 @@ formatDateTimes <-
     )
   }
 
-telemetryEvents$api_request |>
-  formatDateTimes() |>
+apiRequests <-
+  telemetryEvents$api_request |>
+  formatDateTimes() %T>%
   readr::write_csv(
     file = 'OUTPUTS/API_REQUESTS.CSV'
   )
 
-telemetryEvents$processing_completed |>
-  formatDateTimes() |>
-  readr::write_csv(
-    file = 'OUTPUTS/COMPLETED_PROCESSING.CSV'
-  )
-
-telemetryEvents$data_store_read |>
-  formatDateTimes() |>
+dataStoreReads <-
+  telemetryEvents$data_store_read |>
+  formatDateTimes() %T>%
   readr::write_csv(
     file = 'OUTPUTS/DATA_STORE_READS.CSV'
   )
 
-telemetryEvents$data_store_write |>
-  formatDateTimes() |>
+dataStoreWrites <-
+  telemetryEvents$data_store_write |>
+  formatDateTimes() %T>%
   readr::write_csv(
     file = 'OUTPUTS/DATA_STORE_WRITES.CSV'
   )
 
-
+completedProcessing <-
+  telemetryEvents$processing_completed |>
+  dplyr::left_join(
+    dataStoreReads,
+    by =
+      c('data_store_read_idx' = 'idx', 'run_uid', 'session_uid')
+  ) |>
+  dplyr::left_join(
+    dataStoreWrites,
+    by =
+      c('data_store_write_idx' = 'idx', 'run_uid', 'session_uid')
+  ) |>
+  formatDateTimes() %T>%
+  readr::write_csv(
+    file = 'OUTPUTS/COMPLETED_PROCESSING.CSV'
+  )
 
 

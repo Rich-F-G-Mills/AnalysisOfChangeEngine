@@ -147,7 +147,7 @@ module CalculationLoop =
                     }
 
             let outputWriter writeRequests : Task =
-                backgroundTask {
+                backgroundTask {                   
                     let writeStart =
                         DateTime.Now
 
@@ -288,9 +288,13 @@ module CalculationLoop =
 
             member val Completion =
                 writerBlock.Completion
-                    // Only consider ourselves completed once we've already notified
-                    // as such with the telemetry observable.
-                    .ContinueWith (fun _ -> do telemetrySubject.OnCompleted ())
+                    .ContinueWith (fun _ ->
+                        // Note that this will be called regardless of why the writer block completed.
+                        // Completion could have occurred due to cancellation, an error, or normal completion.
+                        // Further more, the on completed notification below may be non-blocking depending
+                        // on what scheduler is being used. Suffice to say, if there is on-complete logic
+                        // that MUST be run, the user will have to handle that as part of their own logic.
+                        do telemetrySubject.OnCompleted ())
 
 
     type INewOnlyCalculationLoop<'TPolicyRecord> =

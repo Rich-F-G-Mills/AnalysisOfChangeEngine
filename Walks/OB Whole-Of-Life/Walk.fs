@@ -94,8 +94,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                         return Some restated'
                     else
                         return None
-                }
-                    
+                }                    
             
     let dataChanger_RollForward
         : PolicyRecordChanger<_> =
@@ -129,8 +128,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                         return Some updated'
                     else
                         return None
-                }
-                    
+                }                    
             
     let dataChanger_RecentPaidUps
         : PolicyRecordChanger<_> =

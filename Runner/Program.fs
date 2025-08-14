@@ -9,6 +9,8 @@ module Runner =
     open System.Reactive.Linq
     open System.Reactive.Concurrency
     open System.Text.Json
+    open System.Threading
+    open System.Threading.Tasks
     open FsToolkit.ErrorHandling
     open Npgsql
     open AnalysisOfChangeEngine
@@ -183,39 +185,56 @@ module Runner =
                 createCalculationLoop
                     (openingPolicyGetter, priorClosingStepResultsGetter, closingPolicyGetter, evaluator, outputWriter)
 
-            use telemetrySink =
-                new StreamWriter ("C:\\Users\\Millch\\Desktop\\telemetry.txt")
-
             use scheduler =
                 new EventLoopScheduler ()
+
+            use fileStream =
+                new FileStream ("C:\\Users\\Millch\\Desktop\\telemetry.txt", FileMode.Create)
+
+            let onTelemetryComplete =
+                new TaskCompletionSource ()
 
             let jsonSerializerOptions =
                 new JsonSerializerOptions(
                     DefaultIgnoreCondition =
                         Serialization.JsonIgnoreCondition.WhenWritingNull
                 )
+
+            let wrap output =
+                {|
+                    run_uid     = currentRunUid.Value
+                    session_uid = sessionUid.Value
+                    data        = output
+                |}
+
+            let onTelemetryReceived = function
+                | TelemetryEvent.ApiRequest data ->
+                    JsonSerializer.Serialize
+                        (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
+                | TelemetryEvent.FailedPolicyRead data ->
+                    do printf "X"
+                    JsonSerializer.Serialize
+                        (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
+                | TelemetryEvent.ProcessingCompleted data ->
+                    do printf "."
+                    JsonSerializer.Serialize
+                        (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
+                | TelemetryEvent.DataStoreRead data ->
+                    JsonSerializer.Serialize
+                        (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
+                | TelemetryEvent.DataStoreWrite data ->
+                    JsonSerializer.Serialize
+                        (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
                     
             use _ =
                 calculationLoop.Telemetry
                     .ObserveOn(scheduler)
-                    .Select(function
-                        | TelemetryEvent.ApiRequest data ->                            
-                            JsonSerializer.Serialize (JsonFormatter.format data, jsonSerializerOptions)
-                        | TelemetryEvent.FailedPolicyRead data ->
-                            JsonSerializer.Serialize (JsonFormatter.format data, jsonSerializerOptions)
-                        | TelemetryEvent.ProcessingCompleted data ->
-                            JsonSerializer.Serialize (JsonFormatter.format data, jsonSerializerOptions)
-                        | TelemetryEvent.DataStoreRead data ->
-                            JsonSerializer.Serialize (JsonFormatter.format data, jsonSerializerOptions)
-                        | TelemetryEvent.DataStoreWrite data ->
-                            JsonSerializer.Serialize (JsonFormatter.format data, jsonSerializerOptions))
-                    .Subscribe (fun jsonContent ->
-                        telemetrySink.WriteLine jsonContent)
-
+                    .Subscribe(onTelemetryReceived, fun () ->
+                        do onTelemetryComplete.SetResult ())
 
             let someOutstandingRecords =
                 outstandingRecords
-                |> List.take 8
+                |> List.take 75
 
             let runner =
                 backgroundTask {
@@ -231,9 +250,14 @@ module Runner =
 
                         ()
 
+                    // Notify the machinery that we have no more records to process.
                     do calculationLoop.Complete ()
 
+                    // Wait for the calculation loop to complete.
                     do! calculationLoop.Completion
+
+                    // Wait for our telemetry subscriber to complete.
+                    do! onTelemetryComplete.Task
                 }
 
             do runner.Wait ()
