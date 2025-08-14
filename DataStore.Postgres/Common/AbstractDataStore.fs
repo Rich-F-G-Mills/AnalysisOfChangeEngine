@@ -132,6 +132,7 @@ module AbstractDataStore =
                     PriorRunUid             = priorRunUid
                     ClosingRunDate          = closingRunDate
                     PolicyDataExtractionUid = policyDataExtractionUid
+                    ClosingStepUid          = StepUid walk.ClosingStep.Uid
                 }
 
             let newRowDTO =

@@ -49,7 +49,8 @@ module Types =
             CreatedWhen                 : DateTime
             PriorRunUid                 : RunUid option
             ClosingRunDate              : DateOnly
-            PolicyDataExtractionUid     : ExtractionUid        
+            PolicyDataExtractionUid     : ExtractionUid    
+            ClosingStepUid              : StepUid
         }
 
     [<NoEquality; NoComparison>]

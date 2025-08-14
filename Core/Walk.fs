@@ -12,7 +12,7 @@ open System.Threading.Tasks
 type IWalk =
     interface
         abstract member AllSteps    : IStepHeader seq
-        abstract member FinalStep   : IStepHeader
+        abstract member ClosingStep : IStepHeader with get
     end
 
 
@@ -79,7 +79,8 @@ type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRe
             step
 
 
-        /// Provides an enumeration of all steps, both required and user supplied in the appropriate order.
+        /// Provides an enumeration of all steps, both required and user
+        /// supplied in the appropriate order.
         member val AllSteps =
             // Must be a sequence or we get an error about using
             // members before they've been defined.
@@ -92,16 +93,18 @@ type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRe
                 yield! _postNewRecordsSteps |> Seq.cast<IStepHeader>
             } with get
 
-        // Doing this as a val led to a runtime error.
-        member this.FinalStep =
-            Seq.last this.AllSteps
+        /// This is the step header for what is considered to be the closing
+        /// step for the walk, and is therefore considered for comparison
+        /// against the subsequent opening re-run step for the following period.
+        /// However, this does not prevent additional steps being run beyond this.
+        abstract member ClosingStep: IStepHeader with get
 
         interface IWalk with
             member this.AllSteps =
                 this.AllSteps
 
-            member this.FinalStep =
-                this.FinalStep
+            member this.ClosingStep =
+                this.ClosingStep
 
 
 [<RequireQualifiedAccess>]

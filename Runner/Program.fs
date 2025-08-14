@@ -166,11 +166,13 @@ module Runner =
                     (if isSourceChange then "S" else " ")
                     step.Description
 
+            do printfn "\n\n"
+
             let openingPolicyGetter =
                 dataStore.CreatePolicyGetter priorExtractionUid
 
             let priorClosingStepResultsGetter =
-                dataStore.CreateStepResultsGetter priorRunUid (StepUid walk.FinalStep.Uid)
+                dataStore.CreateStepResultsGetter priorRunUid priorRun.ClosingStepUid
 
             let closingPolicyGetter =
                 dataStore.CreatePolicyGetter currentExtractionUid
@@ -189,7 +191,7 @@ module Runner =
                 new EventLoopScheduler ()
 
             use fileStream =
-                new FileStream ("C:\\Users\\Millch\\Desktop\\telemetry.txt", FileMode.Create)
+                new FileStream ($"""C:\Users\Millch\Documents\AnalysisOfChangeEngine\Results Viewer\TELEMETRY\{sessionUid.Value}.txt""", FileMode.Create)
 
             let onTelemetryComplete =
                 new TaskCompletionSource ()
@@ -216,13 +218,14 @@ module Runner =
                     JsonSerializer.Serialize
                         (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
                 | TelemetryEvent.ProcessingCompleted data ->
-                    do printf "."
                     JsonSerializer.Serialize
                         (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
                 | TelemetryEvent.DataStoreRead data ->
+                    do printf "R"
                     JsonSerializer.Serialize
                         (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
                 | TelemetryEvent.DataStoreWrite data ->
+                    do printf "W"
                     JsonSerializer.Serialize
                         (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
                     

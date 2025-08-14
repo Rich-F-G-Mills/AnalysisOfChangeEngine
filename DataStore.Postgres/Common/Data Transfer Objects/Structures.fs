@@ -184,7 +184,8 @@ type internal RunHeaderDTO =
         created_when                : DateTime
         prior_run_uid               : Guid option
         closing_run_date            : DateOnly
-        policy_data_extraction_uid  : Guid        
+        policy_data_extraction_uid  : Guid   
+        closing_step_uid            : Guid
     }
 
 [<RequireQualifiedAccess>]
@@ -240,7 +241,8 @@ module internal RunHeaderDTO =
             CreatedWhen                 = hdr.created_when
             PriorRunUid                 = hdr.prior_run_uid |> Option.map RunUid 
             ClosingRunDate              = hdr.closing_run_date
-            PolicyDataExtractionUid     = ExtractionUid hdr.policy_data_extraction_uid       
+            PolicyDataExtractionUid     = ExtractionUid hdr.policy_data_extraction_uid
+            ClosingStepUid              = StepUid hdr.closing_step_uid
         }
 
     let internal fromUnderlying (hdr: RunHeader): RunHeaderDTO =
@@ -253,6 +255,7 @@ module internal RunHeaderDTO =
             prior_run_uid               = hdr.PriorRunUid |> Option.map _.Value
             closing_run_date            = hdr.ClosingRunDate
             policy_data_extraction_uid  = hdr.PolicyDataExtractionUid.Value
+            closing_step_uid            = hdr.ClosingStepUid.Value
         }
 
 

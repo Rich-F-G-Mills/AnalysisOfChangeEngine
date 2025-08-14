@@ -588,3 +588,6 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                     StepValidationOutcome.noValidator
             }
         )
+
+    override val ClosingStep =
+        this.AddNewRecords

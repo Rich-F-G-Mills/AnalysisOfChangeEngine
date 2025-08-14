@@ -126,6 +126,8 @@ module CalculationLoop =
                             | CohortedPolicyRecord.New policyRecord ->
                                 walkEvaluator.Execute (NewPolicy policyRecord, notifyApiRequestSubmitted')
 
+                        do printf "."
+
                         return (OutputRequest.CompletedEvaluation {
                             PolicyId            = request.PolicyId
                             RequestSubmitted    = request.RequestSubmitted
@@ -226,7 +228,7 @@ module CalculationLoop =
                 new TransformManyBlock<_, _> (
                     policyReader,
                     new ExecutionDataflowBlockOptions (
-                        BoundedCapacity = 1000,
+                        BoundedCapacity = 5,
                         // Ensure that we only ever process a single batch of reads at a time.
                         MaxDegreeOfParallelism = 1
                     )
