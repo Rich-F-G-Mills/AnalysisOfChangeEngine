@@ -12,6 +12,11 @@ open System.Threading.Tasks
 type IWalk =
     interface
         abstract member AllSteps    : IStepHeader seq
+
+        /// This is the step header for what is considered to be the closing
+        /// step for the walk, and is therefore considered for comparison
+        /// against the subsequent opening re-run step for the following period.
+        /// However, this does not prevent additional steps being run beyond this point.
         abstract member ClosingStep : IStepHeader with get
     end
 
@@ -96,7 +101,7 @@ type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRe
         /// This is the step header for what is considered to be the closing
         /// step for the walk, and is therefore considered for comparison
         /// against the subsequent opening re-run step for the following period.
-        /// However, this does not prevent additional steps being run beyond this.
+        /// However, this does not prevent additional steps being run beyond this point.
         abstract member ClosingStep: IStepHeader with get
 
         interface IWalk with

@@ -69,6 +69,12 @@ module AbstractDataStore =
             RunFailureDTO.buildDispatcher
                 (schema, dataSource)
 
+        let openingDataStageUid =
+            Guid("00000000-0000-0000-0000-000000000000")
+
+        let closingDataStageUid =
+            Guid("FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF")
+
 
         // --- UID RESOLVER ---
 
@@ -78,7 +84,7 @@ module AbstractDataStore =
                 // Should this be a map using StepUid's as keys?
                 // Given that this is only going to be used by the backing machinery, it
                 // seems overly cautious.
-                |> Seq.map (fun sh -> sh.Uid.Value, sh)
+                |> Seq.map (fun sh -> sh.StepUid.Value, sh)
                 |> Map.ofSeq
 
             fun uid ->
@@ -104,7 +110,7 @@ module AbstractDataStore =
         member this.CreateRun (title, comments, priorRunUid, closingRunDate, policyDataExtractionUid, walk: #IWalk) =
             let stepHeaders =
                 this.GetAllStepHeaders ()
-                |> Seq.map (fun hdr -> hdr.Uid.Value)
+                |> Seq.map (fun hdr -> hdr.StepUid.Value)
                 |> Set
 
             let allWalkSteps =
@@ -124,7 +130,7 @@ module AbstractDataStore =
 
             let newRow =
                 {
-                    Uid                     = RunUid newUid
+                    RunUid                  = RunUid newUid
                     Title                   = title
                     Comments                = comments
                     CreatedBy               = sessionContext.UserName
@@ -164,7 +170,7 @@ module AbstractDataStore =
 
                 let allStepHeadersMap =
                     this.GetAllStepHeaders ()
-                    |> Seq.map (fun hdr -> hdr.Uid.Value, hdr)
+                    |> Seq.map (fun hdr -> hdr.StepUid.Value, hdr)
                     |> Map.ofSeq
 
                 let stepHeadersForRun =
@@ -264,13 +270,13 @@ module AbstractDataStore =
                         run_steps AS (
                             SELECT
                                 rs.{fieldName<RunStepDTO, _> <@ _.step_idx @>} AS idx,
-                                sh.{fieldName<StepHeaderDTO, _> <@ _.uid @>} AS uid,
+                                sh.{fieldName<StepHeaderDTO, _> <@ _.step_uid @>} AS uid,
                                 sh.{fieldName<StepHeaderDTO, _> <@ _.run_if_exited_record @>} AS run_if_exited_record,
                                 sh.{fieldName<StepHeaderDTO, _> <@ _.run_if_new_record @>} AS run_if_new_record
                             FROM {schema}.{runStepDispatcher.PgTableName} AS rs
                             LEFT JOIN common.{stepHeaderDispatcher.PgTableName} AS sh
                             ON rs.{fieldName<RunStepDTO, _> <@ _.step_uid @>} =
-                                sh.{fieldName<StepHeaderDTO, _> <@ _.uid @>}
+                                sh.{fieldName<StepHeaderDTO, _> <@ _.step_uid @>}
                             WHERE rs.{fieldName<RunStepDTO, _> <@ _.run_uid @>} =
                                 @current_run_uid
                         ),
@@ -505,10 +511,12 @@ module AbstractDataStore =
                     result {
                         let dataStageUsedDTO =
                             match stepDataSource with
+                            | StepDataSource.OpeningData ->
+                                openingDataStageUid
                             | StepDataSource.DataChangeStep dataChangeStepUid ->
-                                Some dataChangeStepUid.Uid
-                            | _ ->
-                                None
+                                dataChangeStepUid.Uid
+                            | StepDataSource.ClosingData ->
+                                closingDataStageUid
 
                         let constructStepResultWriteFailureCommand reasons =
                             constructRunFailureDTO (ProcessedPolicyFailure.PolicyWriteFailure

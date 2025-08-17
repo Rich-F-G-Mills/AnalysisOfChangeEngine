@@ -149,7 +149,7 @@ module CalculationLoop =
                     }
 
             let outputWriter writeRequests : Task =
-                backgroundTask {                   
+                backgroundTask {                    
                     let writeStart =
                         DateTime.Now
 
@@ -290,7 +290,10 @@ module CalculationLoop =
 
             member val Completion =
                 writerBlock.Completion
-                    .ContinueWith (fun _ ->
+                    .ContinueWith (fun completedTask ->
+                        if completedTask.Status = TaskStatus.Faulted then
+                            do telemetrySubject.OnError (completedTask.Exception)
+                        else
                         // Note that this will be called regardless of why the writer block completed.
                         // Completion could have occurred due to cancellation, an error, or normal completion.
                         // Further more, the on completed notification below may be non-blocking depending

@@ -28,11 +28,8 @@ telemetryEvents <-
         df |>
         tidyr::unnest(col = data) |>
         dplyr::filter(
-          run_uid == currentRunUid
-        ) |>
-        dplyr::semi_join(
-          stepResults,
-          by = c('run_uid', 'session_uid')
+          run_uid == currentRunUid,
+          session_uid %in% sessionUids
         ) |>
         dplyr::mutate(
           dplyr::across(

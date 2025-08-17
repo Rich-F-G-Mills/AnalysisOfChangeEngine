@@ -42,21 +42,24 @@ module Types =
     [<NoEquality; NoComparison>]
     type RunHeader =
         {
-            Uid                         : RunUid
+            RunUid                      : RunUid
             Title                       : string
             Comments                    : string option
             CreatedBy                   : string
             CreatedWhen                 : DateTime
             PriorRunUid                 : RunUid option
             ClosingRunDate              : DateOnly
-            PolicyDataExtractionUid     : ExtractionUid    
+            PolicyDataExtractionUid     : ExtractionUid
+            // Given you can't have a closing step UID without the run itself,
+            // it made more sense for a given run to specify its closing step rather
+            // than have it imposed upon it my the subsequent run.
             ClosingStepUid              : StepUid
         }
 
     [<NoEquality; NoComparison>]
     type StepHeader =
         {
-            Uid                         : StepUid
+            StepUid                     : StepUid
             Title                       : string
             Description                 : string   
             RunIfExitedRecord           : bool

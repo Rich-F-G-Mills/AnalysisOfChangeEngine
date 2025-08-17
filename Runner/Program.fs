@@ -135,14 +135,14 @@ module Runner =
                 |> Result.requireSome "Unable to locate current run header."
 
             let! outstandingRecords =
-                dataStore.TryGetOutstandingRecords currentRun.Uid {
+                dataStore.TryGetOutstandingRecords currentRun.RunUid {
                     ReRunFailedCases = true
                 }
 
             do printfn "\n\nOutstanding records: %i\n\n" outstandingRecords.Length
 
-            do printfn "Opening run UID: %O" priorRun.Uid.Value
-            do printfn "Closing run UID: %O\n\n" currentRun.Uid.Value
+            do printfn "Opening run UID: %O" priorRun.RunUid.Value
+            do printfn "Closing run UID: %O\n\n" currentRun.RunUid.Value
             do printfn "Session UID    : %O\n\n" sessionUid.Value
 
             do printfn "Steps: (%i found)" (walk.AllSteps |> Seq.length)
@@ -211,33 +211,38 @@ module Runner =
 
             let onTelemetryReceived = function
                 | TelemetryEvent.ApiRequest data ->
-                    JsonSerializer.Serialize
+                    do JsonSerializer.Serialize
                         (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
                 | TelemetryEvent.FailedPolicyRead data ->
                     do printf "X"
-                    JsonSerializer.Serialize
+                    do JsonSerializer.Serialize
                         (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
                 | TelemetryEvent.ProcessingCompleted data ->
-                    JsonSerializer.Serialize
+                    do JsonSerializer.Serialize
                         (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
                 | TelemetryEvent.DataStoreRead data ->
                     do printf "R"
-                    JsonSerializer.Serialize
+                    do JsonSerializer.Serialize
                         (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
                 | TelemetryEvent.DataStoreWrite data ->
                     do printf "W"
-                    JsonSerializer.Serialize
+                    do JsonSerializer.Serialize
                         (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
                     
             use _ =
                 calculationLoop.Telemetry
                     .ObserveOn(scheduler)
-                    .Subscribe(onTelemetryReceived, fun () ->
-                        do onTelemetryComplete.SetResult ())
+                    .Subscribe(onTelemetryReceived,
+                        (fun (exn: exn) ->
+                            JsonSerializer.Serialize
+                                (fileStream, {| event = "loop_failure"; reason = exn.Message |}, jsonSerializerOptions)
+                            do onTelemetryComplete.SetResult ()),
+                        (fun () ->
+                            do onTelemetryComplete.SetResult ()))
 
             let someOutstandingRecords =
                 outstandingRecords
-                |> List.take 75
+                |> List.take 100
 
             let runner =
                 backgroundTask {

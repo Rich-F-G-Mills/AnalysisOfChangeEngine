@@ -177,7 +177,7 @@ module internal PolicyDataDTO =
 [<NoEquality; NoComparison>]
 type internal RunHeaderDTO =
     {
-        uid                         : Guid
+        run_uid                     : Guid
         title                       : string
         comments                    : string option
         created_by                  : string
@@ -209,7 +209,7 @@ module internal RunHeaderDTO =
 
         let selectByUid =
             dispatcher.MakeBaseEquality1Selector    
-                <@ _.uid @>
+                <@ _.run_uid @>
 
         let rowInserter =
             dispatcher.MakeRowInserter ()
@@ -234,7 +234,7 @@ module internal RunHeaderDTO =
 
     let internal toUnderlying (hdr: RunHeaderDTO): RunHeader =
         {
-            Uid                         = RunUid hdr.uid
+            RunUid                      = RunUid hdr.run_uid
             Title                       = hdr.title
             Comments                    = hdr.comments
             CreatedBy                   = hdr.created_by
@@ -247,7 +247,7 @@ module internal RunHeaderDTO =
 
     let internal fromUnderlying (hdr: RunHeader): RunHeaderDTO =
         {
-            uid                         = hdr.Uid.Value
+            run_uid                     = hdr.RunUid.Value
             title                       = hdr.Title
             comments                    = hdr.Comments
             created_by                  = hdr.CreatedBy
@@ -434,7 +434,7 @@ module internal RunFailureDTO =
 [<NoEquality; NoComparison>]
 type internal StepHeaderDTO =
     {
-        uid                     : Guid
+        step_uid                : Guid
         title                   : string
         description             : string
         run_if_exited_record    : bool
@@ -472,7 +472,7 @@ module internal StepHeaderDTO =
             // It would be "best" if any issues occur as an exception
             // during assembly start-up code (ie... fail-safe AND fail-fast).
             dispatcher.MakeBaseEquality1Selector    
-                <@ _.uid @>
+                <@ _.step_uid @>
 
         {
             new IDispatcher with
@@ -491,7 +491,7 @@ module internal StepHeaderDTO =
 
     let internal toUnderlying (hdr: StepHeaderDTO): StepHeader =
         {
-            Uid                 = StepUid hdr.uid
+            StepUid             = StepUid hdr.step_uid
             Title               = hdr.title
             Description         = hdr.description
             RunIfExitedRecord   = hdr.run_if_exited_record
@@ -500,7 +500,7 @@ module internal StepHeaderDTO =
 
     let internal fromUnderlying (hdr: StepHeader): StepHeaderDTO =
         {
-            uid                     = hdr.Uid.Value
+            step_uid                = hdr.StepUid.Value
             title                   = hdr.Title
             description             = hdr.Description
             run_if_exited_record    = hdr.RunIfExitedRecord
@@ -516,7 +516,7 @@ type internal StepResults_BaseDTO =
         step_uid                : Guid
         // In theory, we could live without this. However, it does make it easier to
         // track down the policy characteristics run for a given step.
-        used_data_stage_uid     : Guid option
+        used_data_stage_uid     : Guid
         policy_id               : string
     }
 

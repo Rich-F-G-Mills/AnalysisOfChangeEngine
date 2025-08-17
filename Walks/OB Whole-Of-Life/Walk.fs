@@ -589,5 +589,6 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
             }
         )
 
-    override val ClosingStep =
+    // Cannot make this val without leading to an initialization error.
+    override this.ClosingStep =
         this.AddNewRecords
