@@ -65,7 +65,7 @@ module Runner =
                 DateOnly.FromDateTime DateTime.Now
             
             let closingRunDate =
-                new DateOnly (today.Year, today.Month, 1)
+                new DateOnly (2025, 2, 1)
 
             let priorRunUid =
                 RunUid (Guid "1368816c-979e-4fde-8e0d-73e8d4f9b8de")
@@ -134,12 +134,14 @@ module Runner =
                 dataStore.TryGetRunHeader currentRunUid
                 |> Result.requireSome "Unable to locate current run header."
 
+            do printf "\n\nRetrieving outstanding records... "
+
             let! outstandingRecords =
                 dataStore.TryGetOutstandingRecords currentRun.RunUid {
                     ReRunFailedCases = true
                 }
-
-            do printfn "\n\nOutstanding records: %i\n\n" outstandingRecords.Length
+            
+            do printfn "%i\n\n" outstandingRecords.Length
 
             do printfn "Opening run UID: %O" priorRun.RunUid.Value
             do printfn "Closing run UID: %O\n\n" currentRun.RunUid.Value
@@ -242,7 +244,7 @@ module Runner =
 
             let someOutstandingRecords =
                 outstandingRecords
-                |> List.take 100
+                |> List.take 500
 
             let runner =
                 backgroundTask {

@@ -28,7 +28,7 @@ telemetryEvents <-
         df |>
         tidyr::unnest(col = data) |>
         dplyr::filter(
-          run_uid == currentRunUid,
+          run_uid == params$currentRunUid,
           session_uid %in% sessionUids
         ) |>
         dplyr::mutate(

@@ -575,13 +575,13 @@ module internal StepResultsDTO =
 [<RequireQualifiedAccess>]
 [<NoEquality; NoComparison>]
 [<PostgresCommonEnumeration("cohort_membership")>]
-type private CohortMembershipDTO =
+type internal CohortMembershipDTO =
     | EXITED
     | REMAINING
     | NEW
 
 [<NoEquality; NoComparison>]
-type private OutstandingPolicyIdDTO =
+type internal OutstandingPolicyIdDTO =
     {
         policy_id               : string
         cohort                  : CohortMembershipDTO

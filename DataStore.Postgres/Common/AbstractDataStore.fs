@@ -235,19 +235,6 @@ module AbstractDataStore =
                     this.TryGetRunHeader currentRunUid
                     |> Result.requireSome (sprintf "Unable to locate current run header '%O'" currentRunUid)
 
-                let priorRunHeader =
-                    match currentRunHeader.PriorRunUid with
-                    // If a prior run ID is specified, it MUST exist!
-                    | Some priorRunUid ->
-                        match this.TryGetRunHeader priorRunUid with
-                        | Some hdr ->
-                            Some hdr
-                        | None ->
-                            failwithf "Unable to locate prior run header '%O'" priorRunUid
-                    | _ ->
-                        None
-
-
                 (*
                 Design Decision:
                     Why not implement this directly in the DB itself as a function or view?
@@ -266,129 +253,19 @@ module AbstractDataStore =
 
                 do ignore <| sqlCommand.Append(
                     $"""
-                    WITH
-                        run_steps AS (
-                            SELECT
-                                rs.{fieldName<RunStepDTO, _> <@ _.step_idx @>} AS idx,
-                                sh.{fieldName<StepHeaderDTO, _> <@ _.step_uid @>} AS uid,
-                                sh.{fieldName<StepHeaderDTO, _> <@ _.run_if_exited_record @>} AS run_if_exited_record,
-                                sh.{fieldName<StepHeaderDTO, _> <@ _.run_if_new_record @>} AS run_if_new_record
-                            FROM {schema}.{runStepDispatcher.PgTableName} AS rs
-                            LEFT JOIN common.{stepHeaderDispatcher.PgTableName} AS sh
-                            ON rs.{fieldName<RunStepDTO, _> <@ _.step_uid @>} =
-                                sh.{fieldName<StepHeaderDTO, _> <@ _.step_uid @>}
-                            WHERE rs.{fieldName<RunStepDTO, _> <@ _.run_uid @>} =
-                                @current_run_uid
-                        ),
-    
-                        opening_policy_ids AS (
-                            SELECT DISTINCT {fieldName<PolicyData_BaseDTO, _> <@ _.policy_id @>} AS policy_id
-                            FROM {schema}.{policyDataDispatcher.PgTableName}
-                            WHERE {fieldName<PolicyData_BaseDTO, _> <@ _.extraction_uid @>} =
-                                @prior_extraction_uid
-                        ),
-    
-                        closing_policy_ids AS (
-                            SELECT DISTINCT {fieldName<PolicyData_BaseDTO, _> <@ _.policy_id @>} AS policy_id
-                            FROM {schema}.{policyDataDispatcher.PgTableName}
-                            WHERE {fieldName<PolicyData_BaseDTO, _> <@ _.extraction_uid @>} =
-                                @current_extraction_uid
-                        ),
-    
-                        remaining_policy_ids AS (
-                            SELECT policy_id
-                            FROM opening_policy_ids
-                            INTERSECT SELECT policy_id
-                            FROM closing_policy_ids
-                        ),
-    
-                        exited_policy_ids AS (
-                            SELECT policy_id
-                            FROM opening_policy_ids
-                            EXCEPT SELECT policy_id
-                            FROM closing_policy_ids
-                        ),
-    
-                        new_policy_ids AS (
-                            SELECT policy_id
-                            FROM closing_policy_ids
-                            EXCEPT SELECT policy_id
-                            FROM opening_policy_ids
-                        ),
-    
-                        steps_run AS (
-                            SELECT
-                                {fieldName<StepResults_BaseDTO, _> <@ _.policy_id @>} AS policy_id,
-                                {fieldName<StepResults_BaseDTO, _> <@ _.step_uid @>} AS step_uid
-                            FROM {schema}.{stepResultsDispatcher.PgTableName}
-                            WHERE {fieldName<StepResults_BaseDTO, _> <@ _.run_uid @>} =
-                                @current_run_uid
-                        ),
-    
-                        steps_expected AS (
-                            SELECT policy_id, uid AS step_uid
-                            FROM exited_policy_ids, run_steps
-                            WHERE run_if_exited_record
-                            UNION ALL SELECT policy_id, uid AS step_uid
-                            FROM remaining_policy_ids, run_steps
-                            UNION ALL SELECT policy_id, uid AS step_uid
-                            FROM new_policy_ids, run_steps
-                            WHERE run_if_new_record
-                        ),
-
-                        failed_cases AS (
-                            SELECT DISTINCT
-                                {fieldName<RunFailureDTO, _> <@ _.policy_id @>} AS policy_id
-                            FROM {schema}.{runFailureDispatcher.PgTableName}
-                            WHERE {fieldName<RunFailureDTO, _> <@ _.run_uid @>} =
-                                @current_run_uid
-                        ),
-    
-                        step_statuses AS (
-                            SELECT
-                                COALESCE (expected.policy_id, run.policy_id) AS policy_id,
-                                COALESCE (expected.step_uid, run.step_uid) AS step_uid,
-                                run.policy_id IS NOT NULL AND expected.policy_id IS NOT NULL AS was_run
-                            FROM steps_expected AS expected
-                            LEFT JOIN steps_run AS run
-                            ON expected.policy_id = run.policy_id
-                                AND expected.step_uid = run.step_uid
-                        ),
-
-                        incomplete_step_results AS (
-                            SELECT policy_id
-                            FROM step_statuses
-                            -- This approach seems MUCH faster than using a SELECT DISTINCT and a WHERE.
-                            GROUP BY policy_id		
-                            HAVING NOT bool_and(was_run)
-                        ),
+                    WITH outstanding_cases AS (
+                        SELECT policy_id, cohort
+                        FROM {schema}.policy_tracing
+                        WHERE run_uid = @current_run_uid AND NOT all_steps_run                   
                     """
-                )               
+                    )        
                 
-                if options.ReRunFailedCases then
-                    do ignore <| sqlCommand.Append(
-                        $"""
-                        outstanding_cases AS (
-                            SELECT policy_id
-                            FROM incomplete_step_results
-                        ),                    
-                        """
-                    )
-
-                else
-                    do ignore <| sqlCommand.Append(
-                        $"""
-                        outstanding_cases AS (
-                            SELECT policy_id
-                            FROM incomplete_step_results
-                            WHERE policy_id NOT IN (SELECT policy_id FROM failed_cases)
-                        ),
-                        """
-                    )
+                if not options.ReRunFailedCases then
+                    do ignore <| sqlCommand.Append(" AND NOT had_failure")
 
                 do ignore <| sqlCommand.Append(
                     $"""
-                        delete_existing_run_failures AS (
+                        ), delete_existing_run_failures AS (
                             DELETE FROM {schema}.{runFailureDispatcher.PgTableName}
                             WHERE {fieldName<RunFailureDTO, _> <@ _.run_uid @>} = @current_run_uid
                                 AND {fieldName<RunFailureDTO, _> <@ _.policy_id @>}
@@ -411,15 +288,8 @@ module AbstractDataStore =
                         )
 
                     SELECT
-                        policy_id,
-                        CASE
-                            WHEN policy_id IN (SELECT policy_id FROM exited_policy_ids)
-                                THEN 'EXITED'::common.cohort_membership
-                            WHEN policy_id IN (SELECT policy_id FROM remaining_policy_ids)
-                                THEN 'REMAINING'::common.cohort_membership
-                            WHEN policy_id IN (SELECT policy_id FROM new_policy_ids)
-                                THEN 'NEW'::common.cohort_membership
-                        END AS cohort
+                        policy_id AS {fieldName<OutstandingPolicyIdDTO, _> <@ _.policy_id @>},
+                        cohort AS {fieldName<OutstandingPolicyIdDTO, _> <@ _.cohort @>}
                     FROM outstanding_cases;
                     """                    
                 )
@@ -434,23 +304,7 @@ module AbstractDataStore =
                     new NpgsqlParameter<Guid>
                         ("@current_run_uid", currentRunUid.Value)
 
-                let currentExtractionUidParam =
-                    new NpgsqlParameter<Guid>
-                        ("@current_extraction_uid", currentRunHeader.PolicyDataExtractionUid.Value)
-
-                let priorExtractionUidParam: NpgsqlParameter =
-                    match priorRunHeader with
-                    | Some hdr ->
-                        new NpgsqlParameter<Guid>
-                            ("@prior_extraction_uid", hdr.PolicyDataExtractionUid.Value)
-                    | None ->
-                        // Cannot use NpgsqlParameter<Guid> here as DBNull.Value cannot be cast to a Guid.
-                        new NpgsqlParameter
-                            ("@prior_extraction_uid", DBNull.Value)
-
                 do ignore <| dbCommand.Parameters.Add currentRunUidParam
-                do ignore <| dbCommand.Parameters.Add currentExtractionUidParam
-                do ignore <| dbCommand.Parameters.Add priorExtractionUidParam
 
                 use dbReader =
                     dbCommand.ExecuteReader ()

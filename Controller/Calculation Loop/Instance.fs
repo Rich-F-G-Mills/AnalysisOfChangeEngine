@@ -218,9 +218,9 @@ module CalculationLoop =
 
             let policyIdBatcher =
                 new BatchBlock<_> (
-                    25,
+                    50,
                     new GroupingDataflowBlockOptions (
-                        BoundedCapacity = 100
+                        BoundedCapacity = 75
                     )
                 )
 
@@ -228,7 +228,7 @@ module CalculationLoop =
                 new TransformManyBlock<_, _> (
                     policyReader,
                     new ExecutionDataflowBlockOptions (
-                        BoundedCapacity = 5,
+                        BoundedCapacity = 2,
                         // Ensure that we only ever process a single batch of reads at a time.
                         MaxDegreeOfParallelism = 1
                     )
@@ -238,7 +238,7 @@ module CalculationLoop =
                 new TransformBlock<_, OutputRequest<_, _>> (
                     policyEvaluator,
                     new ExecutionDataflowBlockOptions (
-                        BoundedCapacity = 100,
+                        BoundedCapacity = 75,
                         MaxDegreeOfParallelism = 5
                     )
                 )
