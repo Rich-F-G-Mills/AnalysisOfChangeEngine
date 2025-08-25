@@ -196,8 +196,7 @@ module AbstractDataStore =
 
                 let records' =
                     records
-                    |> Map.map (fun _ ->
-                        this.dtoToStepResults >> Result.mapError StepResultsGetterFailure.ParseFailure)
+                    |> Map.map (fun _ -> this.dtoToStepResults)
 
                 return records'
             }
@@ -216,16 +215,9 @@ module AbstractDataStore =
 
                 let records' =
                     records
-                    |> Map.map (fun _ ->
-                        this.dtoToPolicyRecord >> Result.mapError PolicyGetterFailure.ParseFailure)
+                    |> Map.map (fun _ -> this.dtoToPolicyRecord)
 
-                let records'' =
-                    policyIds
-                    |> Seq.filter (not << records'.ContainsKey)
-                    |> Seq.fold (fun map pid ->
-                        map |> Map.add pid (Error PolicyGetterFailure.NotFound)) records'
-
-                return records''
+                return records'
             }
             
 
@@ -320,34 +312,33 @@ module AbstractDataStore =
 
         member this.CreatePolicyGetter extractionUid =
             {
-                new IPolicyGetter<'TPolicyRecord> with
+                new IPolicyGetter<_> with
                     member _.GetPolicyRecordsAsync policyIds =
                         this.GetPolicyRecordsAsync extractionUid policyIds
             }
 
         member this.CreateStepResultsGetter runUid stepUid =
             {
-                new IStepResultsGetter<'TStepResults> with
+                new IStepResultsGetter<_> with
                     member _.GetStepResultsAsync policyIds =
                         this.GetStepResultsAsync runUid stepUid policyIds
             }
 
 
         member private this.ConstructDataChangeWriteCommands
-            (constructBaseDataStageDTO, constructRunFailureDTO) =
+            (constructBaseDataStageDTO, constructDataStageWriteFailureDTO) =
                 Map.toSeq
                 // Use the applicative variant so that we get all errors, rather than
                 // just the first.
                 >> Seq.traverseResultA (fun (dataStageUid, policyRecord) ->
                     result {                                                    
-                        let constructDataChangeWriteFailureCommand reasons =
-                            constructRunFailureDTO (ProcessedPolicyFailure.PolicyWriteFailure
-                                (PolicyWriteFailure.DataStageWriteFailure (dataStageUid, reasons)))
-                            |> Seq.map runFailureDispatcher.GetRowInsertBatchCommand
+                        let constructDataChangeWriteFailureCommands =
+                            Seq.map (constructDataStageWriteFailureDTO dataStageUid)
+                            >> Seq.map runFailureDispatcher.GetRowInsertBatchCommand
 
                         let! policyRecordDTO =
                             this.policyRecordToDTO policyRecord
-                            |> Result.mapError constructDataChangeWriteFailureCommand
+                            |> Result.mapError constructDataChangeWriteFailureCommands
 
                         let dataStageBaseDTO =
                             constructBaseDataStageDTO dataStageUid
@@ -372,17 +363,16 @@ module AbstractDataStore =
                             | StepDataSource.ClosingData ->
                                 closingDataStageUid
 
-                        let constructStepResultWriteFailureCommand reasons =
-                            constructRunFailureDTO (ProcessedPolicyFailure.PolicyWriteFailure
-                                (PolicyWriteFailure.StepResultsWriteFailure (stepUid, reasons)))
-                            |> Seq.map runFailureDispatcher.GetRowInsertBatchCommand
+                        let constructStepResultWriteFailureCommands =
+                            Seq.map (constructRunFailureDTO stepUid)
+                            >> Seq.map runFailureDispatcher.GetRowInsertBatchCommand
 
                         let stepResultsBaseDTO =
                             constructBaseStepResultDTO (stepUid, dataStageUsedDTO)
 
                         let! stepResultsDTO =
                             this.stepResultsToDTO stepResults
-                            |> Result.mapError constructStepResultWriteFailureCommand
+                            |> Result.mapError constructStepResultWriteFailureCommands
                                                         
                         return stepResultsDispatcher.GetRowInsertBatchCommand
                             (stepResultsBaseDTO, stepResultsDTO)
@@ -412,9 +402,6 @@ module AbstractDataStore =
 
                     return combinedWriteCommands
                 }
-                // We don't care whether we have a seccessful result or
-                // a failure. We just need the underlying command sequence.
-                |> Result.either id id
 
         // Before anyone says anything, I realise there are a lot of allocations
         // going on here. However, this function does NOT lie on the critical
@@ -437,7 +424,27 @@ module AbstractDataStore =
                     policy_id           = policyId                
                 }
 
-            let constructRunFailureDTO =
+            let constructDataStageWriteFailureDTO policyId stepUid reason =
+                {
+                    run_uid             = currentRunUid'
+                    session_uid         = sessionUid'
+                    step_uid            = Some stepUid
+                    policy_id           = policyId
+                    failure_type        = RunFailureTypeDTO.DATA_CHANGE_WRITE_FAILURE
+                    reason              = Some reason                    
+                }
+
+            let constructStepResultsWriteFailureDTO policyId stepUid reason =
+                {
+                    run_uid             = currentRunUid'
+                    session_uid         = sessionUid'
+                    step_uid            = Some stepUid
+                    policy_id           = policyId
+                    failure_type        = RunFailureTypeDTO.STEP_RESULTS_WRITE_FAILURE
+                    reason              = Some reason                    
+                }
+
+            let constructProcessingFailureDTO =
                 RunFailureDTO.constructFrom (currentRunUid', sessionUid')            
 
             {
@@ -446,40 +453,64 @@ module AbstractDataStore =
                         backgroundTask {
                             let batchCommands =
                                 processedOutputs
-                                |> Seq.collect (fun processedOutput ->
-                                    let constructRunFailureDTO' =
-                                        constructRunFailureDTO processedOutput.PolicyId
+                                |> Array.map (fun processedOutput ->
+                                    let constructBaseDataStageDTO' =
+                                        constructBaseDataStageDTO processedOutput.PolicyId
+
+                                    let constructBaseStepResultDTO' =
+                                        constructBaseStepResultDTO processedOutput.PolicyId
+
+                                    let constructDataStageWriteFailureDTO' =
+                                        constructDataStageWriteFailureDTO processedOutput.PolicyId
+
+                                    let constructStepResultsWriteFailureDTO' =
+                                        constructStepResultsWriteFailureDTO processedOutput.PolicyId
+
+                                    let constructProcessingFailureDTO' =
+                                        constructProcessingFailureDTO processedOutput.PolicyId
 
                                     match processedOutput.WalkOutcome with
                                     | Ok outcome ->
                                         let constructDataChangeWriteCommands' =
                                             this.ConstructDataChangeWriteCommands
-                                                (constructBaseDataStageDTO processedOutput.PolicyId, constructRunFailureDTO')
+                                                (constructBaseDataStageDTO', constructDataStageWriteFailureDTO')
 
                                         let constructStepResultsWriteCommands' =
                                             this.ConstructStepResultsWriteCommands
-                                                (constructBaseStepResultDTO processedOutput.PolicyId, constructRunFailureDTO')
+                                                (constructBaseStepResultDTO', constructStepResultsWriteFailureDTO')
 
                                         let processSuccessfulWalk' =
                                             AbstractPostgresDataStore<_, _, _, _>.ProcessSuccessfulWalk
                                                 (constructDataChangeWriteCommands', constructStepResultsWriteCommands')
 
                                         processSuccessfulWalk' outcome
+                                        |> Result.either
+                                            // Indicate that no failures have arisen from the write process.
+                                            (fun cmds -> false, cmds)
+                                            // ...or, that some have arisen.
+                                            (fun cmds -> true, cmds)
 
-                                    | Error failure ->
-                                        constructRunFailureDTO' failure
-                                        |> Seq.map runFailureDispatcher.GetRowInsertBatchCommand)
-                        
+                                    | Error processingFailure ->
+                                        let insertionCommands =
+                                            constructProcessingFailureDTO' processingFailure
+                                            |> Seq.map runFailureDispatcher.GetRowInsertBatchCommand
+                                            
+                                        false, insertionCommands)
+
                             use batch =
                                 dataSource.CreateBatch ()
 
                             do  batchCommands
-                                |> Seq.iter batch.BatchCommands.Add 
+                                |> Seq.collect snd
+                                |> Seq.iter batch.BatchCommands.Add
 
                             // TODO - Safe to ignore the returned int?
                             let! _ =
                                 batch.ExecuteNonQueryAsync ()
 
-                            return ()
+                            return
+                                batchCommands
+                                |> Array.map (fun (failuresGenerated, _) ->
+                                    { FailuresGenerated = failuresGenerated })
                         }
             }

@@ -48,6 +48,13 @@ curatedStepDeltas <-
   dplyr::tbl(con, 'curated_step_deltas') |>
   dplyr::filter(run_uid == params$currentRunUid) |>
   dplyr::collect()
+
+policyTracing <-
+  dplyr::tbl(con, 'policy_tracing') |>
+  dplyr::filter(
+    run_uid == params$currentRunUid
+  ) |>
+  dplyr::collect()
   
 DBI::dbDisconnect(con)
 

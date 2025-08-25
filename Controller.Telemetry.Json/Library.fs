@@ -9,7 +9,7 @@ type JsonFormatter private () =
     
     // We need to use static members so we can channel requests
     // via function overloading.
-    static member format (data: ApiRequestTelemetryData) =
+    static member format (data: ApiRequestTelemetryEventData) =
         {|
             event_type              = "api_request"
             policy_id               = data.PolicyId
@@ -25,24 +25,35 @@ type JsonFormatter private () =
             processing_end          = data.ProcessingEnd
         |}
 
-    static member format (data: FailedPolicyReadTelemetryData) =
+    static member format (data: RecordSubmittedTelemetryEventData) =
         {|
-            event_type              = "failed_policy_read"
             policy_id               = data.PolicyId
-            request_submitted       = data.RequestSubmitted
-            data_store_read_idx     = data.DataStoreReadIdx
-            data_store_write_idx    = data.DataStoreWriteIdx
+            timestamp               = data.Timestamp        
         |}
 
-    static member format (data: ProcessingCompletedTelemetryData) =
+    static member format (data: PolicyReadTelemetryEventData) =
         {|
-            event_type              = "processing_completed"
+            event_type              = "policy_read"
             policy_id               = data.PolicyId
-            request_submitted       = data.RequestSubmitted
+            data_store_read_idx     = data.DataStoreReadIdx
+            had_failures            = data.HadFailures
+        |}
+
+    static member format (data: EvaluationCompletedTelemetryEventData) =
+        {|
+            event_type              = "evaluation_completed"
+            policy_id               = data.PolicyId
             evaluation_start        = data.EvaluationStart
             evaluation_end          = data.EvaluationEnd
-            data_store_read_idx     = data.DataStoreReadIdx
+            had_failures            = data.HadFailures
+        |}
+
+    static member format (data: PolicyWriteTelemetryEventData) =
+        {|
+            event_type              = "policy_write"
+            policy_id               = data.PolicyId
             data_store_write_idx    = data.DataStoreWriteIdx
+            had_failures            = data.HadFailures
         |}
 
     static member format (data: DataStoreReadEvent) =

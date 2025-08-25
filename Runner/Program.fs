@@ -8,8 +8,8 @@ module Runner =
     open System.IO
     open System.Reactive.Linq
     open System.Reactive.Concurrency
-    open System.Text.Json
-    open System.Threading
+    open System.Text
+    open System.Text.Json    
     open System.Threading.Tasks
     open FsToolkit.ErrorHandling
     open Npgsql
@@ -195,6 +195,8 @@ module Runner =
             use fileStream =
                 new FileStream ($"""C:\Users\Millch\Documents\AnalysisOfChangeEngine\Results Viewer\TELEMETRY\{sessionUid.Value}.txt""", FileMode.Create)
 
+            do fileStream.Write (Encoding.UTF8.GetBytes "[")
+
             let onTelemetryComplete =
                 new TaskCompletionSource ()
 
@@ -211,15 +213,21 @@ module Runner =
                     data        = output
                 |}
 
-            let onTelemetryReceived = function
+            let writeEvent = function
                 | TelemetryEvent.ApiRequest data ->
                     do JsonSerializer.Serialize
                         (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
-                | TelemetryEvent.FailedPolicyRead data ->
-                    do printf "X"
+                | TelemetryEvent.RecordSubmitted data ->
                     do JsonSerializer.Serialize
                         (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
-                | TelemetryEvent.ProcessingCompleted data ->
+                | TelemetryEvent.PolicyRead data ->
+                    do JsonSerializer.Serialize
+                        (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
+                | TelemetryEvent.EvaluationCompleted data ->
+                    do printf "%s" (if data.HadFailures then "!" else ".")
+                    do JsonSerializer.Serialize
+                        (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
+                | TelemetryEvent.PolicyWrite data ->
                     do JsonSerializer.Serialize
                         (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
                 | TelemetryEvent.DataStoreRead data ->
@@ -234,17 +242,22 @@ module Runner =
             use _ =
                 calculationLoop.Telemetry
                     .ObserveOn(scheduler)
-                    .Subscribe(onTelemetryReceived,
+                    .Subscribe(
+                        (fun event ->
+                            do writeEvent event
+                            do fileStream.Write (Encoding.UTF8.GetBytes ",")),
                         (fun (exn: exn) ->
                             JsonSerializer.Serialize
                                 (fileStream, {| event = "loop_failure"; reason = exn.Message |}, jsonSerializerOptions)
                             do onTelemetryComplete.SetResult ()),
                         (fun () ->
+                            JsonSerializer.Serialize
+                                (fileStream, {| event = "session_end" |}, jsonSerializerOptions)
                             do onTelemetryComplete.SetResult ()))
 
             let someOutstandingRecords =
                 outstandingRecords
-                |> List.take 500
+                |> List.take 50
 
             let runner =
                 backgroundTask {
@@ -271,6 +284,8 @@ module Runner =
                 }
 
             do runner.Wait ()
+
+            do fileStream.Write (Encoding.UTF8.GetBytes "]")
 
             return 0
         }

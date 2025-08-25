@@ -15,7 +15,7 @@ module internal PolicyReader =
         |> Error
 
 
-    let internal openingAndClosingReader<'TPolicyRecord, 'TStepResults>
+    let internal openingAndClosingReader
         (openingPolicyGetter: IPolicyGetter<'TPolicyRecord>,
          priorClosingStepResultGetter: IStepResultsGetter<'TStepResults>,
          closingPolicyGetter: IPolicyGetter<'TPolicyRecord>)
@@ -54,44 +54,50 @@ module internal PolicyReader =
                         openingPolicyIds
                             
                 let getOpeningPolicyRecord pid =
-                    Map.find pid openingPolicyRecords
+                    match Map.tryFind pid openingPolicyRecords with
+                    | None ->
+                        Error [ PolicyReadFailure.OpeningRecordNotFound ]
+                    | Some (Ok record) ->
+                        Ok record
+                    | Some (Error readerFailure) ->
+                        Error [ PolicyReadFailure.OpeningRecordReadFailure readerFailure ]
 
                 let getClosingPolicyRecord pid =
-                    Map.find pid closingPolicyRecords
+                    match Map.tryFind pid closingPolicyRecords with
+                    | None ->
+                        Error [ PolicyReadFailure.ClosingRecordNotFound ]
+                    | Some (Ok record) ->
+                        Ok record
+                    | Some (Error readerFailure) ->
+                        Error [ PolicyReadFailure.ClosingRecordReadFailure readerFailure ]
 
                 let getPriorClosingStepResult pid =
-                    Map.tryFind pid priorClosingStepResults                           
+                    match Map.tryFind pid priorClosingStepResults with
+                    | None ->
+                        Ok None
+                    | Some (Ok stepResults) ->
+                        Ok (Some stepResults)
+                    | Some (Error failure) ->
+                        Error [ PolicyReadFailure.PriorClosingStepResultsReadFailure failure ]
 
                 let exitedPolicyRecords =
                     exitedPolicyIds
                     |> Seq.map (fun pid ->
                         let openingRecord =
                             getOpeningPolicyRecord pid
-                            |> Result.mapError (function
-                                | PolicyGetterFailure.NotFound ->
-                                    [ PolicyReadFailure.OpeningRecordNotFound ]
-                                | (PolicyGetterFailure.ParseFailure reasons) ->
-                                    [ PolicyReadFailure.OpeningRecordParseFailure reasons ])
 
                         let priorClosingStepResults =
-                            match getPriorClosingStepResult pid with
-                            | Some (Ok stepResults) ->
-                                Ok (Some stepResults)
-                            | Some (Error (StepResultsGetterFailure.ParseFailure reasons)) ->
-                                Error [ PolicyReadFailure.PriorClosingStepResultsParseFailure reasons ]
-                            | None ->
-                                Ok None
+                            getPriorClosingStepResult pid
 
                         match openingRecord, priorClosingStepResults with
                         | Ok policyRecord, Ok priorClosingStepResults' ->
                             Ok (CohortedPolicyRecord.Exited (policyRecord, priorClosingStepResults'))
-                        // TODO - Could replace this with the combine errors function.
                         | Error failures1, Error failures2 ->
                             Error (failures1 @ failures2)
                         | Error failures1, Ok _ ->
                             Error failures1
                         | Ok _, Error failures2 ->
-                            Error failures2)
+                            Error  failures2 )
                     |> Seq.zip exitedPolicyIds
 
                 let remainingPolicyRecords =
@@ -99,28 +105,12 @@ module internal PolicyReader =
                     |> Seq.map (fun pid ->
                         let openingPolicyRecord =
                             getOpeningPolicyRecord pid
-                            |> Result.mapError (function
-                                | PolicyGetterFailure.NotFound ->
-                                    [ PolicyReadFailure.OpeningRecordNotFound ]
-                                | PolicyGetterFailure.ParseFailure reasons ->
-                                    [ PolicyReadFailure.OpeningRecordParseFailure reasons ])
                                             
                         let closingPolicyRecord =
                             getClosingPolicyRecord pid
-                            |> Result.mapError (function
-                                | PolicyGetterFailure.NotFound ->
-                                    [ PolicyReadFailure.ClosingRecordNotFound ]
-                                | PolicyGetterFailure.ParseFailure reasons ->
-                                    [ PolicyReadFailure.ClosingRecordParseFailure reasons ])
 
                         let priorClosingStepResult =
-                            match getPriorClosingStepResult pid with
-                            | Some (Ok stepResults) ->
-                                Ok (Some stepResults)
-                            | Some (Error (StepResultsGetterFailure.ParseFailure reasons)) ->
-                                Error [ PolicyReadFailure.PriorClosingStepResultsParseFailure reasons ]
-                            | None ->
-                                Ok None
+                            getPriorClosingStepResult pid
 
                         // TODO - There is undou 
                         match openingPolicyRecord, priorClosingStepResult, closingPolicyRecord with
@@ -135,14 +125,7 @@ module internal PolicyReader =
 
                 let newPolicyRecords =
                     newPolicyIds
-                    |> Seq.map (fun pid ->
-                        match getClosingPolicyRecord pid with
-                        | Ok policyRecord ->
-                            Ok (CohortedPolicyRecord.New policyRecord)
-                        | Error PolicyGetterFailure.NotFound ->
-                            Error [ PolicyReadFailure.ClosingRecordNotFound ]
-                        | Error (PolicyGetterFailure.ParseFailure reasons) ->
-                            Error [ PolicyReadFailure.ClosingRecordParseFailure reasons ])
+                    |> Seq.map (getClosingPolicyRecord >> Result.map CohortedPolicyRecord.New)
                     |> Seq.zip newPolicyIds
 
                 let combinedRequests =
@@ -156,7 +139,7 @@ module internal PolicyReader =
                     |> Array.map (fun pid -> combinedRequests[pid.Underlying])
             }
 
-    let internal closingOnlyReader<'TPolicyRecord, 'TStepResults>
+    let internal closingOnlyReader
         (closingPolicyGetter: IPolicyGetter<'TPolicyRecord>) newPolicyIds =
             backgroundTask {
                 let newPolicyIds' =
@@ -171,19 +154,17 @@ module internal PolicyReader =
                         newPolicyIds'
 
                 let getClosingPolicyRecord pid =
-                    Map.find pid closingPolicyRecords                                        
+                    match Map.tryFind pid closingPolicyRecords with
+                    | None ->
+                        Error [ PolicyReadFailure.ClosingRecordNotFound ]
+                    | Some (Ok record) ->
+                        Ok (CohortedPolicyRecord.New record)
+                    | Some (Error readerFailure) ->
+                        Error [ PolicyReadFailure.ClosingRecordReadFailure readerFailure ]
 
                 let newPolicyRecords =
                     newPolicyIds'
-                    |> Array.map (fun pid ->
-                        match getClosingPolicyRecord pid with
-                        | Ok policyRecord ->
-                            // Without the type hint, we cannot infer the step results type.
-                            Ok (CohortedPolicyRecord<'TPolicyRecord, 'TStepResults>.New policyRecord)
-                        | Error PolicyGetterFailure.NotFound ->
-                            Error [ PolicyReadFailure.ClosingRecordNotFound ]
-                        | Error (PolicyGetterFailure.ParseFailure reasons) ->
-                            Error [ PolicyReadFailure.ClosingRecordParseFailure reasons ])
+                    |> Array.map getClosingPolicyRecord
 
                 return newPolicyRecords
             }

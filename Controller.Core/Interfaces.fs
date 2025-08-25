@@ -16,17 +16,8 @@ Design Decision:
 *)
 
 
-[<RequireQualifiedAccess>]
-[<NoEquality; NoComparison>]
-type PolicyGetterFailure =
-    /// Indicates that, although the required record was found, it could
-    /// not be successfully parsed into a corresponding policy record object.
-    | ParseFailure of Reasons: string list
-    /// No record could be found with the requisite ID.
-    | NotFound
-
 type PolicyGetterOutcome<'TPolicyRecord> =
-    Result<'TPolicyRecord, PolicyGetterFailure>
+    Result<'TPolicyRecord, string list>
 
 // We could just use a simple function signature here. However,
 // if this needs to be disposable, easier if it's an interface.
@@ -39,17 +30,8 @@ type IPolicyGetter<'TPolicyRecord> =
     end
 
 
-[<RequireQualifiedAccess>]
-[<NoEquality; NoComparison>]
-type StepResultsGetterFailure =
-    /// Indicates that, although the required record was found, it could
-    /// not be successfully parsed into a corresponding policy record object.
-    | ParseFailure of Reasons: string list
-    // We don't consider a missing results record to be a failure as
-    // this could have been due to an evaluation error at that time.
-
 type StepResultsGetterOutcome<'TStepResults> =
-    Result<'TStepResults, StepResultsGetterFailure>
+    Result<'TStepResults, string list>
 
 // As above, using an interface allows IDisposable to be implemented if needed.
 type IStepResultsGetter<'TStepResults> =
@@ -66,17 +48,9 @@ type IStepResultsGetter<'TStepResults> =
 type PolicyReadFailure =
     | OpeningRecordNotFound
     | ClosingRecordNotFound
-    | OpeningRecordParseFailure             of Reasons: string list
-    | ClosingRecordParseFailure             of Reasons: string list
-    | PriorClosingStepResultsParseFailure   of Reasons: string list
-
-[<RequireQualifiedAccess>]
-[<NoEquality; NoComparison>]
-type PolicyWriteFailure =
-    // We don't have sight of the step header at this point.
-    // We'll have to settle for just the UID.
-    | DataStageWriteFailure     of DataStageUid: Guid * Reasons: string list 
-    | StepResultsWriteFailure   of StepUid: Guid * Reasons: string list
+    | OpeningRecordReadFailure             of Reasons: string list
+    | ClosingRecordReadFailure             of Reasons: string list
+    | PriorClosingStepResultsReadFailure   of Reasons: string list
 
 [<RequireQualifiedAccess>]
 [<NoEquality; NoComparison>]
@@ -84,8 +58,6 @@ type ProcessedPolicyFailure =
     // If we've got read failures, then we won't have actually evaluated anything!
     | ReadFailures of PolicyReadFailure list
     | EvaluationFailures of WalkEvaluationFailure list
-    // There can only be one of these failures.
-    | PolicyWriteFailure of PolicyWriteFailure
 
 [<NoEquality; NoComparison>]
 type ProcessedPolicyOutcome<'TPolicyRecord, 'TStepResults> =
@@ -94,10 +66,18 @@ type ProcessedPolicyOutcome<'TPolicyRecord, 'TStepResults> =
         WalkOutcome : Result<EvaluatedPolicyWalk<'TPolicyRecord, 'TStepResults>, ProcessedPolicyFailure>
     }
 
+
+[<NoEquality; NoComparison>]
+type WrittenOutputOutcome =
+    {
+        /// Indicates whether any failures have arisen SPECIFICALLY during the write process.
+        FailuresGenerated   : bool
+    }
+
 type IProcessedOutputWriter<'TPolicyRecord, 'TStepResults> =
     interface
         /// Only records which could be successfully found will be included in the map.
         abstract member WriteProcessedOutputAsync :
             ProcessedPolicyOutcome<'TPolicyRecord, 'TStepResults> array
-                -> Task<Unit>
+                -> Task<WrittenOutputOutcome array>
     end

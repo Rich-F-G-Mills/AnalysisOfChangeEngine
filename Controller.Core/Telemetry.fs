@@ -6,7 +6,7 @@ open AnalysisOfChangeEngine
 
 
 [<NoEquality; NoComparison>]
-type ApiRequestTelemetryData =
+type ApiRequestTelemetryEventData =
     {
         PolicyId            : string
         RequestorName       : string
@@ -18,23 +18,35 @@ type ApiRequestTelemetryData =
     }
 
 [<NoEquality; NoComparison>]
-type FailedPolicyReadTelemetryData =
+type RecordSubmittedTelemetryEventData =
     {
         PolicyId            : string
-        RequestSubmitted    : DateTime
-        DataStoreReadIdx    : int
-        DataStoreWriteIdx   : int
+        Timestamp           : DateTime
     }
 
 [<NoEquality; NoComparison>]
-type ProcessingCompletedTelemetryData =
+type PolicyReadTelemetryEventData =
     {
         PolicyId            : string
-        RequestSubmitted    : DateTime
+        DataStoreReadIdx    : int
+        HadFailures         : bool
+    }
+
+[<NoEquality; NoComparison>]
+type EvaluationCompletedTelemetryEventData =
+    {
+        PolicyId            : string
         EvaluationStart     : DateTime
         EvaluationEnd       : DateTime
-        DataStoreReadIdx    : int
+        HadFailures         : bool
+    }
+
+[<NoEquality; NoComparison>]
+type PolicyWriteTelemetryEventData =
+    {
+        PolicyId            : string
         DataStoreWriteIdx   : int
+        HadFailures         : bool
     }
 
 [<NoEquality; NoComparison>]
@@ -57,8 +69,10 @@ type DataStoreWriteEvent =
 [<RequireQualifiedAccess>]
 [<NoEquality; NoComparison>]
 type TelemetryEvent =
-    | ApiRequest            of ApiRequestTelemetryData
-    | FailedPolicyRead      of FailedPolicyReadTelemetryData
-    | ProcessingCompleted   of ProcessingCompletedTelemetryData
+    | ApiRequest            of ApiRequestTelemetryEventData
+    | RecordSubmitted       of RecordSubmittedTelemetryEventData
+    | PolicyRead            of PolicyReadTelemetryEventData
+    | EvaluationCompleted   of EvaluationCompletedTelemetryEventData
+    | PolicyWrite           of PolicyWriteTelemetryEventData
     | DataStoreRead         of DataStoreReadEvent
     | DataStoreWrite        of DataStoreWriteEvent

@@ -311,14 +311,14 @@ module internal RunStepDTO =
 type internal RunFailureTypeDTO =
     | OPENING_RECORD_NOT_FOUND
     | CLOSING_RECORD_NOT_FOUND
-    | OPENING_RECORD_PARSE_FAILURE
-    | CLOSING_RECORD_PARSE_FAILURE
+    | OPENING_RECORD_READ_FAILURE
+    | CLOSING_RECORD_READ_FAILURE
     | DATA_CHANGE_RECORD_FAILURE
     | VALIDATION_ABORTED
     | VALIDATION_FAILURE
     | API_CALL_FAILURE
     | API_CALCULATION_FAILURE
-    | PRIOR_CLOSING_STEP_RESULTS_PARSE_FAILURE
+    | PRIOR_CLOSING_STEP_RESULTS_READ_FAILURE
     | STEP_CONSTRUCTION_FAILURE 
     | STEP_RESULTS_WRITE_FAILURE
     | DATA_CHANGE_WRITE_FAILURE
@@ -381,17 +381,17 @@ module internal RunFailureDTO =
             |> Seq.collect (function
                 | PolicyReadFailure.OpeningRecordNotFound ->
                     seq { constructFrom' (None, RunFailureTypeDTO.OPENING_RECORD_NOT_FOUND) None }
-                | PolicyReadFailure.OpeningRecordParseFailure reasons ->
+                | PolicyReadFailure.OpeningRecordReadFailure reasons ->
                     reasons
-                    |> Seq.map (Some >> constructFrom' (None, RunFailureTypeDTO.OPENING_RECORD_PARSE_FAILURE))
+                    |> Seq.map (Some >> constructFrom' (None, RunFailureTypeDTO.OPENING_RECORD_READ_FAILURE))
                 | PolicyReadFailure.ClosingRecordNotFound ->
                     seq { constructFrom' (None, RunFailureTypeDTO.CLOSING_RECORD_NOT_FOUND) None }
-                | PolicyReadFailure.ClosingRecordParseFailure reasons ->
+                | PolicyReadFailure.ClosingRecordReadFailure reasons ->
                     reasons
-                    |> Seq.map (Some >> constructFrom' (None, RunFailureTypeDTO.CLOSING_RECORD_PARSE_FAILURE))
-                | PolicyReadFailure.PriorClosingStepResultsParseFailure reasons ->
+                    |> Seq.map (Some >> constructFrom' (None, RunFailureTypeDTO.CLOSING_RECORD_READ_FAILURE))
+                | PolicyReadFailure.PriorClosingStepResultsReadFailure reasons ->
                     reasons
-                    |> Seq.map (Some >> constructFrom' (None, RunFailureTypeDTO.PRIOR_CLOSING_STEP_RESULTS_PARSE_FAILURE)))
+                    |> Seq.map (Some >> constructFrom' (None, RunFailureTypeDTO.PRIOR_CLOSING_STEP_RESULTS_READ_FAILURE)))
 
         | ProcessedPolicyFailure.EvaluationFailures evaluationFailures ->
             evaluationFailures
@@ -418,17 +418,6 @@ module internal RunFailureDTO =
                     reasons
                     |> Seq.map (Some >>
                         constructFrom' (Some stepHdr.Uid, RunFailureTypeDTO.STEP_CONSTRUCTION_FAILURE)))
-
-        | ProcessedPolicyFailure.PolicyWriteFailure writeFailure ->
-            match writeFailure with
-            | PolicyWriteFailure.DataStageWriteFailure (stepUid, reasons) ->
-                reasons
-                |> Seq.map (Some >>
-                    constructFrom' (Some stepUid, RunFailureTypeDTO.DATA_CHANGE_WRITE_FAILURE))
-            | PolicyWriteFailure.StepResultsWriteFailure (stepUid, reasons) ->
-                reasons
-                |> Seq.map (Some >>
-                    constructFrom' (Some stepUid, RunFailureTypeDTO.STEP_RESULTS_WRITE_FAILURE))
 
     
 [<NoEquality; NoComparison>]
