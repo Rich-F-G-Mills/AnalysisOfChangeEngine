@@ -332,9 +332,14 @@ module AbstractDataStore =
                 // just the first.
                 >> Seq.traverseResultA (fun (dataStageUid, policyRecord) ->
                     result {                                                    
-                        let constructDataChangeWriteFailureCommands =
-                            Seq.map (constructDataStageWriteFailureDTO dataStageUid)
-                            >> Seq.map runFailureDispatcher.GetRowInsertBatchCommand
+                        let constructDataChangeWriteFailureCommands = function
+                            // If no reasons provided, then make sure None is passed to the DTO.
+                            | [] ->
+                                failwith "No reasons provided for data stage write failure."
+                            | reasons ->
+                                reasons
+                                |> Seq.map (constructDataStageWriteFailureDTO dataStageUid)                            
+                                |> Seq.map runFailureDispatcher.GetRowInsertBatchCommand
 
                         let! policyRecordDTO =
                             this.policyRecordToDTO policyRecord
@@ -363,9 +368,14 @@ module AbstractDataStore =
                             | StepDataSource.ClosingData ->
                                 closingDataStageUid
 
-                        let constructStepResultWriteFailureCommands =
-                            Seq.map (constructRunFailureDTO stepUid)
-                            >> Seq.map runFailureDispatcher.GetRowInsertBatchCommand
+                        let constructStepResultWriteFailureCommands = function
+                            // As above, make sure we pass in None if no reasons were provided.
+                            | [] ->
+                                failwith "No reasons provided for step write failure."
+                            | reasons ->
+                                reasons
+                                |> Seq.map (constructRunFailureDTO stepUid)
+                                |> Seq.map runFailureDispatcher.GetRowInsertBatchCommand
 
                         let stepResultsBaseDTO =
                             constructBaseStepResultDTO (stepUid, dataStageUsedDTO)
@@ -424,25 +434,21 @@ module AbstractDataStore =
                     policy_id           = policyId                
                 }
 
-            let constructDataStageWriteFailureDTO policyId stepUid reason =
+            let constructFailureDTO failureType policyId stepUid reason =
                 {
                     run_uid             = currentRunUid'
                     session_uid         = sessionUid'
                     step_uid            = Some stepUid
                     policy_id           = policyId
-                    failure_type        = RunFailureTypeDTO.DATA_CHANGE_WRITE_FAILURE
+                    failure_type        = failureType
                     reason              = Some reason                    
                 }
 
-            let constructStepResultsWriteFailureDTO policyId stepUid reason =
-                {
-                    run_uid             = currentRunUid'
-                    session_uid         = sessionUid'
-                    step_uid            = Some stepUid
-                    policy_id           = policyId
-                    failure_type        = RunFailureTypeDTO.STEP_RESULTS_WRITE_FAILURE
-                    reason              = Some reason                    
-                }
+            let constructDataStageWriteFailureDTO =
+                constructFailureDTO RunFailureTypeDTO.DATA_CHANGE_WRITE_FAILURE               
+
+            let constructStepResultsWriteFailureDTO =
+                constructFailureDTO RunFailureTypeDTO.STEP_RESULTS_WRITE_FAILURE
 
             let constructProcessingFailureDTO =
                 RunFailureDTO.constructFrom (currentRunUid', sessionUid')            

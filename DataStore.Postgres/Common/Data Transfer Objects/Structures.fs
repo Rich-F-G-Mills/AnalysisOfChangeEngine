@@ -319,7 +319,7 @@ type internal RunFailureTypeDTO =
     | API_CALL_FAILURE
     | API_CALCULATION_FAILURE
     | PRIOR_CLOSING_STEP_RESULTS_READ_FAILURE
-    | STEP_CONSTRUCTION_FAILURE 
+    | STEP_CONSTRUCTION_FAILURE
     | STEP_RESULTS_WRITE_FAILURE
     | DATA_CHANGE_WRITE_FAILURE
 
@@ -375,20 +375,29 @@ module internal RunFailureDTO =
                 reason = reason
             }
             
-        function 
+        function
+        | ProcessedPolicyFailure.ReadFailures [] ->
+            failwith "No reasons provided for read failure."
+
         | ProcessedPolicyFailure.ReadFailures readFailures ->
             readFailures
             |> Seq.collect (function
                 | PolicyReadFailure.OpeningRecordNotFound ->
-                    seq { constructFrom' (None, RunFailureTypeDTO.OPENING_RECORD_NOT_FOUND) None }
+                    seq { yield constructFrom' (None, RunFailureTypeDTO.OPENING_RECORD_NOT_FOUND) None }
+                | PolicyReadFailure.OpeningRecordReadFailure [] ->
+                    failwith "No reasons provided for opening record read failure."
                 | PolicyReadFailure.OpeningRecordReadFailure reasons ->
                     reasons
                     |> Seq.map (Some >> constructFrom' (None, RunFailureTypeDTO.OPENING_RECORD_READ_FAILURE))
                 | PolicyReadFailure.ClosingRecordNotFound ->
-                    seq { constructFrom' (None, RunFailureTypeDTO.CLOSING_RECORD_NOT_FOUND) None }
+                    seq { yield constructFrom' (None, RunFailureTypeDTO.CLOSING_RECORD_NOT_FOUND) None }
+                | PolicyReadFailure.ClosingRecordReadFailure [] ->
+                    failwith "No reasons provided for closing record read failure."
                 | PolicyReadFailure.ClosingRecordReadFailure reasons ->
                     reasons
                     |> Seq.map (Some >> constructFrom' (None, RunFailureTypeDTO.CLOSING_RECORD_READ_FAILURE))
+                | PolicyReadFailure.PriorClosingStepResultsReadFailure [] ->
+                    failwith "No reasons provided for prior closing step result read failure."
                 | PolicyReadFailure.PriorClosingStepResultsReadFailure reasons ->
                     reasons
                     |> Seq.map (Some >> constructFrom' (None, RunFailureTypeDTO.PRIOR_CLOSING_STEP_RESULTS_READ_FAILURE)))
@@ -396,24 +405,34 @@ module internal RunFailureDTO =
         | ProcessedPolicyFailure.EvaluationFailures evaluationFailures ->
             evaluationFailures
             |> Seq.collect (function
+                | WalkEvaluationFailure.ApiCalculationFailure (_, []) ->
+                    failwith "No reasons provided for API calculation failure."
                 | WalkEvaluationFailure.ApiCalculationFailure (requestorName, reasons) ->
                     reasons
                     |> Seq.map (sprintf "[%s] %s" requestorName >> Some >>
                         constructFrom' (None, RunFailureTypeDTO.API_CALCULATION_FAILURE))
+                | WalkEvaluationFailure.ApiCallFailure (_, []) ->
+                    failwith "No reasons provided for API call failure."
                 | WalkEvaluationFailure.ApiCallFailure (requestorName, reasons) ->
                     reasons
                     |> Seq.map (sprintf "[%s] %s" requestorName >> Some >>
                         constructFrom' (None, RunFailureTypeDTO.API_CALL_FAILURE))
+                | WalkEvaluationFailure.DataChangeFailure (_, []) ->
+                    failwith "No reasons provided for data change failure."
                 | WalkEvaluationFailure.DataChangeFailure (stepHdr, reasons) ->
                     reasons
                     |> Seq.map (Some >>
                         constructFrom' (Some stepHdr.Uid, RunFailureTypeDTO.DATA_CHANGE_RECORD_FAILURE))
+                | WalkEvaluationFailure.ValidationFailure (_, []) ->
+                    failwith "No reasons provided for validation failure."
                 | WalkEvaluationFailure.ValidationFailure (stepHdr, reasons) ->
                     reasons
                     |> Seq.map (Some >>
                         constructFrom' (Some stepHdr.Uid, RunFailureTypeDTO.VALIDATION_FAILURE))
                 | WalkEvaluationFailure.ValidationAborted (stepHdr, reason) ->
-                    seq { constructFrom' (Some stepHdr.Uid, RunFailureTypeDTO.VALIDATION_ABORTED) (Some reason) }
+                    seq { yield constructFrom' (Some stepHdr.Uid, RunFailureTypeDTO.VALIDATION_ABORTED) (Some reason) }
+                | WalkEvaluationFailure.StepConstructionFailure (_, []) ->
+                    failwith "No reasons provided for step construction failure."
                 | WalkEvaluationFailure.StepConstructionFailure (stepHdr, reasons) ->
                     reasons
                     |> Seq.map (Some >>

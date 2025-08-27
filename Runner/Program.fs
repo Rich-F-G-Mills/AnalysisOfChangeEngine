@@ -248,11 +248,11 @@ module Runner =
                             do fileStream.Write (Encoding.UTF8.GetBytes ",")),
                         (fun (exn: exn) ->
                             JsonSerializer.Serialize
-                                (fileStream, {| event = "loop_failure"; reason = exn.Message |}, jsonSerializerOptions)
+                                (fileStream, wrap {| event_type = "loop_failure"; reason = exn.Message |}, jsonSerializerOptions)
                             do onTelemetryComplete.SetResult ()),
                         (fun () ->
                             JsonSerializer.Serialize
-                                (fileStream, {| event = "session_end" |}, jsonSerializerOptions)
+                                (fileStream, wrap {| event_type = "session_end" |}, jsonSerializerOptions)
                             do onTelemetryComplete.SetResult ()))
 
             let someOutstandingRecords =

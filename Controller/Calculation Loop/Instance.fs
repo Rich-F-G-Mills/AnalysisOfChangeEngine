@@ -137,6 +137,8 @@ module CalculationLoop =
 
                 | { PolicyRecord = Error readFailures } as request ->
                     backgroundTask {
+                        do assert (not readFailures.IsEmpty)
+
                         return (OutputRequest.FailedPolicyRead {
                             PolicyId            = request.PolicyId
                             FailureReasons      = readFailures
@@ -162,14 +164,18 @@ module CalculationLoop =
                                         WalkOutcome = Ok evaluatedWalk
                                     }
 
-                                | Error evaluationFailure ->
+                                | Error evaluationFailures ->
+                                    do assert (not evaluationFailures.IsEmpty)
+
                                     {
                                         PolicyId    = request.PolicyId.Underlying
                                         WalkOutcome =
-                                            Error (ProcessedPolicyFailure.EvaluationFailures evaluationFailure)
+                                            Error (ProcessedPolicyFailure.EvaluationFailures evaluationFailures)
                                     }
 
                             | OutputRequest.FailedPolicyRead request ->
+                                do assert (not request.FailureReasons.IsEmpty)
+
                                 {
                                     PolicyId    = request.PolicyId.Underlying
                                     WalkOutcome =
@@ -278,12 +284,12 @@ module CalculationLoop =
                         if completedTask.Status = TaskStatus.Faulted then
                             do telemetrySubject.OnError (completedTask.Exception)
                         else
-                        // Note that this will be called regardless of why the writer block completed.
-                        // Completion could have occurred due to cancellation, an error, or normal completion.
-                        // Further more, the on completed notification below may be non-blocking depending
-                        // on what scheduler is being used. Suffice to say, if there is on-complete logic
-                        // that MUST be run, the user will have to handle that as part of their own logic.
-                        do telemetrySubject.OnCompleted ())
+                            // Note that this will be called regardless of why the writer block completed.
+                            // Completion could have occurred due to cancellation, an error, or normal completion.
+                            // Further more, the on completed notification below may be non-blocking depending
+                            // on what scheduler is being used. Suffice to say, if there is on-complete logic
+                            // that MUST be run, the user will have to handle that as part of their own logic.
+                            do telemetrySubject.OnCompleted ())
 
 
     type INewOnlyCalculationLoop<'TPolicyRecord> =

@@ -97,7 +97,7 @@ module internal PolicyReader =
                         | Error failures1, Ok _ ->
                             Error failures1
                         | Ok _, Error failures2 ->
-                            Error  failures2 )
+                            Error  failures2)
                     |> Seq.zip exitedPolicyIds
 
                 let remainingPolicyRecords =
