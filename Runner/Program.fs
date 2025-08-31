@@ -170,24 +170,19 @@ module Runner =
 
             do printfn "\n\n"
 
-            let openingPolicyGetter =
-                dataStore.CreatePolicyGetter priorExtractionUid
-
-            let priorClosingStepResultsGetter =
-                dataStore.CreateStepResultsGetter priorRunUid priorRun.ClosingStepUid
-
-            let closingPolicyGetter =
-                dataStore.CreatePolicyGetter currentExtractionUid
-
-            let evaluator =
-                Evaluator.create logger walk walk.ApiCollection
-
-            let outputWriter =
-                dataStore.CreateOutputWriter (currentRunUid, sessionUid)
-
             let calculationLoop =
-                createCalculationLoop
-                    (openingPolicyGetter, priorClosingStepResultsGetter, closingPolicyGetter, evaluator, outputWriter)
+                createCalculationLoop {
+                    OpeningPolicyReader =
+                        dataStore.CreatePolicyGetter priorExtractionUid
+                    ClosingPolicyReader =
+                        dataStore.CreatePolicyGetter currentExtractionUid
+                    PriorClosingStepResultReader =
+                        dataStore.CreateStepResultsGetter priorRunUid priorRun.ClosingStepUid
+                    WalkEvaluator =
+                        Evaluator.create logger walk walk.ApiCollection
+                    OutputWriter =
+                        dataStore.CreateOutputWriter (currentRunUid, sessionUid)
+                }
 
             use scheduler =
                 new EventLoopScheduler ()
@@ -195,7 +190,16 @@ module Runner =
             use fileStream =
                 new FileStream ($"""C:\Users\Millch\Documents\AnalysisOfChangeEngine\Results Viewer\TELEMETRY\{sessionUid.Value}.txt""", FileMode.Create)
 
-            do fileStream.Write (Encoding.UTF8.GetBytes "[")
+            use jsonWriter =
+                new Utf8JsonWriter (fileStream)
+
+            do jsonWriter.WriteStartArray ()
+
+            use _ =
+                { new IDisposable with
+                    member _.Dispose () =
+                        do jsonWriter.WriteEndArray ()
+                }
 
             let onTelemetryComplete =
                 new TaskCompletionSource ()
@@ -206,58 +210,51 @@ module Runner =
                         Serialization.JsonIgnoreCondition.WhenWritingNull
                 )
 
-            let wrap output =
-                {|
-                    run_uid     = currentRunUid.Value
-                    session_uid = sessionUid.Value
-                    data        = output
-                |}
+            let inline serialiseData data =
+                let wrappedData =
+                    {|
+                        run_uid     = currentRunUid.Value
+                        session_uid = sessionUid.Value
+                        data        = data
+                    |}
+
+                do JsonSerializer.Serialize
+                    (jsonWriter, wrappedData, jsonSerializerOptions) 
 
             let writeEvent = function
                 | TelemetryEvent.ApiRequest data ->
-                    do JsonSerializer.Serialize
-                        (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
+                    do serialiseData (JsonFormatter.format data)
                 | TelemetryEvent.RecordSubmitted data ->
-                    do JsonSerializer.Serialize
-                        (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
+                    do serialiseData (JsonFormatter.format data)
                 | TelemetryEvent.PolicyRead data ->
-                    do JsonSerializer.Serialize
-                        (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
+                    do serialiseData (JsonFormatter.format data)
                 | TelemetryEvent.EvaluationCompleted data ->
                     do printf "%s" (if data.HadFailures then "!" else ".")
-                    do JsonSerializer.Serialize
-                        (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
+                    do serialiseData (JsonFormatter.format data)
                 | TelemetryEvent.PolicyWrite data ->
-                    do JsonSerializer.Serialize
-                        (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
+                    do serialiseData (JsonFormatter.format data)
                 | TelemetryEvent.DataStoreRead data ->
                     do printf "R"
-                    do JsonSerializer.Serialize
-                        (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
+                    do serialiseData (JsonFormatter.format data)
                 | TelemetryEvent.DataStoreWrite data ->
                     do printf "W"
-                    do JsonSerializer.Serialize
-                        (fileStream, wrap <| JsonFormatter.format data, jsonSerializerOptions)
+                    do serialiseData (JsonFormatter.format data)
                     
             use _ =
                 calculationLoop.Telemetry
                     .ObserveOn(scheduler)
                     .Subscribe(
-                        (fun event ->
-                            do writeEvent event
-                            do fileStream.Write (Encoding.UTF8.GetBytes ",")),
+                        writeEvent,
                         (fun (exn: exn) ->
-                            JsonSerializer.Serialize
-                                (fileStream, wrap {| event_type = "loop_failure"; reason = exn.Message |}, jsonSerializerOptions)
+                            do serialiseData {| event_type = "loop_failure"; reason = exn.Message |}
                             do onTelemetryComplete.SetResult ()),
                         (fun () ->
-                            JsonSerializer.Serialize
-                                (fileStream, wrap {| event_type = "session_end" |}, jsonSerializerOptions)
+                            do serialiseData {| event_type = "session_end" |}
                             do onTelemetryComplete.SetResult ()))
 
             let someOutstandingRecords =
                 outstandingRecords
-                |> List.take 50
+                |> List.take 20
 
             let runner =
                 backgroundTask {
@@ -284,8 +281,6 @@ module Runner =
                 }
 
             do runner.Wait ()
-
-            do fileStream.Write (Encoding.UTF8.GetBytes "]")
 
             return 0
         }

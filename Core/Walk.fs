@@ -4,6 +4,7 @@ namespace AnalysisOfChangeEngine
 open System
 open System.Collections.Generic
 open System.Threading.Tasks
+open AnalysisOfChangeEngine.Common
 
 
 /// Automatically implemented by all walks. Allows for the extraction of
@@ -117,20 +118,20 @@ type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRe
 type WalkEvaluationFailure =
     /// Indicates that, although a response was received from the API,
     /// it failed either in part or in entirety.
-    | ApiCalculationFailure     of RequestorName: string    * Reasons: string list        
+    | ApiCalculationFailure     of RequestorName: string    * Reasons: string nonEmptyList        
     /// Indicates that an API call failed to execute. This would,
     /// for example, be the case if the API was not available.
-    | ApiCallFailure            of RequestorName: string    * Reasons: string list
+    | ApiCallFailure            of RequestorName: string    * Reasons: string nonEmptyList
     /// A data-change step could not successfully transform the policy record
     /// for a given step.
-    | DataChangeFailure         of StepHeader: IStepHeader  * Reasons: string list
+    | DataChangeFailure         of StepHeader: IStepHeader  * Reasons: string nonEmptyList
     /// Indicates that the validation logic was successfully applied with errors
     /// having been identified.
-    | ValidationFailure         of StepHeader: IStepHeader  * Reasons: string list
+    | ValidationFailure         of StepHeader: IStepHeader  * Reasons: string nonEmptyList
     /// Indicates that the validation logic was unable to run for a specified reason.
     | ValidationAborted         of StepHeader: IStepHeader  * Reason: string
     /// It was not possible to construct a step result for a given policy.
-    | StepConstructionFailure   of StepHeader: IStepHeader  * Reasons: string list
+    | StepConstructionFailure   of StepHeader: IStepHeader  * Reason: string
         
 type EvaluatedPolicyWalk<'TPolicyRecord, 'TStepResults> =
     {
@@ -143,7 +144,7 @@ type EvaluatedPolicyWalk<'TPolicyRecord, 'TStepResults> =
 // Either all steps succeed, or we return a list of failures.
 type EvaluatedPolicyWalkOutcome<'TPolicyRecord, 'TStepResults> =
     // This makes it explicit that we're only return internal data stages.
-    Result<EvaluatedPolicyWalk<'TPolicyRecord, 'TStepResults>, WalkEvaluationFailure list>
+    Result<EvaluatedPolicyWalk<'TPolicyRecord, 'TStepResults>, WalkEvaluationFailure nonEmptyList>
 
 
 /// Required interface for any implementation that can

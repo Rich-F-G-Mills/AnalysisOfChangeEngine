@@ -6,6 +6,7 @@ namespace AnalysisOfChangeEngine.Structures.PolicyRecords
 module OBWholeOfLife =
 
     open System
+    open AnalysisOfChangeEngine.Common
 
 
     [<RequireQualifiedAccess; NoComparison>]
@@ -124,5 +125,5 @@ module OBWholeOfLife =
 
             match validationFailures with
             | []    -> Ok (PolicyRecord r)
-            | _     -> Error validationFailures
+            | _     -> Error (NonEmptyList.ofList validationFailures)
          

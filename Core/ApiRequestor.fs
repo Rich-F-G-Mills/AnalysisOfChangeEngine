@@ -4,7 +4,10 @@ namespace AnalysisOfChangeEngine
 open System
 open System.Reflection
 open System.Threading.Tasks
+open AnalysisOfChangeEngine.Common
 
+
+// Again, we use that same strong typing approach here.
 
 [<NoEquality; NoComparison>]
 type RequestorName =
@@ -25,11 +28,11 @@ type OnApiRequestProcessingStart =
 [<NoEquality; NoComparison>]
 type ApiRequestFailure =
     /// Indicates that, although a response was received from the API,
-    /// it failed either in part or in entirety.
-    | CalculationFailure of Reasons: string list
+    /// it failed either in part or in its entirety.
+    | CalculationFailure of Reasons: string nonEmptyList
     /// Indicates that an API call failed to execute. This would,
     /// for example, be the case if the API was not available.
-    | CallFailure of Reasons: string list
+    | CallFailure of Reasons: string nonEmptyList
 
 /// Represents the outcome of an asynchronous execution
 /// performed by an IApiRequestor object,
@@ -46,11 +49,13 @@ Design Decision:
     abstract class, we can bake-in implementations for eqality and
     comparison operations.
 
-    Is it risk only considering the Name for this operations?
+    Is it risky to only consider the Name for this operations?
     TODO - Could reference equality be used for grouping oeprations?
 
-    Do NOT change this to IApiEndpoint. Again. The same endpoint could have
+    Do NOT change this to IApiEndpoint. Again! The same endpoint could have
     multiple requestors mapping to it. Calling it 'endpoint' would be misleading.
+    Furthermore, a single requestor could be using multiple endpoints behind
+    the scenes.
 *)
 
 /// Types implementing this interface provide an asynchronous way to submit a
@@ -58,7 +63,7 @@ Design Decision:
 [<AbstractClass>]
 type AbstractApiRequestor<'TPolicyRecord> () =
     /// Note that API requestors with the SAME NAME will be grouped together!
-    abstract member Name: string
+    abstract member Name: string with get
 
     /// Asyncronously submit a calculation request to the underlying end-point.
     abstract member ExecuteAsync:
@@ -118,6 +123,7 @@ module ApiRequestor =
 
 // This effectively allows us to peel away the generic API
 // response type from a wrapped API requestor.
+/// Not intended for direct developer use.
 type IWrappedApiRequestor<'TPolicyRecord> =
     interface
         abstract member UnderlyingRequestor:
@@ -129,7 +135,7 @@ type IWrappedApiRequestor<'TPolicyRecord> =
 Design Decision:
     We also need to track the possible API responses... We cannot use
     a vanilla type alias as it will complain about TResponse not actually getting used.
-    However, we have no such issue using a DU. Ultimately, this is just an API requestor
+    However, we have no such issue when using a DU. Ultimately, this is just an API requestor
     with some supplementary type information for intelli-sense purposes.
 *)
 /// Represents an API requestor which, via a "baked-in" generic type-parameter, provides

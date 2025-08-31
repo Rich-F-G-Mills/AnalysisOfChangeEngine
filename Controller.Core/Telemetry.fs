@@ -5,6 +5,8 @@ open System
 open AnalysisOfChangeEngine
 
 
+// Definitions of the various telemetry records as provided by the controller.
+
 [<NoEquality; NoComparison>]
 type ApiRequestTelemetryEventData =
     {

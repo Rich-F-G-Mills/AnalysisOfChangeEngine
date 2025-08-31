@@ -11,6 +11,7 @@ module AbstractDataStore =
     open Npgsql
     open FsToolkit.ErrorHandling
     open AnalysisOfChangeEngine
+    open AnalysisOfChangeEngine.Common
     open AnalysisOfChangeEngine.Controller
     open AnalysisOfChangeEngine.DataStore.Postgres.DataTransferObjects
 
@@ -69,10 +70,10 @@ module AbstractDataStore =
             RunFailureDTO.buildDispatcher
                 (schema, dataSource)
 
-        let openingDataStageUid =
+        static let openingDataStageUid =
             Guid("00000000-0000-0000-0000-000000000000")
 
-        let closingDataStageUid =
+        static let closingDataStageUid =
             Guid("FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF")
 
 
@@ -185,9 +186,9 @@ module AbstractDataStore =
 
         // --- STEP RESULTS ---
 
-        abstract member dtoToStepResults: 'TStepResultsDTO -> Result<'TStepResults, string list>
+        abstract member dtoToStepResults: 'TStepResultsDTO -> Result<'TStepResults, string nonEmptyList>
 
-        abstract member stepResultsToDTO: 'TStepResults -> Result<'TStepResultsDTO, string list>
+        abstract member stepResultsToDTO: 'TStepResults -> Result<'TStepResultsDTO, string nonEmptyList>
 
         member this.GetStepResultsAsync runUid stepUid policyIds =
             backgroundTask {
@@ -204,9 +205,9 @@ module AbstractDataStore =
 
         // --- POLICY DATA ---
 
-        abstract member dtoToPolicyRecord: 'TPolicyRecordDTO -> Result<'TPolicyRecord, string list>
+        abstract member dtoToPolicyRecord: 'TPolicyRecordDTO -> Result<'TPolicyRecord, string nonEmptyList >
 
-        abstract member policyRecordToDTO: 'TPolicyRecord -> Result<'TPolicyRecordDTO, string list>
+        abstract member policyRecordToDTO: 'TPolicyRecord -> Result<'TPolicyRecordDTO, string nonEmptyList>
 
         member this.GetPolicyRecordsAsync extractionUid policyIds =
             backgroundTask {
@@ -332,14 +333,9 @@ module AbstractDataStore =
                 // just the first.
                 >> Seq.traverseResultA (fun (dataStageUid, policyRecord) ->
                     result {                                                    
-                        let constructDataChangeWriteFailureCommands = function
-                            // If no reasons provided, then make sure None is passed to the DTO.
-                            | [] ->
-                                failwith "No reasons provided for data stage write failure."
-                            | reasons ->
-                                reasons
-                                |> Seq.map (constructDataStageWriteFailureDTO dataStageUid)                            
-                                |> Seq.map runFailureDispatcher.GetRowInsertBatchCommand
+                        let constructDataChangeWriteFailureCommands =
+                            Seq.map (constructDataStageWriteFailureDTO dataStageUid)                            
+                            >> Seq.map runFailureDispatcher.GetRowInsertBatchCommand
 
                         let! policyRecordDTO =
                             this.policyRecordToDTO policyRecord
@@ -368,14 +364,9 @@ module AbstractDataStore =
                             | StepDataSource.ClosingData ->
                                 closingDataStageUid
 
-                        let constructStepResultWriteFailureCommands = function
-                            // As above, make sure we pass in None if no reasons were provided.
-                            | [] ->
-                                failwith "No reasons provided for step write failure."
-                            | reasons ->
-                                reasons
-                                |> Seq.map (constructRunFailureDTO stepUid)
-                                |> Seq.map runFailureDispatcher.GetRowInsertBatchCommand
+                        let constructStepResultWriteFailureCommands = 
+                            Seq.map (constructRunFailureDTO stepUid)
+                            >> Seq.map runFailureDispatcher.GetRowInsertBatchCommand
 
                         let stepResultsBaseDTO =
                             constructBaseStepResultDTO (stepUid, dataStageUsedDTO)

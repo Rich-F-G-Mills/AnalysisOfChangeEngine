@@ -1,23 +1,23 @@
 ﻿
 namespace AnalysisOfChangeEngine.Controller
 
-open System
 open System.Threading.Tasks
 open AnalysisOfChangeEngine
+open AnalysisOfChangeEngine.Common
+
 
 (*
 Design Decision:
     Why doesn't all of this live within the top-level Core project?
-    Again, more of a philisophical decision, but I decides that anything
+    Again, more of a philisophical decision, but I decided that anything
     particular to the controller itself would sit outside of the top-level
     Core logic. Reason being is that there are a number of ways such a controller
     could actually be implemented. It didn't make sense to constrain it in any way.
     Arguably, the same "thinking" was applied to the location of telemtry related classes.
 *)
 
-
 type PolicyGetterOutcome<'TPolicyRecord> =
-    Result<'TPolicyRecord, string list>
+    Result<'TPolicyRecord, string nonEmptyList>
 
 // We could just use a simple function signature here. However,
 // if this needs to be disposable, easier if it's an interface.
@@ -31,7 +31,7 @@ type IPolicyGetter<'TPolicyRecord> =
 
 
 type StepResultsGetterOutcome<'TStepResults> =
-    Result<'TStepResults, string list>
+    Result<'TStepResults, string nonEmptyList>
 
 // As above, using an interface allows IDisposable to be implemented if needed.
 type IStepResultsGetter<'TStepResults> =
@@ -48,16 +48,16 @@ type IStepResultsGetter<'TStepResults> =
 type PolicyReadFailure =
     | OpeningRecordNotFound
     | ClosingRecordNotFound
-    | OpeningRecordReadFailure             of Reasons: string list
-    | ClosingRecordReadFailure             of Reasons: string list
-    | PriorClosingStepResultsReadFailure   of Reasons: string list
+    | OpeningRecordReadFailure             of Reasons: string nonEmptyList
+    | ClosingRecordReadFailure             of Reasons: string nonEmptyList
+    | PriorClosingStepResultsReadFailure   of Reasons: string nonEmptyList
 
 [<RequireQualifiedAccess>]
 [<NoEquality; NoComparison>]
 type ProcessedPolicyFailure =
     // If we've got read failures, then we won't have actually evaluated anything!
-    | ReadFailures of PolicyReadFailure list
-    | EvaluationFailures of WalkEvaluationFailure list
+    | ReadFailures of PolicyReadFailure nonEmptyList
+    | EvaluationFailures of WalkEvaluationFailure nonEmptyList
 
 [<NoEquality; NoComparison>]
 type ProcessedPolicyOutcome<'TPolicyRecord, 'TStepResults> =
@@ -76,7 +76,7 @@ type WrittenOutputOutcome =
 
 type IProcessedOutputWriter<'TPolicyRecord, 'TStepResults> =
     interface
-        /// Only records which could be successfully found will be included in the map.
+        /// For each array element provided, this MUST provide a corresponding element in the output array.
         abstract member WriteProcessedOutputAsync :
             ProcessedPolicyOutcome<'TPolicyRecord, 'TStepResults> array
                 -> Task<WrittenOutputOutcome array>

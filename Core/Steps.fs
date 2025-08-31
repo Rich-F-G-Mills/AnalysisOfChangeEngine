@@ -3,6 +3,7 @@ namespace AnalysisOfChangeEngine
 
 open System
 open FSharp.Quotations
+open AnalysisOfChangeEngine.Common
 
 
 [<AbstractClass>]
@@ -89,19 +90,16 @@ Design Decision:
 /// Represents the outcome of step validation logic.
 [<RequireQualifiedAccess; NoEquality; NoComparison>]
 type StepValidationOutcome =
-    /// Indicates that the validation logic was successfully applied, regardless of
-    /// whether this led to validation errors being recognised (or not).
-    | Completed of Errors: string list
+    /// Indicates that the validation logic was successfully applied without any issues.
+    | Completed
+    /// Indicates that the validation logic was successfully applied with resulting issues.
+    | CompletedWithIssues   of Reasons: string nonEmptyList
     /// Indicates that the validation logic was unable to run for a specified reason.
-    | Aborted of Reason: string
-
-    /// Alias for a completed validation without any issues raised.
-    static member val Empty =
-        Completed [] with get
+    | Aborted               of Reason: string
 
     /// Helper function that provides no validation at all.
     static member noValidator _ : StepValidationOutcome =
-        StepValidationOutcome.Completed []
+        StepValidationOutcome.Completed
 
 /// Step validator that receives the current policy record followed by
 /// the prior (where available) and current step results.
@@ -129,7 +127,7 @@ type AddNewRecordsStepValidator<'TPolicyRecord, 'TStepResults> =
 /// is returned, it is always assumed that a data change has occurred.
 type PolicyRecordChanger<'TPolicyRecord> =
     // Opening * Prior * Closing -> Optional Revised
-    'TPolicyRecord * 'TPolicyRecord * 'TPolicyRecord -> Result<'TPolicyRecord option, string list>
+    'TPolicyRecord * 'TPolicyRecord * 'TPolicyRecord -> Result<'TPolicyRecord option, string nonEmptyList>
 
 
 /// Required interface for any step that has a source definition.
@@ -302,4 +300,3 @@ type AddNewRecordsStep<'TPolicyRecord, 'TStepResults> =
         member this.Uid = this.Uid
         member this.Title = this.Title
         member this.Description = this.Description
-

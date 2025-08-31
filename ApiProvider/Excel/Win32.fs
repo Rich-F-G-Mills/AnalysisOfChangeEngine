@@ -11,8 +11,10 @@ module internal Win32 =
 
     let internal accessibleObjectFromWindow targetId clsid hWnd =
         match NativeBindings.Win32.AccessibleObjectFromWindow (hWnd, targetId, ref clsid) with
-        | HResultError err, _ -> Error err
-        | _, obj -> Ok obj
+        | HResultError err, _ ->
+            Error err
+        | _, obj ->
+            Ok obj
 
 
     let internal getClassName hWnd =

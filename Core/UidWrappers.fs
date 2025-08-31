@@ -12,6 +12,9 @@ Design Decision:
     used as a run UID. This should (!) reduce the chance of that happening.
     The YouTuber 'Coding Jesus' would be proud of this approach, which he
     refers to as 'strong typing'.
+
+    We don't count extraction UIDs as part of this as they are a construct
+    particular to the data-store being used.
 *)
 [<NoEquality; NoComparison>]
 type RunUid =
@@ -28,4 +31,3 @@ type StepUid =
     member this.Value =
         match this with
         | StepUid uid -> uid
-

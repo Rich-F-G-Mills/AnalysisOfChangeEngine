@@ -137,8 +137,6 @@ module CalculationLoop =
 
                 | { PolicyRecord = Error readFailures } as request ->
                     backgroundTask {
-                        do assert (not readFailures.IsEmpty)
-
                         return (OutputRequest.FailedPolicyRead {
                             PolicyId            = request.PolicyId
                             FailureReasons      = readFailures
@@ -165,8 +163,6 @@ module CalculationLoop =
                                     }
 
                                 | Error evaluationFailures ->
-                                    do assert (not evaluationFailures.IsEmpty)
-
                                     {
                                         PolicyId    = request.PolicyId.Underlying
                                         WalkOutcome =
@@ -174,8 +170,6 @@ module CalculationLoop =
                                     }
 
                             | OutputRequest.FailedPolicyRead request ->
-                                do assert (not request.FailureReasons.IsEmpty)
-
                                 {
                                     PolicyId    = request.PolicyId.Underlying
                                     WalkOutcome =
@@ -304,12 +298,32 @@ module CalculationLoop =
         abstract member PostAsync   : ExitedPolicyId       -> Task<bool>
         abstract member PostAsync   : RemainingPolicyId    -> Task<bool>
 
+
+    [<NoEquality; NoComparison>]
+    type ClosingOnlyCalculationLoopConfiguration<'TPolicyRecord, 'TStepResults> =
+        {
+            PriorClosingPolicyReader    : IPolicyGetter<'TPolicyRecord>
+            WalkEvaluator               : IPolicyWalkEvaluator<'TPolicyRecord, 'TStepResults>
+            OutputWriter                : IProcessedOutputWriter<'TPolicyRecord, 'TStepResults>
+        }
+
+    [<NoEquality; NoComparison>]
+    type CalculationLoopConfiguration<'TPolicyRecord, 'TStepResults> =
+        {
+            OpeningPolicyReader             : IPolicyGetter<'TPolicyRecord>
+            PriorClosingStepResultReader    : IStepResultsGetter<'TStepResults>
+            ClosingPolicyReader             : IPolicyGetter<'TPolicyRecord>
+            WalkEvaluator                   : IPolicyWalkEvaluator<'TPolicyRecord, 'TStepResults>
+            OutputWriter                    : IProcessedOutputWriter<'TPolicyRecord, 'TStepResults>
+        }
+
     
-    let createClosingOnlyCalculationLoop<'TPolicyRecord, 'TStepResults>
-        (closingPolicyGetter, walkEvaluator, outputWriter) =
+    /// Create a calculation loop that can only process new policies.
+    let createClosingOnlyCalculationLoop
+        (config: ClosingOnlyCalculationLoopConfiguration<'TPolicyRecord, 'TStepResults>) =
             let calcLoop =
                 new CalculationLoop<'TPolicyRecord, 'TStepResults>
-                    (None, None, closingPolicyGetter, walkEvaluator, outputWriter)
+                    (None, None, config.PriorClosingPolicyReader, config.WalkEvaluator, config.OutputWriter)
 
             {
                 new INewOnlyCalculationLoop<'TPolicyRecord> with
@@ -326,11 +340,13 @@ module CalculationLoop =
                         with get() = calcLoop.Completion
             }
 
-    let createCalculationLoop<'TPolicyRecord, 'TStepResults>
-        (openingPolicyReader, priorClosingStepResultGetter, closingPolicyGetter, walkEvaluator, outputWriter) =
+    /// Create a calculation loop that can process all cohorts of policy.
+    let createCalculationLoop
+        (config: CalculationLoopConfiguration<'TPolicyRecord, 'TStepResults>) =
             let calcLoop =
                 new CalculationLoop<'TPolicyRecord, 'TStepResults>
-                    (Some openingPolicyReader, Some priorClosingStepResultGetter, closingPolicyGetter, walkEvaluator, outputWriter)
+                    (Some config.OpeningPolicyReader, Some config.PriorClosingStepResultReader,
+                     config.ClosingPolicyReader, config.WalkEvaluator, config.OutputWriter)
 
             {
                 new ICalculationLoop<'TPolicyRecord> with

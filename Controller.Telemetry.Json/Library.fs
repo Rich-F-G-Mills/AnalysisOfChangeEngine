@@ -4,6 +4,8 @@ namespace AnalysisOfChangeEngine.Controller.Telemetry
 open AnalysisOfChangeEngine
 
 
+/// Provides some helper methods for formatting telemetry event data into
+/// something that can be (more) easily serialized to JSON.
 [<AbstractClass; Sealed>]
 type JsonFormatter private () =
     

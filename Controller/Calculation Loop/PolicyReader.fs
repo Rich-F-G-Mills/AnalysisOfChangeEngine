@@ -6,13 +6,8 @@ namespace AnalysisOfChangeEngine.Controller.CalculationLoop
 module internal PolicyReader =
 
     open FsToolkit.ErrorHandling
+    open AnalysisOfChangeEngine.Common
     open AnalysisOfChangeEngine.Controller
-
-
-    let private combineErrors x y =
-        Result.either (fun _ -> List.empty) id x
-        |> List.append (Result.either (fun _ -> List.empty) id y)
-        |> Error
 
 
     let internal openingAndClosingReader
@@ -23,15 +18,18 @@ module internal PolicyReader =
             backgroundTask {
                 let exitedPolicyIds =
                     policyIds
-                    |> Array.choose (function | CohortedPolicyId.Exited pid -> Some pid | _ -> None)
+                    |> Array.choose (function
+                        | CohortedPolicyId.Exited pid -> Some pid | _ -> None)
 
                 let remainingPolicyIds =
                     policyIds
-                    |> Array.choose (function | CohortedPolicyId.Remaining pid -> Some pid | _ -> None)
+                    |> Array.choose (function
+                        | CohortedPolicyId.Remaining pid -> Some pid | _ -> None)
 
                 let newPolicyIds =
                     policyIds
-                    |> Array.choose (function | CohortedPolicyId.New pid -> Some pid | _ -> None)                
+                    |> Array.choose (function
+                        | CohortedPolicyId.New pid -> Some pid | _ -> None)                
 
                 let openingPolicyIds =
                     exitedPolicyIds
@@ -56,20 +54,20 @@ module internal PolicyReader =
                 let getOpeningPolicyRecord pid =
                     match Map.tryFind pid openingPolicyRecords with
                     | None ->
-                        Error [ PolicyReadFailure.OpeningRecordNotFound ]
+                        Error (nonEmptyList { yield PolicyReadFailure.OpeningRecordNotFound })
                     | Some (Ok record) ->
                         Ok record
-                    | Some (Error readerFailure) ->
-                        Error [ PolicyReadFailure.OpeningRecordReadFailure readerFailure ]
+                    | Some (Error readerFailures) ->
+                        Error (nonEmptyList { yield PolicyReadFailure.OpeningRecordReadFailure readerFailures })
 
                 let getClosingPolicyRecord pid =
                     match Map.tryFind pid closingPolicyRecords with
                     | None ->
-                        Error [ PolicyReadFailure.ClosingRecordNotFound ]
+                        Error (nonEmptyList { yield PolicyReadFailure.ClosingRecordNotFound })
                     | Some (Ok record) ->
                         Ok record
-                    | Some (Error readerFailure) ->
-                        Error [ PolicyReadFailure.ClosingRecordReadFailure readerFailure ]
+                    | Some (Error readerFailures) ->
+                        Error (nonEmptyList { yield PolicyReadFailure.ClosingRecordReadFailure readerFailures })
 
                 let getPriorClosingStepResult pid =
                     match Map.tryFind pid priorClosingStepResults with
@@ -78,7 +76,7 @@ module internal PolicyReader =
                     | Some (Ok stepResults) ->
                         Ok (Some stepResults)
                     | Some (Error failure) ->
-                        Error [ PolicyReadFailure.PriorClosingStepResultsReadFailure failure ]
+                        Error (nonEmptyList { yield PolicyReadFailure.PriorClosingStepResultsReadFailure failure })
 
                 let exitedPolicyRecords =
                     exitedPolicyIds
@@ -92,12 +90,11 @@ module internal PolicyReader =
                         match openingRecord, priorClosingStepResults with
                         | Ok policyRecord, Ok priorClosingStepResults' ->
                             Ok (CohortedPolicyRecord.Exited (policyRecord, priorClosingStepResults'))
+                        | Error failures, Ok _
+                        | Ok _, Error failures ->
+                            Error failures
                         | Error failures1, Error failures2 ->
-                            Error (failures1 @ failures2)
-                        | Error failures1, Ok _ ->
-                            Error failures1
-                        | Ok _, Error failures2 ->
-                            Error  failures2)
+                            Error (failures1 .@ failures2))
                     |> Seq.zip exitedPolicyIds
 
                 let remainingPolicyRecords =
@@ -112,15 +109,21 @@ module internal PolicyReader =
                         let priorClosingStepResult =
                             getPriorClosingStepResult pid
 
-                        // TODO - There is undou 
+                        // TODO - There is undoubtedly a better way of doing this. However,
+                        // having to combine multiple non-empty lists does add _some_ complexity.
                         match openingPolicyRecord, priorClosingStepResult, closingPolicyRecord with
                         | Ok openingPolicyRecord', Ok priorClosingStepResult', Ok closingPolicyRecord' ->
                             Ok (CohortedPolicyRecord.Remaining (openingPolicyRecord', closingPolicyRecord', priorClosingStepResult'))
-                        | _ ->
-                            Error List.empty
-                            |> combineErrors openingPolicyRecord
-                            |> combineErrors priorClosingStepResult
-                            |> combineErrors closingPolicyRecord)
+                        | Error failures, Ok _, Ok _
+                        | Ok _, Error failures, Ok _
+                        | Ok _, Ok _, Error failures ->
+                            Error failures
+                        | Error failures1, Error failures2, Ok _
+                        | Error failures1, Ok _, Error failures2
+                        | Ok _, Error failures1, Error failures2 ->
+                            Error (failures1 .@ failures2)
+                        | Error failures1, Error failures2, Error failures3 ->
+                            Error (failures1 .@ failures2 .@ failures3))
                     |> Seq.zip remainingPolicyIds
 
                 let newPolicyRecords =
@@ -156,11 +159,11 @@ module internal PolicyReader =
                 let getClosingPolicyRecord pid =
                     match Map.tryFind pid closingPolicyRecords with
                     | None ->
-                        Error [ PolicyReadFailure.ClosingRecordNotFound ]
+                        Error (nonEmptyList { yield  PolicyReadFailure.ClosingRecordNotFound })
                     | Some (Ok record) ->
                         Ok (CohortedPolicyRecord.New record)
                     | Some (Error readerFailure) ->
-                        Error [ PolicyReadFailure.ClosingRecordReadFailure readerFailure ]
+                        Error (nonEmptyList { yield PolicyReadFailure.ClosingRecordReadFailure readerFailure })
 
                 let newPolicyRecords =
                     newPolicyIds'
@@ -168,4 +171,3 @@ module internal PolicyReader =
 
                 return newPolicyRecords
             }
-

@@ -1,8 +1,8 @@
 ﻿
 namespace AnalysisOfChangeEngine.Controller.CalculationLoop
 
-open System
 open AnalysisOfChangeEngine
+open AnalysisOfChangeEngine.Common
 open AnalysisOfChangeEngine.Controller
 
 
@@ -30,21 +30,21 @@ type internal CohortedPolicyRecord<'TPolicyRecord, 'TStepResults> =
 type internal PolicyEvaluationRequest<'TPolicyRecord, 'TStepResults> =
     {
         PolicyId            : CohortedPolicyId
-        PolicyRecord        : Result<CohortedPolicyRecord<'TPolicyRecord, 'TStepResults>, PolicyReadFailure list>
+        PolicyRecord        : Result<CohortedPolicyRecord<'TPolicyRecord, 'TStepResults>, PolicyReadFailure nonEmptyList>
     }
 
 [<NoEquality; NoComparison>]
 type internal OutputFailedPolicyReadRequest =
     {
         PolicyId            : CohortedPolicyId
-        FailureReasons      : PolicyReadFailure list
+        FailureReasons      : PolicyReadFailure nonEmptyList
     }
 
 [<NoEquality; NoComparison>]
 type internal OutputCompletedEvaluationRequest<'TPolicyRecord, 'TStepResults> =
     {
         PolicyId            : CohortedPolicyId
-        WalkOutcome         : Result<EvaluatedPolicyWalk<'TPolicyRecord, 'TStepResults>, WalkEvaluationFailure list>
+        WalkOutcome         : Result<EvaluatedPolicyWalk<'TPolicyRecord, 'TStepResults>, WalkEvaluationFailure nonEmptyList>
     }
 
 [<RequireQualifiedAccess>]

@@ -140,7 +140,8 @@ module Dispatcher =
                         // primitive types (eg. int, bool, ...)
                         match excelValue with
                             | _ when app.WorksheetFunction.IsError excelValue ->
-                                Error (ApiRequestFailure.CalculationFailure [ "Value not available." ])
+                                Error (ApiRequestFailure.CalculationFailure
+                                    (nonEmptyList { yield "Value not available." }))
 
                             | :? float32 when pi.PropertyType = typeof<float32> ->
                                 Ok excelValue
@@ -155,7 +156,7 @@ module Dispatcher =
                             | _ when pi.PropertyType = typeof<float32> ->
                                 Error
                                     (ApiRequestFailure.CalculationFailure
-                                        [ "Unable to cast value to float32." ])
+                                        (nonEmptyList { yield "Unable to cast value to float32." }))
 
                             | _ ->
                                 // If we're here, the developer has done something daft and
@@ -178,8 +179,12 @@ module Dispatcher =
                             // we encounter.
                             |> Array.traverseResultA outputReader
                             |> function
-                                Ok results ->
+                                | Ok results ->
                                     Ok results
+
+                                // By definition, this array CANNOT be empty!
+                                | Error [||] ->
+                                    failwith "Unexpected empty failure array."
 
                                 | Error failures ->
                                     // We need to convert an array of failures into a single
@@ -192,7 +197,8 @@ module Dispatcher =
                                             | _ ->
                                                 // This should not/cannot happen!
                                                 failwith "Unexpected failure.")
-                                        |> Seq.toList
+                                        // In theory, this SHOULD never fail!
+                                        |> NonEmptyList.ofSeq
 
                                     Error (ApiRequestFailure.CalculationFailure combinedReasons)
 
@@ -225,7 +231,8 @@ module Dispatcher =
                         // course of business.
                         if not (bufferBlock.Post newCalcRequest) then
                             do tcs.SetResult 
-                                (Error (ApiRequestFailure.CallFailure [ "Unable to submit Excel request." ]))
+                                (Error (ApiRequestFailure.CallFailure
+                                    (nonEmptyList { yield "Unable to submit Excel request." })))
 
                         tcs.Task
             }

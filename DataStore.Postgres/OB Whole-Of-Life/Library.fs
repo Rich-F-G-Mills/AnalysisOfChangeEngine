@@ -159,6 +159,7 @@ module OBWholeOfLife =
             |> Seq.map (fun tc -> tc.table_code, tc)
             |> Map.ofSeq
 
+        // TODO - Will only return the first error encountered pre-validation. Can be improved?
         override _.dtoToPolicyRecord policyRecord =
             result {
                 let firstLife: OBWholeOfLife.LifeData =
@@ -182,15 +183,15 @@ module OBWholeOfLife =
                         Ok (OBWholeOfLife.LivesBasis.JointLife (firstLife, secondLife, int joint_val_age'))
 
                     | _ ->
-                        Error [ "Invalid combination of life data provided." ]
+                        Error (nonEmptyList { yield "Invalid combination of life data provided." })
 
                 let! isTaxable =
                     tableCodes
                     |> Map.tryFind policyRecord.table_code
                     |> Option.map _.is_taxable
                     // Defer allocation of a string list if possible!
-                    |> Result.requireSomeWith (fun _ ->
-                         [ sprintf "Table code %s not found in table_codes." policyRecord.table_code ])
+                    |> Result.requireSomeWith (fun _ -> nonEmptyList {
+                        yield sprintf "Table code %s not found in table_codes." policyRecord.table_code })
 
                 let rawPolicyRecord: OBWholeOfLife.RawPolicyRecord =
                     {                

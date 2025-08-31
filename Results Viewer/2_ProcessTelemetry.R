@@ -7,40 +7,36 @@ telemetryEvents <-
     path = "C:\\Users\\Millch\\Documents\\AnalysisOfChangeEngine\\Results Viewer\\TELEMETRY",
     regexp = '(?i)txt'
   ) |>
-  purrr::map(readr::read_file) |>
-  purrr::map(
-    stringr::str_split,
-    pattern =
-      stringr::regex('(?<=\\})(?=\\{)')
-  ) |>
-  unlist() |>
-  purrr::map(jsonlite::fromJSON) |>
+  unname() |>
+  purrr::map(jsonlite::read_json) |>
+  purrr::list_flatten() |>
   purrr::map(purrr::list_flatten, name_spec = '{inner}') |>
-  purrr::map(dplyr::as_tibble) |>
-  purrr::map_dfr(tidyr::nest, .by = event_type) |>
+  purrr::map(tibble::as_tibble) |>
+  purrr::map_dfr(tidyr::nest, .by = 'event_type', .key = 'data') |>
   dplyr::group_by(event_type) |>
-  dplyr::group_map(
-    function (df, eventType) {
-      eventType <-
-          as.character(eventType)
-      
-      df <-
-        df |>
-        tidyr::unnest(col = data) |>
-        dplyr::filter(
-          run_uid == params$currentRunUid,
-          session_uid %in% sessionUids
-        ) |>
-        dplyr::mutate(
-          dplyr::across(
-            tidyselect::ends_with(c('_submitted', '_start', '_end')),
-            lubridate::as_datetime
-          )
-        )
-      
-      tibble::lst(!!eventType := df)
-    }) |>
-  purrr::list_flatten()
+  dplyr::group_split() |>
+  purrr::map(tidyr::unnest, cols = data) |>
+  purrr::map(dplyr::filter, run_uid == params$currentRunUid) |>
+  purrr::map(
+    dplyr::mutate,
+    dplyr::across(
+      tidyselect::ends_with(c('start', 'end', 'submitted')),
+      lubridate::as_datetime
+    )
+  )
+
+telemetryEvents <-
+  telemetryEvents |>
+  purrr::set_names(
+    telemetryEvents |>
+      purrr::map_chr(
+        \(x) dplyr::first(x$event_type)
+      )
+  ) |>
+  purrr::map(
+    dplyr::select,
+    -event_type
+  )
 
 formatDateTimes <-
   function (df) {
@@ -74,25 +70,8 @@ dataStoreWrites <-
     file = 'OUTPUTS/DATA_STORE_WRITES.CSV'
   )
 
-completedProcessing <-
-  telemetryEvents$processing_completed |>
-  dplyr::left_join(
-    dataStoreReads,
-    by =
-      c('data_store_read_idx' = 'idx', 'run_uid', 'session_uid')
-  ) |>
-  dplyr::left_join(
-    dataStoreWrites,
-    by =
-      c('data_store_write_idx' = 'idx', 'run_uid', 'session_uid')
-  ) |>
-  formatDateTimes() %T>%
-  readr::write_csv(
-    file = 'OUTPUTS/COMPLETED_PROCESSING.CSV'
-  )
-
 evaluationConcurrency <-
-  telemetryEvents$processing_completed |>
+  telemetryEvents$evaluation_completed |>
   dplyr::transmute(
     run_uid,
     session_uid,
@@ -100,7 +79,7 @@ evaluationConcurrency <-
     change = 1L
   ) |>
   dplyr::bind_rows(
-    telemetryEvents$processing_completed |>
+    telemetryEvents$evaluation_completed |>
       dplyr::transmute(
         run_uid,
         session_uid,

@@ -1,41 +1,86 @@
 ﻿
 module internal Program =
 
-    type NonEmptyList<'T> =
-        | SingleItem of 'T
-        | MultipleItems of 'T * NonEmptyList<'T>
-
-    let inline (||.) x y = 
-        MultipleItems (x, y)
-
-    [<RequireQualifiedAccess>]
-    module NonEmptyList =
-
-        let inline singleton x =
-            SingleItem x
+    open FSharp.Quotations
 
 
-    type NonEmptyListBuilder () =
-        member _.Yield (x) = SingleItem x
-        member _.Delay (x) = x()
-        member _.Combine (x, y) =
-            match x with
-            | SingleItem x' ->
-                MultipleItems (x', y)
-            | _ ->
-                failwith "Unexpected error."
+    type IVariable<'T> =
+        interface end
 
-    let nonEmptyList =
-        new NonEmptyListBuilder ()
+
+    [<Sealed>]
+    type TimeIndependentVariable<'TParams, 'TProduct, 'T> (x: Expr<'TParams -> 'TProduct -> 'T>) =
+        interface IVariable<'T>
+
+        member val Definition =
+            x
+
+
+    [<Sealed>]
+    type AccrualVariable<'TParams, 'TProduct, 'T> (x: Expr<'TParams -> 'TProduct -> AccrualVariable<'TParams, 'TProduct, 'T> -> 'T>) =
+        interface IVariable<'T>
+
+        member _.PriorValue: AccrualVariable<'TParams, 'TProduct, 'T> =
+            failwith "Unreachable code."
+
+        member val Definition =
+            x
+
+
+    let inline v (_: IVariable<'T>) =
+        Unchecked.defaultof<'T>
+
+
+    [<AbstractClass>]
+    type BaseProduct<'TParams, 'TProduct> () =
+        member _.timeIndependentVariable x =
+            new TimeIndependentVariable<'TParams, 'TProduct, _> (x)
+
+        member _.accrualVariable x =
+            new AccrualVariable<'TParams, 'TProduct, _> (x)
+
+    type ProdParams =
+        {
+            IntRate: float
+        }
+
+
+    type MyProduct () as P =
+        inherit BaseProduct<ProdParams, MyProduct> ()
+
+        member val paramI =
+            P.timeIndependentVariable <@
+                fun pars _ -> 0.5 * pars.IntRate
+            @>
+
+        member val paramS =
+            P.accrualVariable <@
+                fun pars thisProd thisVar -> 
+                    v(thisVar.PriorValue) + v(thisProd.paramI) + v(thisProd.paramT) * pars.IntRate
+            @>
+
+        member val paramT =
+            P.timeIndependentVariable <@
+                fun pars thisProd -> v(thisProd.paramI) * 2.0 + pars.IntRate
+            @>
 
 
     [<EntryPoint>]
     let main _ =
         
-        let myList: NonEmptyList<string> =
-            nonEmptyList {
-                yield "x"
-            } 
+        let myProduct =
+            new MyProduct ()
+
+        do printfn "%A" myProduct.paramS.Definition
+
+        let vMI =
+            match <@ v @> with
+            | Patterns.Lambda(_, Patterns.Call (_, mi, _)) ->
+                mi.GetGenericMethodDefinition ()
+            | _ ->
+                failwith "Unexpected pattern."
+
+        do printfn "%A" vMI
 
         0
     

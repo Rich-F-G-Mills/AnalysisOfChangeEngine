@@ -226,16 +226,17 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
 
             Validator = function
                 | (_, Some _, _) when config.IgnoreOpeningMismatches ->
-                    StepValidationOutcome.Empty
+                    StepValidationOutcome.Completed
 
                 | (_, Some beforeResults, afterResults) when beforeResults.IsCloseTo afterResults ->                        
-                    StepValidationOutcome.Empty
+                    StepValidationOutcome.Completed
 
                 | (_, Some _, _) ->                            
-                    StepValidationOutcome.Completed [ "Regression mis-match." ]
+                    StepValidationOutcome.CompletedWithIssues
+                        (nonEmptyList { yield "Regression mis-match." })
 
                 | (_, None, _) when config.IgnoreOpeningMismatches ->
-                    StepValidationOutcome.Empty
+                    StepValidationOutcome.Completed
 
                 | (_, None, _) ->
                     StepValidationOutcome.Aborted "No opening results for comparison."
@@ -290,13 +291,14 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                 Validator = function
                     // TODO - May need to add some kind of tolerance here.
                     | (_, beforeResults, afterResults) when beforeResults.IsCloseTo afterResults ->                        
-                        StepValidationOutcome.Empty
+                        StepValidationOutcome.Completed
 
                     | _ ->
                     //| (_, beforeResults, afterResults) ->
                         //do printfn "\n\n-----------------\n%A\n-----------------\n%A\n\n" beforeResults afterResults
 
-                        StepValidationOutcome.Completed [ "Mismatch between opening position in AoC logic." ]
+                        StepValidationOutcome.CompletedWithIssues 
+                            (nonEmptyList { yield  "Mismatch between opening position in AoC logic." })
             }
         )          
 

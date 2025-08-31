@@ -45,10 +45,12 @@ module Evaluator =
                 acc
             // Have just received our first error.
             | Ok _, requestor, Error failure ->
-                Error [ failureMapper requestor failure ]
+                Error (nonEmptyList { yield failureMapper requestor failure })
             // Have just recieved yet another (!) error.
             | Error failures, requestor, Error failure ->
-                Error ((failureMapper requestor failure)::failures)
+                Error (nonEmptyList {
+                        yield failureMapper requestor failure
+                        yield! failures })
 
 
     // This creates an executor for a list of steps, in the order provided.
@@ -210,7 +212,9 @@ module Evaluator =
                     let! newRecordForDataStage =
                         dcs.DataChanger (openingPolicyRecord, priorPolicyRecord, closingPolicyRecord)
                         |> Result.mapError (fun reasons ->
-                            [ WalkEvaluationFailure.DataChangeFailure (dcs, reasons) ])
+                            nonEmptyList {
+                                yield WalkEvaluationFailure.DataChangeFailure (dcs, reasons)
+                            })
 
                     let recordToPassOn =
                         newRecordForDataStage
@@ -341,12 +345,12 @@ module Evaluator =
                 // results... Why run validation? We would expect prior results to be available, even
                 // if we're ignoring them here.
                 | None, Some _, :? DataChangeStep<'TPolicyRecord, 'TStepResults> ->
-                    StepValidationOutcome.Empty
+                    StepValidationOutcome.Completed
                 | Some policyRecordForPriorStage', Some priorStepResults', (:? DataChangeStep<'TPolicyRecord, 'TStepResults> as hdr) ->
                     hdr.Validator (policyRecordForPriorStage', priorStepResults', policyRecordForStage, currentStepResults)
                 // Same situation as for the data change steps above.
                 | None, Some _, :? MoveToClosingDataStep<'TPolicyRecord, 'TStepResults> ->
-                    StepValidationOutcome.Empty
+                    StepValidationOutcome.Completed
                 // Same situation as for the data change steps above.
                 | Some policyRecordForPriorStage', Some priorStepResults', (:? MoveToClosingDataStep<'TPolicyRecord, 'TStepResults> as hdr) ->
                     hdr.Validator (policyRecordForPriorStage', priorStepResults', policyRecordForStage, currentStepResults)                
@@ -358,10 +362,10 @@ module Evaluator =
                 // why run validation for a remaining record? There's no guarantee whether
                 // there will have been a prior stage or not. Hence, cannot restrict prior data.
                 | _, Some _, :? AddNewRecordsStep<'TPolicyRecord, 'TStepResults> ->
-                    StepValidationOutcome.Empty
+                    StepValidationOutcome.Completed
                 // As per the opening re-run step, there is no prior stage and hence no corresponding data.
                 | None, Some _, :? RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> ->
-                    StepValidationOutcome.Empty
+                    StepValidationOutcome.Completed
                 // We do NOT want a catch-all here. In the event another step type gets introduced,
                 // I want this to explicitly fail... At least at runtime!
                 | _ ->
@@ -370,19 +374,19 @@ module Evaluator =
             // We now need to move between our world of possible validation issues to
             // the world of evaluation failures.
             match stepValidationOutcome, xs with
-            | StepValidationOutcome.Completed [], [] ->
+            | StepValidationOutcome.Completed, [] ->
                 // No issues and nothing else left to validate within this stage.
                 None
-            | StepValidationOutcome.Completed [], xs ->
+            | StepValidationOutcome.Completed, xs ->
                 // No issues, so carry on.
                 tryFindValidationFailureWithinProfileStage<_, _, 'TApiCollection>
                     (policyRecordForPriorStage, policyRecordForStage, Some currentStepResults) xs
-            | StepValidationOutcome.Completed issues, _ ->
+            | StepValidationOutcome.CompletedWithIssues issues, _ ->
                 // We have some issues, so return them.
-                Some [ WalkEvaluationFailure.ValidationFailure (hdr, issues) ]
+                Some (nonEmptyList { yield WalkEvaluationFailure.ValidationFailure (hdr, issues) })
             | StepValidationOutcome.Aborted reason, _ ->
                 // We have an aborted validation, so return it.
-                Some [ WalkEvaluationFailure.ValidationAborted (hdr, reason) ]
+                Some (nonEmptyList { yield WalkEvaluationFailure.ValidationAborted (hdr, reason) })
 
         | [] ->
             None
@@ -391,7 +395,7 @@ module Evaluator =
     // Short-hand as type inference is sometimes struggling.
     type private DataStageEvaluator<'TPolicyRecord, 'TStepResults> =
         ('TPolicyRecord * (RequestorName -> OnApiRequestProcessingStart))
-            -> Task<Result<'TStepResults list, WalkEvaluationFailure list>>
+            -> Task<Result<'TStepResults list, WalkEvaluationFailure nonEmptyList>>
 
 
     // Note that priorStepResults is for the prior step, NOT the prior stage. Not to say
@@ -441,7 +445,7 @@ module Evaluator =
     // A short-hand alias used when type inference struggles.
     type private ProfileEvaluator<'TPolicyRecord, 'TStepResults when 'TPolicyRecord: equality> =
         'TPolicyRecord * 'TStepResults option * 'TPolicyRecord list * (StepDataSource -> RequestorName -> OnApiRequestProcessingStart) -> 
-            Task<Result<(StepDataSource * 'TStepResults) list, WalkEvaluationFailure list>>
+            Task<Result<(StepDataSource * 'TStepResults) list, WalkEvaluationFailure nonEmptyList>>
 
 
     let private createRemainingPolicyEvaluator<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRecord: equality>
@@ -620,7 +624,7 @@ module Evaluator =
                         openingReRunStep.Validator (policyRecord, priorClosingStepResults, stepResults)
 
                     match validationOutcome with
-                    | StepValidationOutcome.Completed [] ->
+                    | StepValidationOutcome.Completed ->
                         let evaluationOutcome : EvaluatedPolicyWalk<'TPolicyRecord, _> =
                             {
                                 InteriorDataChanges =
@@ -633,13 +637,13 @@ module Evaluator =
 
                         return evaluationOutcome
 
-                    | StepValidationOutcome.Completed issues ->
-                        return! Error [ WalkEvaluationFailure.ValidationFailure
-                            (openingReRunStepHdr, issues) ]
+                    | StepValidationOutcome.CompletedWithIssues issues ->
+                        return! Error (nonEmptyList {
+                            yield WalkEvaluationFailure.ValidationFailure (openingReRunStepHdr, issues) })
 
                     | StepValidationOutcome.Aborted reason ->
-                        return! Error [ WalkEvaluationFailure.ValidationAborted
-                            (openingReRunStepHdr, reason) ]
+                        return! Error (nonEmptyList {
+                            yield WalkEvaluationFailure.ValidationAborted (openingReRunStepHdr, reason) })
                 }
 
     // Note the comments for the exited policy evaluator above.
