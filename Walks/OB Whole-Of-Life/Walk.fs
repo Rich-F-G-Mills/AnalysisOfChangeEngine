@@ -193,7 +193,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
 
     // --- CONTROL CREATION ---
 
-    static member create (logger, config) =
+    static member create logger config =
         result {
             return new Walk (logger, config)
         }

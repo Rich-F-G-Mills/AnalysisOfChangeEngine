@@ -107,18 +107,15 @@ module Runner =
                 new Postgres.OBWholeOfLife.DataStore (sessionContext, dataSource)
 
             let stepUidResolver =
-                dataStore.CreateStepUidResolver ()
+                dataStore.CreateStepUidResolver ()                
 
-            let walkConfig: OBWholeOfLife.WalkConfiguration =
-                {
+            let! walk =
+                OBWholeOfLife.Walk.create logger {
                     StepFactory             = new StepFactory (stepUidResolver)
                     IgnoreOpeningMismatches = true
                     OpeningRunDate          = Some openingRunDate
                     ClosingRunDate          = closingRunDate
                 }
-
-            let! walk =
-                OBWholeOfLife.Walk.create (logger, walkConfig)
 
             //let priorRunUid =
             //    dataStore.CreateRun ("Monthly MI", None, None, openingRunDate, priorExtractionUid, walk)
@@ -254,7 +251,7 @@ module Runner =
 
             let someOutstandingRecords =
                 outstandingRecords
-                |> List.take 20
+                |> List.take 1_000
 
             let runner =
                 backgroundTask {

@@ -1,0 +1,407 @@
+---
+title: "Monthly Payouts MI - OB WoL"
+output: html_document
+params:
+  run_uid: "40b70255-1c18-488f-821c-492a2835c810"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+```
+
+```{css}
+.table.compact td {
+  padding: 1px
+}
+
+.table th {
+  background-color: silver
+}
+```
+
+```{r get_step_headers, include=FALSE}
+db_common <-
+  DBI::dbConnect(
+    RPostgres::Postgres(),
+    dbname = 'analysis_of_change', 
+    host = 'localhost',
+    port = 5432L,
+    user = 'postgres',
+    password = 'internet',
+    options = '-c search_path=common'
+  )
+
+step_headers <-
+  dplyr::tbl(db_common, 'step_headers') |>
+  dplyr::collect()
+
+DBI::dbDisconnect(db_common)
+```
+
+```{r make_db_connection, include=FALSE}
+db_ob_wol <-
+  DBI::dbConnect(
+    RPostgres::Postgres(),
+    dbname = 'analysis_of_change', 
+    host = 'localhost',
+    port = 5432L,
+    user = 'postgres',
+    password = 'internet',
+    options = '-c search_path=ob_wol'
+  )
+
+local({
+  hook_old <-
+    knitr::knit_hooks$get("document")
+  
+  knitr::knit_hooks$set(
+    document =
+      function(x) {
+        message ("Closing DB connection.")
+        
+        DBI::dbDisconnect(db_ob_wol)
+        
+        hook_old(x)
+      }
+  )
+})
+
+knitr::opts_chunk$set(connection = 'db_ob_wol')
+
+# Force load dependencies for these icons.
+shiny::icon('arrow-up')
+```
+
+```{r all_run_headers, include=FALSE}
+all_run_headers <-
+  dplyr::tbl(db_ob_wol, 'run_headers') |>
+  dplyr::collect()
+```
+
+```{r run_details, include=FALSE}
+run_details <-
+  local({
+    current_run_header <-
+      all_run_headers |>
+      dplyr::filter(
+        run_uid == params$run_uid
+      )
+    
+    prior_run_header <-
+      all_run_headers |>
+      dplyr::filter(
+        run_uid == current_run_header$prior_run_uid
+      )
+    
+    list(
+      run_uid =
+        params$run_uid,
+      opening_run_date =
+        prior_run_header$closing_run_date,
+      closing_run_date =
+        current_run_header$closing_run_date,
+      prior_run_uid =
+        prior_run_header$run_uid,
+      current_data_extraction_uid =
+        current_run_header$policy_data_extraction_uid,
+      prior_data_extraction_uid =
+        prior_run_header$policy_data_extraction_uid,
+      prior_closing_run_step_uid =
+        prior_run_header$closing_step_uid
+    )
+  })
+```
+
+```{r current_run_steps, include=FALSE}
+current_run_steps <-
+  dplyr::tbl(db_ob_wol, 'run_steps') |>
+  dplyr::filter(
+    run_uid == params$run_uid
+  ) |>
+  dplyr::collect() |>
+  dplyr::mutate(
+    step_idx =
+      as.integer(step_idx)
+  ) |>
+  dplyr::select(
+    -run_uid
+  )
+```
+
+```{r policy_tracing, include=FALSE}
+policy_tracing <-
+  dplyr::tbl(db_ob_wol, 'policy_tracing') |>
+  dplyr::filter(
+    run_uid == params$run_uid
+  ) |>
+  dplyr::collect() |>
+  dplyr::mutate(
+    cohort =
+      as.character(cohort)
+  ) |>
+  dplyr::select(
+    -run_uid
+  )
+```
+
+This note shows an analysis of change for in-force payouts between `r run_details$opening_run_date` and `r run_details$closing_run_date`.
+
+### Policy Tracing
+
+The table below shows the processing statuses of all policy records within scope for this period. Note that this does not reflect the availability of any results from the prior closing position (where available).
+
+```{r tracing_summary}
+local({
+  count_summary <-
+    policy_tracing |>
+    dplyr::count(
+      cohort,
+      all_steps_run,
+      had_failure,
+      name = 'count'
+    ) |>
+    tidyr::complete(
+      tidyr::nesting(
+        all_steps_run,
+        had_failure
+      ),
+      cohort =
+        # Make sure we have all the cohorts we're expecting.
+        c('EXITED', 'REMAINING', 'NEW'),
+      fill =
+        list(count = 0L)
+    ) |>
+    tidyr::pivot_wider(
+      names_from = cohort,
+      values_from = count
+    ) |>
+    dplyr::left_join(
+      tibble::tribble(
+        ~all_steps_run, ~had_failure, ~policy_state, ~text_colour,
+        FALSE, FALSE, 'Not run', 'black',
+        FALSE, TRUE,  'Run with failures', 'red',
+        TRUE,  FALSE, 'Run without failures', 'seagreen',
+        TRUE, TRUE,   'UNEXPECTED! - Please investigate', 'red'
+      ),
+      by =
+        c('all_steps_run', 'had_failure')
+    )
+  
+  count_summary |>
+    dplyr::select(
+      policy_state,
+      EXITED,
+      REMAINING,
+      NEW
+    ) |>
+    janitor::adorn_totals(
+      where =
+        c('row', 'col')
+    ) |>
+    dplyr::mutate(
+      Total =
+        as.integer(Total)
+    ) |>
+    janitor::clean_names(
+      case = 'title'
+    ) |>
+    dplyr::mutate(
+      dplyr::across(
+        dplyr::where(is.integer),
+        scales::label_comma(accuracy = 1L)
+      )
+    ) |>
+    knitr::kable(
+      format = 'html',
+      align = c('r', 'c', 'c', 'c', 'c')
+    ) |>
+    kableExtra::kable_styling(
+      full_width = FALSE,
+      position = 'left'
+    ) |>
+    kableExtra::row_spec(
+      row = nrow(count_summary) + 1L,
+      bold = TRUE,
+      background = '#f2f2f2'
+    ) |>
+    kableExtra::column_spec(
+      column = 2L:5L,
+      color = c(count_summary$text_colour, 'black')
+    ) |>
+    kableExtra::column_spec(
+      column = 5L,
+      bold = TRUE,
+      background = '#f2f2f2'
+    )
+})
+```
+
+### Aggregate Results
+
+The table below reflects only those records run with**out** failures as indicated in the tracing section above. Note that all steps will be
+shown regardless of whether any corresponding results are available.
+
+```{r totals_summary}
+local({
+  available_totals <-
+    dplyr::tbl(db_ob_wol, 'curated_step_results') |>
+    dplyr::filter(
+      run_uid == params$run_uid
+    ) |>
+    dplyr::summarise(
+      policy_count =
+        dplyr::n(),
+      total_unsmoothed_asset_share =
+        sum(unsmoothed_asset_share),
+      total_smoothed_asset_share =
+        sum(smoothed_asset_share),
+      total_surrender_benefit =
+        sum(surrender_benefit),
+      total_death_benefit =
+        sum(death_benefit),
+      # Bring through the idx as used for the join further below.
+      .by = c(step_idx, step_uid)
+    ) |>
+    dplyr::collect() |>
+    dplyr::mutate(
+      step_idx =
+        as.integer(step_idx),
+      policy_count =
+        # Without this, we get issues when formatting with commas later on.
+        as.integer(policy_count)
+    )
+  
+  up_icon <-
+    shiny::icon('arrow-up', style = "color: green") |>
+    as.character()
+  
+  down_icon <-
+    shiny::icon('arrow-down', style = "color: red") |>
+    as.character()
+  
+  right_icon <-
+    shiny::icon('arrow-right', style = "color: #ffdb99") |>
+    as.character()
+  
+  # Our starting point is all the steps as recorded against the run header.
+  # Note that this will NOT include the prior closing step. This is
+  # because it has no step UID and hence will be dropped from
+  # the following join.
+  current_run_steps |>
+    dplyr::select(
+      step_idx,
+      step_uid
+    ) |>
+    # This join will highlight any unexpected gaps!
+    dplyr::left_join(
+      available_totals,
+      by = c('step_idx', 'step_uid')
+    ) |>
+    # Now we bring in the prior closing results. We want to
+    # show a row for this step regardless.
+    dplyr::bind_rows(
+      tibble::tibble(
+        step_idx = 0L,
+        step_uid = NA_character_
+      ) |>
+      dplyr::left_join(
+        available_totals,
+        by = 'step_idx'
+      )
+    ) |>
+    tidyr::pivot_longer(
+      cols =
+        c(
+          policy_count,
+          tidyselect::starts_with('total')
+        )
+    ) |>
+    # Otherwise our consecutive differences will be wrong.
+    dplyr::arrange(
+      step_idx
+    ) |>
+    dplyr::mutate(
+      change =
+        c(NA_real_, diff(value)),
+      .by = name
+    ) |>
+    dplyr::mutate(
+      change_icon =
+        dplyr::case_when(
+          is.na(change) ~ '',
+          abs(change) < 1.0 ~ right_icon,
+          change < 0.0 ~ down_icon,
+          change > 0.0 ~ up_icon
+        )
+    ) |>
+    dplyr::select(
+      -change
+    ) |>
+    dplyr::mutate(
+      value =
+        scales::comma(value, accuracy = 1L)
+    ) |>
+    tidyr::unite(
+      'value',
+      c(change_icon, value),
+      sep = ' ',
+      remove = TRUE
+    ) |>
+    tidyr::pivot_wider(
+      names_from = name,
+      values_from = value
+    ) |>
+    dplyr::arrange(
+      step_idx
+    ) |>
+    # Bring over the title for each step we've encountered.
+    dplyr::left_join(
+      step_headers |>
+        dplyr::select(
+          step_uid,
+          title
+        ),
+      by = 'step_uid'
+    ) |>
+    dplyr::mutate(
+      # We won't have a title for the prior closing step.
+      title =
+        dplyr::if_else(
+          step_idx == 0L,
+          'Prior Closing',
+          title
+        )
+    ) |>
+    dplyr::select(
+      step_idx,
+      title,
+      policy_count,
+      tidyr::starts_with('total')
+    ) |>
+    janitor::clean_names(
+      case = 'title'
+    ) |>
+    knitr::kable(
+      format = 'html',
+      align = c('c', 'r', 'r', 'r', 'r', 'r', 'r'),
+      escape = FALSE
+    ) |>
+    kableExtra::kable_styling(
+      htmltable_class = 'table compact',
+      position = 'left'
+    ) |>
+    # Avoids the word-wrap for our step titles.
+    kableExtra::column_spec(
+      column = 2L, width = '250px'
+    ) |>
+    kableExtra::column_spec(
+      column = 1L:2L,
+      background = '#f2f2f2'
+    )
+})
+```
+
+### Telemetry
+
