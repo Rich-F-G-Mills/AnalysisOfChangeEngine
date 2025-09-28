@@ -60,24 +60,21 @@ module Runner =
         result {
             let logger =
                 createLogger LogLevel.DEBUG
-
-            let today =
-                DateOnly.FromDateTime DateTime.Now
             
             let closingRunDate =
                 new DateOnly (2025, 2, 1)
 
-            let priorRunUid =
-                RunUid (Guid "1368816c-979e-4fde-8e0d-73e8d4f9b8de")
+            //let priorRunUid =
+            //    RunUid (Guid "1368816c-979e-4fde-8e0d-73e8d4f9b8de")
 
             let currentRunUid =
                 RunUid (Guid "40b70255-1c18-488f-821c-492a2835c810")
 
-            let priorExtractionUid =
-                ExtractionUid (Guid "3f1a56c8-9d23-42d7-a5b1-874f01b87e1f")
+            //let priorExtractionUid =
+            //    ExtractionUid (Guid "3f1a56c8-9d23-42d7-a5b1-874f01b87e1f")
 
-            let currentExtractionUid =
-                ExtractionUid (Guid "d49cb0ab-79e9-4b39-bc0d-47ae8b19e092")
+            //let currentExtractionUid =
+            //    ExtractionUid (Guid "d49cb0ab-79e9-4b39-bc0d-47ae8b19e092")
 
             let sessionUid =
                 SessionUid (Guid.NewGuid ())
@@ -123,25 +120,26 @@ module Runner =
             //let currentRunUid =
             //    dataStore.CreateRun ("Monthly MI", None, Some priorRunUid, closingRunDate, currentExtractionUid, walk)
 
-            let! priorRun =
-                dataStore.TryGetRunHeader priorRunUid
-                |> Result.requireSome "Unable to locate prior run header."
-
-            let! currentRun =
+            let! currentRunHeader =
                 dataStore.TryGetRunHeader currentRunUid
                 |> Result.requireSome "Unable to locate current run header."
+
+            let! priorRunHeader =
+                currentRunHeader.PriorRunUid
+                |> Option.bind dataStore.TryGetRunHeader 
+                |> Result.requireSome "Unable to locate prior run header."
 
             do printf "\n\nRetrieving outstanding records... "
 
             let! outstandingRecords =
-                dataStore.TryGetOutstandingRecords currentRun.RunUid {
+                dataStore.TryGetOutstandingRecords currentRunHeader.RunUid {
                     ReRunFailedCases = true
                 }
             
             do printfn "%i\n\n" outstandingRecords.Length
 
-            do printfn "Opening run UID: %O" priorRun.RunUid.Value
-            do printfn "Closing run UID: %O\n\n" currentRun.RunUid.Value
+            do printfn "Opening run UID: %O" priorRunHeader.RunUid.Value
+            do printfn "Closing run UID: %O\n\n" currentRunHeader.RunUid.Value
             do printfn "Session UID    : %O\n\n" sessionUid.Value
 
             do printfn "Steps: (%i found)" (walk.AllSteps |> Seq.length)
@@ -170,11 +168,11 @@ module Runner =
             let calculationLoop =
                 createCalculationLoop {
                     OpeningPolicyReader =
-                        dataStore.CreatePolicyGetter priorExtractionUid
+                        dataStore.CreatePolicyGetter priorRunHeader.PolicyDataExtractionUid
                     ClosingPolicyReader =
-                        dataStore.CreatePolicyGetter currentExtractionUid
+                        dataStore.CreatePolicyGetter currentRunHeader.PolicyDataExtractionUid
                     PriorClosingStepResultReader =
-                        dataStore.CreateStepResultsGetter priorRunUid priorRun.ClosingStepUid
+                        dataStore.CreateStepResultsGetter priorRunHeader.RunUid priorRunHeader.ClosingStepUid
                     WalkEvaluator =
                         Evaluator.create logger walk walk.ApiCollection
                     OutputWriter =
@@ -185,7 +183,7 @@ module Runner =
                 new EventLoopScheduler ()
 
             use fileStream =
-                new FileStream ($"""C:\Users\Millch\Documents\AnalysisOfChangeEngine\Results Viewer\TELEMETRY\{sessionUid.Value}.txt""", FileMode.Create)
+                new FileStream ($"""C:\Users\Millch\Documents\AnalysisOfChangeEngine\Results Viewer\TELEMETRY\{sessionUid.Value}.json""", FileMode.Create)
 
             use jsonWriter =
                 new Utf8JsonWriter (fileStream)
@@ -207,12 +205,13 @@ module Runner =
                         Serialization.JsonIgnoreCondition.WhenWritingNull
                 )
 
-            let inline serialiseData data =
+            let inline serialiseData (eventType, eventData) =
                 let wrappedData =
                     {|
                         run_uid     = currentRunUid.Value
                         session_uid = sessionUid.Value
-                        data        = data
+                        event_type  = eventType
+                        event_data  = eventData
                     |}
 
                 do JsonSerializer.Serialize
@@ -243,15 +242,15 @@ module Runner =
                     .Subscribe(
                         writeEvent,
                         (fun (exn: exn) ->
-                            do serialiseData {| event_type = "loop_failure"; reason = exn.Message |}
+                            do serialiseData ("loop_failure", {| reason = exn.Message |})
                             do onTelemetryComplete.SetResult ()),
                         (fun () ->
-                            do serialiseData {| event_type = "session_end" |}
+                            do serialiseData ("session_end", {| |})
                             do onTelemetryComplete.SetResult ()))
 
             let someOutstandingRecords =
                 outstandingRecords
-                |> List.take 1_000
+                //|> List.take 100
 
             let runner =
                 backgroundTask {

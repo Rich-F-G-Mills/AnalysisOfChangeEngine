@@ -151,7 +151,8 @@ module AbstractDataStore =
 
             for idx, step in List.indexed allWalkSteps
                 do runStepDispatcher.InsertRow
-                    { run_uid = newUid; step_idx = int16 idx; step_uid = step.Uid }
+                    // The zero idx corresponds to the prior closing position which we don't run here.
+                    { run_uid = newUid; step_idx = int16 (idx + 1); step_uid = step.Uid }
 
             RunUid newUid
 

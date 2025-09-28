@@ -177,6 +177,8 @@ module CalculationLoop =
                                 }
                         )
 
+                    // TODO - Should we add in a short-circuit just in case
+                    // we've been passed an empty array?
                     let! writerOutcomes =
                         outputWriter.WriteProcessedOutputAsync processedOutputs
 

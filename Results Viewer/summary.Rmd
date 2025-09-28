@@ -19,25 +19,36 @@ knitr::opts_chunk$set(message = FALSE)
 .table th {
   background-color: silver
 }
+
+h3 {
+  text-decoration: underline;
+  margin-top: 40px
+}
 ```
 
 ```{r get_step_headers, include=FALSE}
-db_common <-
-  DBI::dbConnect(
-    RPostgres::Postgres(),
-    dbname = 'analysis_of_change', 
-    host = 'localhost',
-    port = 5432L,
-    user = 'postgres',
-    password = 'internet',
-    options = '-c search_path=common'
-  )
-
 step_headers <-
-  dplyr::tbl(db_common, 'step_headers') |>
-  dplyr::collect()
+  local({
+    db_common <-
+      DBI::dbConnect(
+        RPostgres::Postgres(),
+        dbname = 'analysis_of_change', 
+        host = 'localhost',
+        port = 5432L,
+        user = 'postgres',
+        password = 'internet',
+        options = '-c search_path=common'
+      )
+    
+    step_headers <-
+      dplyr::tbl(db_common, 'step_headers') |>
+      dplyr::collect()
+    
+    DBI::dbDisconnect(db_common)
+    
+    step_headers
+  })
 
-DBI::dbDisconnect(db_common)
 ```
 
 ```{r make_db_connection, include=FALSE}
@@ -95,6 +106,19 @@ run_details <-
         run_uid == current_run_header$prior_run_uid
       )
     
+    session_uids <-
+      dplyr::tbl(db_ob_wol, 'curated_step_results') |>
+      dplyr::filter(
+        run_uid == params$run_uid,
+        # Ignore the session UID for the prior closing step which
+        # will be NULL anyway.
+        step_idx > 0L
+      ) |>
+      dplyr::distinct(
+        session_uid
+      ) |>
+      dplyr::collect()
+    
     list(
       run_uid =
         params$run_uid,
@@ -109,7 +133,9 @@ run_details <-
       prior_data_extraction_uid =
         prior_run_header$policy_data_extraction_uid,
       prior_closing_run_step_uid =
-        prior_run_header$closing_step_uid
+        prior_run_header$closing_step_uid,
+      session_uids =
+        session_uids
     )
   })
 ```
@@ -343,6 +369,7 @@ local({
       value =
         scales::comma(value, accuracy = 1L)
     ) |>
+    # TODO - Could be done using a glue statement instead?
     tidyr::unite(
       'value',
       c(change_icon, value),
@@ -405,3 +432,66 @@ local({
 
 ### Telemetry
 
+```{r load_telemetry, include=FALSE}
+telemetry_data <-
+  local({
+    telemetry_files <-
+      tibble::tibble(
+        file_path =
+          fs::dir_ls(
+            path = 'TELEMETRY/', type = 'file', regexp = '(?i)json$'
+          ),
+        file_name =
+          file_path |>
+            fs::path_file() |>
+            fs::path_ext_remove() 
+      ) |>
+      dplyr::semi_join(
+        run_details$session_uids,
+        by =
+          c('file_name' = 'session_uid')
+      )
+    
+    data <-
+      telemetry_files$file_path |>
+      purrr::map(readr::read_file) |>
+      purrr::map(jsonlite::parse_json) |>
+      purrr::list_flatten(
+        name_spec = 'event'
+      ) |>
+      purrr::map(purrr::list_flatten, name_spec = '{inner}') |>
+      purrr::map(tibble::as_tibble) |>
+      purrr::map_dfr(
+        tidyr::nest,
+        .by = c(run_uid, session_uid, event_type),
+        .key = 'event_data'
+      ) |>
+      dplyr::select(
+        -run_uid
+      ) |>
+      dplyr::group_by(event_type) |>
+      dplyr::group_split() |>
+      purrr::map(tidyr::unnest, event_data) |>
+      purrr::map(
+        dplyr::mutate,
+        dplyr::across(
+          dplyr::ends_with(
+            c('submitted', 'start', 'end')
+          ),
+          lubridate::as_datetime
+        )
+      )
+    
+    data |>
+      purrr::set_names(
+        data |>
+          purrr::map_chr(
+            \(x) dplyr::first(x$event_type)
+          )
+      ) |>
+      purrr::map(
+        dplyr::select,
+        -event_type
+      )
+  })
+```

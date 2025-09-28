@@ -80,6 +80,8 @@ type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRe
 
 
         // We only permit source change steps at this point.
+        // We don't call this 'PostClosing' as one of these post new record steps COULD be
+        // the closing step for this walk.
         member this.registerPostNewRecordsStep (step: SourceChangeStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>) =
             do _postNewRecordsSteps.Add step
             step

@@ -225,6 +225,11 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                     } : OBWholeOfLife.StepResults @>
 
             Validator = function
+                | (_, None, _) ->
+                    // If the results aren't available... They aren't available!
+                    // No sensible reason to raise an issue/abort just for this.
+                    StepValidationOutcome.Completed
+
                 | (_, Some _, _) when config.IgnoreOpeningMismatches ->
                     StepValidationOutcome.Completed
 
@@ -234,12 +239,6 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                 | (_, Some _, _) ->                            
                     StepValidationOutcome.CompletedWithIssues
                         (nonEmptyList { yield "Regression mis-match." })
-
-                | (_, None, _) when config.IgnoreOpeningMismatches ->
-                    StepValidationOutcome.Completed
-
-                | (_, None, _) ->
-                    StepValidationOutcome.Aborted "No opening results for comparison."
         }    
 
     override val RemoveExitedRecords =

@@ -1,0 +1,37 @@
+---
+title: "d3_test"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+```
+
+```{=html}
+<script src="https://d3js.org/d3.v7.min.js"/>
+
+<svg id="canvas" width="600" height="200"/>
+```
+
+```{js}
+const data =
+  [25, 30, 20]
+
+const svg =
+  d3.select('#canvas')
+
+const circles =
+  svg.selectAll('circle')
+
+circles
+  .data(data)
+  .enter()
+    .append('circle')
+    .attr('cx', (_, i) => { return 40 + i*30 })
+    .attr('cy', 50)
+    .attr('r', (d) => { return d/2 })
+    .attr('fill', 'green')
+```
