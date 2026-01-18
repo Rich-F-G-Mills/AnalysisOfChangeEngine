@@ -87,16 +87,19 @@ module ExcelApi =
         type ExcelStepRelatedInputs =
             {
                 [<ExcelRangeAlias("INPUT_OPENING_CALC_DATE")>]
-                OpeningCalculationDate              : DateTime option
+                OpeningCalculationDate                  : DateTime option
 
                 [<ExcelRangeAlias("INPUT_CALC_DATE")>]
-                ClosingCalculationDate              : DateTime        
+                ClosingCalculationDate                  : DateTime        
 
                 [<ExcelRangeAlias("INPUT_FINAL_MONTH_INV_RETURN_PROPORTION")>]
-                FinalMonthInvReturnProportion       : float32
+                FinalMonthInvReturnProportion           : float32
 
-                [<ExcelRangeAlias("INPUT_OVERRIDE_FINAL_UNSM_RETURN")>]
-                OverrideFinalMonthUnsmoothedReturn  : float32 option
+                [<ExcelRangeAlias("INPUT_OVERRIDE_OPENING_UNSM_RETURN")>]
+                OverrideOpeningMonthUnsmoothedReturn    : float32 option
+
+                [<ExcelRangeAlias("INPUT_OVERRIDE_CLOSING_UNSM_RETURN")>]
+                OverrideClosingMonthUnsmoothedReturn    : float32 option
             }
 
         [<NoEquality; NoComparison>]
@@ -263,135 +266,7 @@ module ExcelApi =
             Step9_InvestmentReturn_SAS      : float32
         }
 
+
     let createExcelDispatcher workbookSelector cancellationToken =
         ApiProvider.Excel.Dispatcher.createExcelDispatcher<TransferTypes.ExcelStepRelatedInputs, TransferTypes.ExcelPolicyRelatedInputs>
             workbookSelector cancellationToken
-
-
-    type IWrappedExcelApiRequestors =
-        interface
-            inherit IDisposable
-
-            abstract member Opening     : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs>
-            abstract member PostOpening : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs>
-        end
-
-
-    let createOpeningExcelRequestor
-        (dispatcher: IExcelDispatcher<_, _>) (openingRunDate: DateOnly option)
-        : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs> =
-            let requestorName =
-                "Excel API [Opening]"
-
-            let apiRequestor =
-                match openingRunDate with
-                | Some openingRunDate' ->
-                    let stepRelatedInputs: TransferTypes.ExcelStepRelatedInputs =
-                        {
-                            OpeningCalculationDate =
-                                None
-                            ClosingCalculationDate =
-                                openingRunDate'.ToDateTimeMidnight ()
-                            FinalMonthInvReturnProportion =
-                                0.5f
-                            OverrideFinalMonthUnsmoothedReturn =
-                                None
-                        }
-
-                    let executor requiredOutputs (policyRecord, onApiRequestProcessingStart) =
-                        let policyRelatedInputs =
-                            TransferTypes.ExcelPolicyRelatedInputs.ofUnderlying policyRecord
-
-                        dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) onApiRequestProcessingStart
-
-                    ApiRequestor.create ("Excel API [Opening]", executor)
-
-                | None ->
-                    let executor _ _ =
-                        failwith "Cannot call the opening requestor when no prior run date is provided."                
-
-                    ApiRequestor.create (requestorName, executor)
-
-            WrappedApiRequestor apiRequestor
-
-
-    let createPostOpeningExcelRequestor
-        (dispatcher: IExcelDispatcher<_,_>) (openingRunDate: DateOnly option, closingRunDate: DateOnly)
-        : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs> =
-            let stepRelatedInputs: TransferTypes.ExcelStepRelatedInputs =
-                {
-                    OpeningCalculationDate =
-                        openingRunDate |> Option.map _.ToDateTimeMidnight()
-                    ClosingCalculationDate =
-                        closingRunDate.ToDateTimeMidnight ()
-                    FinalMonthInvReturnProportion =
-                        0.5f
-                    OverrideFinalMonthUnsmoothedReturn =
-                        None
-                }
-
-            let executor requiredOutputs (policyRecord, onApiRequestProcessingStart) =
-                let policyRelatedInputs =
-                    TransferTypes.ExcelPolicyRelatedInputs.ofUnderlying policyRecord                        
-
-                dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) onApiRequestProcessingStart 
-
-            let apiRequestor =
-                ApiRequestor.create ("Excel API [Post-Opening Regression]", executor)
-
-            WrappedApiRequestor apiRequestor
-
-
-    let createClosingMonthEndExcelRequestor
-        (dispatcher: IExcelDispatcher<_,_>) (closingRunDate: DateOnly)
-        : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs> =
-            let stepRelatedInputs: TransferTypes.ExcelStepRelatedInputs =
-                {
-                    OpeningCalculationDate =
-                        None
-                    ClosingCalculationDate =
-                        // Get the last working day of the current run month.
-                        closingRunDate.AddMonths(1).AddDays(-1).ToDateTimeMidnight ()
-                    FinalMonthInvReturnProportion =
-                        0.5f
-                    OverrideFinalMonthUnsmoothedReturn =
-                        None
-                }
-
-            let executor requiredOutputs (policyRecord, onApiRequestProcessingStart) =
-                let policyRelatedInputs =
-                    TransferTypes.ExcelPolicyRelatedInputs.ofUnderlying policyRecord                        
-
-                dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) onApiRequestProcessingStart 
-
-            let apiRequestor =
-                ApiRequestor.create ("Excel API [Closing Month-End]", executor)
-
-            WrappedApiRequestor apiRequestor
-
-    let createValuationAssetSharesExcelRequestor
-        (dispatcher: IExcelDispatcher<_,_>) (closingRunDate: DateOnly)
-        : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs> =
-            let stepRelatedInputs: TransferTypes.ExcelStepRelatedInputs =
-                {
-                    OpeningCalculationDate =
-                        None
-                    ClosingCalculationDate =
-                        // Get the last working day of the current run month.
-                        closingRunDate.AddMonths(1).AddDays(-1).ToDateTimeMidnight ()
-                    FinalMonthInvReturnProportion =
-                        1.0f
-                    OverrideFinalMonthUnsmoothedReturn =
-                        Some 0.0f
-                }
-
-            let executor requiredOutputs (policyRecord, onApiRequestProcessingStart) =
-                let policyRelatedInputs =
-                    TransferTypes.ExcelPolicyRelatedInputs.ofUnderlying policyRecord                        
-
-                dispatcher.ExecuteAsync requiredOutputs (stepRelatedInputs, policyRelatedInputs) onApiRequestProcessingStart 
-
-            let apiRequestor =
-                ApiRequestor.create ("Excel API [Valuation Asset Shares]", executor)
-
-            WrappedApiRequestor apiRequestor

@@ -1,5 +1,5 @@
 ﻿
-namespace AnalysisOfChangeEngine.Walks.OBWholeOfLife
+namespace AnalysisOfChangeEngine.Walks.OBWholeOfLife.Payouts
 
 
 open System
@@ -12,6 +12,7 @@ open AnalysisOfChangeEngine.Structures.PolicyRecords
 open AnalysisOfChangeEngine.Structures.StepResults
 open AnalysisOfChangeEngine.Walks
 open AnalysisOfChangeEngine.Walks.Common
+open AnalysisOfChangeEngine.Walks.OBWholeOfLife
 
 
 [<NoEquality; NoComparison>]
@@ -29,33 +30,18 @@ type ApiCollection =
         xl_OpeningRegression        : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs>
         xl_PostOpeningRegression    : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs>
         xl_ClosingMonthEnd          : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs>
-        xl_ValuationAssetShares     : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs>
     }
 
 
 [<Sealed>]
 type Walk private (logger: ILogger, config: WalkConfiguration) as this =
-    inherit AbstractWalk<OBWholeOfLife.PolicyRecord, OBWholeOfLife.StepResults, ApiCollection> (logger)
+    inherit AbstractWalk<OBWholeOfLife.PolicyRecord, OBWholeOfLife.Payouts.StepResults, ApiCollection> (logger)
 
 
     // --- HELPERS ---
 
     let createStep =
         config.StepFactory
-
-    // Short-hand way of changing our source for UAS and SAS (post-opening regression!)
-    let useForAssetShares unsmoothedSelector smoothedSelector
-        : SourceExpr<OBWholeOfLife.PolicyRecord, OBWholeOfLife.StepResults, _> =
-            <@
-                fun from _ prior _ ->
-                    {
-                        prior with
-                            UnsmoothedAssetShare =
-                                from.apiCall (_.xl_PostOpeningRegression, %unsmoothedSelector)
-                            SmoothedAssetShare =
-                                from.apiCall (_.xl_PostOpeningRegression, %smoothedSelector)
-                    }
-            @>
 
 
     // --- DATA CHANGERS ---
@@ -184,10 +170,6 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
             xl_ClosingMonthEnd =
                 ExcelApi.createClosingMonthEndExcelRequestor
                     excelDispatcher config.ClosingRunDate
-
-            xl_ValuationAssetShares =
-                ExcelApi.createValuationAssetSharesExcelRequestor
-                    excelDispatcher config.ClosingRunDate
         }
 
 
@@ -222,7 +204,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                             from.apiCall (_.xl_OpeningRegression, _.DeathUpliftFactor)
                         DeathBenefit =
                             from.apiCall (_.xl_OpeningRegression, _.DeathBenefit)
-                    } : OBWholeOfLife.StepResults @>
+                    } : OBWholeOfLife.Payouts.StepResults @>
 
             Validator = function
                 | (_, None, _) ->
@@ -285,7 +267,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                                         current.SmoothedAssetShare * current.DeathUpliftFactor * (1.0f + current.ExitBonusRate),
                                         current.GuaranteedDeathBenefit
                                     ) - current.UnpaidPremiums
-                        } : OBWholeOfLife.StepResults @>
+                        } : OBWholeOfLife.Payouts.StepResults @>
 
                 Validator = function
                     // TODO - May need to add some kind of tolerance here.
@@ -304,10 +286,15 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
     member val RestatedOpeningAdjustments =
         this.registerInteriorStep(
             createStep.restatedOpeningAdjustments {
-                Source =
-                    useForAssetShares
-                        <@ _.Step1_RestatedAdjustments_UAS @>
-                        <@ _.Step1_RestatedAdjustments_SAS @>
+                Source = <@
+                    fun from _ prior _ ->
+                        {
+                            prior with
+                                UnsmoothedAssetShare =
+                                    from.apiCall (_.xl_PostOpeningRegression, _.Step1_RestatedAdjustments_UAS)
+                                SmoothedAssetShare =
+                                    from.apiCall (_.xl_PostOpeningRegression, _.Step1_RestatedAdjustments_SAS)
+                        } : OBWholeOfLife.Payouts.StepResults @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -317,10 +304,15 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
     member val RestatedOpeningReturns =
         this.registerInteriorStep(
             createStep.restatedOpeningReturns {
-                Source =
-                    useForAssetShares
-                        <@ _.Step2_RestatedActuals_UAS @>
-                        <@ _.Step2_RestatedActuals_SAS @>
+                Source = <@
+                    fun from _ prior _ ->
+                        {
+                            prior with
+                                UnsmoothedAssetShare =
+                                    from.apiCall (_.xl_PostOpeningRegression, _.Step2_RestatedActuals_UAS)
+                                SmoothedAssetShare =
+                                    from.apiCall (_.xl_PostOpeningRegression, _.Step2_RestatedActuals_SAS)
+                        } : OBWholeOfLife.Payouts.StepResults @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -330,10 +322,15 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
     member val RestatedOpeningDeductions =
         this.registerInteriorStep(
             createStep.restatedOpeningDeductions {
-                Source =
-                    useForAssetShares
-                        <@ _.Step3_RestatedDeductions_UAS @>
-                        <@ _.Step3_RestatedDeductions_SAS @>
+                Source = <@
+                    fun from _ prior _ ->
+                        {
+                            prior with
+                                UnsmoothedAssetShare =
+                                    from.apiCall (_.xl_PostOpeningRegression, _.Step3_RestatedDeductions_UAS)
+                                SmoothedAssetShare =
+                                    from.apiCall (_.xl_PostOpeningRegression, _.Step3_RestatedDeductions_SAS)
+                        } : OBWholeOfLife.Payouts.StepResults @>
                     
                 Validator =
                     StepValidationOutcome.noValidator
@@ -343,10 +340,15 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
     member val MoveToClosingDate =
         this.registerInteriorStep(
             createStep.moveToClosingDate {
-                Source =
-                    useForAssetShares
-                        <@ _.Step4_MoveToClosingDate_UAS @>
-                        <@ _.Step4_MoveToClosingDate_SAS @>
+                Source = <@
+                    fun from _ prior _ ->
+                        {
+                            prior with
+                                UnsmoothedAssetShare =
+                                    from.apiCall (_.xl_PostOpeningRegression, _.Step4_MoveToClosingDate_UAS)
+                                SmoothedAssetShare =
+                                    from.apiCall (_.xl_PostOpeningRegression, _.Step4_MoveToClosingDate_SAS)
+                        } : OBWholeOfLife.Payouts.StepResults @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -366,10 +368,15 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
     member val Adjustments =
         this.registerInteriorStep (
             createStep.adjustments {
-                Source =
-                    useForAssetShares
-                        <@ _.Step5_Adjustments_UAS @>
-                        <@ _.Step5_Adjustments_SAS @>
+                Source = <@
+                    fun from _ prior _ ->
+                        {
+                            prior with
+                                UnsmoothedAssetShare =
+                                    from.apiCall (_.xl_PostOpeningRegression, _.Step5_Adjustments_UAS)
+                                SmoothedAssetShare =
+                                    from.apiCall (_.xl_PostOpeningRegression, _.Step5_Adjustments_SAS)
+                        } : OBWholeOfLife.Payouts.StepResults @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -379,10 +386,15 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
     member val Premiums =
         this.registerInteriorStep (
             createStep.premiums {
-                Source =
-                    useForAssetShares
-                        <@ _.Step6_Premiums_UAS @>
-                        <@ _.Step6_Premiums_SAS @>
+                Source = <@
+                    fun from _ prior _ ->
+                        {
+                            prior with
+                                UnsmoothedAssetShare =
+                                    from.apiCall (_.xl_PostOpeningRegression, _.Step6_Premiums_UAS)
+                                SmoothedAssetShare =
+                                    from.apiCall (_.xl_PostOpeningRegression, _.Step6_Premiums_SAS)
+                        } : OBWholeOfLife.Payouts.StepResults @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -392,10 +404,15 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
     member val Deductions =
         this.registerInteriorStep (
             createStep.deductions {
-                Source =
-                    useForAssetShares
-                        <@ _.Step7_Deductions_UAS @>
-                        <@ _.Step7_Deductions_SAS @>
+                Source = <@
+                    fun from _ prior _ ->
+                        {
+                            prior with
+                                UnsmoothedAssetShare =
+                                    from.apiCall (_.xl_PostOpeningRegression, _.Step7_Deductions_UAS)
+                                SmoothedAssetShare =
+                                    from.apiCall (_.xl_PostOpeningRegression, _.Step7_Deductions_SAS)
+                        } : OBWholeOfLife.Payouts.StepResults @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -405,10 +422,15 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
     member val MortalityCharges =
         this.registerInteriorStep (
             createStep.mortalityCharges {
-                Source =
-                    useForAssetShares
-                        <@ _.Step8_MortalityCharge_UAS @>
-                        <@ _.Step8_MortalityCharge_SAS @>
+                Source = <@
+                    fun from _ prior _ ->
+                        {
+                            prior with
+                                UnsmoothedAssetShare =
+                                    from.apiCall (_.xl_PostOpeningRegression, _.Step8_MortalityCharge_UAS)
+                                SmoothedAssetShare =
+                                    from.apiCall (_.xl_PostOpeningRegression, _.Step8_MortalityCharge_SAS)
+                        } : OBWholeOfLife.Payouts.StepResults @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -418,10 +440,15 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
     member val InvestmentReturns =
         this.registerInteriorStep (
             createStep.investmentReturns {
-                Source =
-                    useForAssetShares
-                        <@ _.Step9_InvestmentReturn_UAS @>
-                        <@ _.Step9_InvestmentReturn_SAS @>
+                Source = <@
+                    fun from _ prior _ ->
+                        {
+                            prior with
+                                UnsmoothedAssetShare =
+                                    from.apiCall (_.xl_PostOpeningRegression, _.Step9_InvestmentReturn_UAS)
+                                SmoothedAssetShare =
+                                    from.apiCall (_.xl_PostOpeningRegression, _.Step9_InvestmentReturn_SAS)
+                        } : OBWholeOfLife.Payouts.StepResults @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -437,7 +464,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                             prior with
                                 GuaranteedDeathBenefit =
                                     from.apiCall (_.xl_PostOpeningRegression, _.GuaranteedDeathBenefit)
-                        } : OBWholeOfLife.StepResults @>
+                        } : OBWholeOfLife.Payouts.StepResults @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -453,7 +480,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                             prior with
                                 DeathUpliftFactor =
                                     from.apiCall (_.xl_PostOpeningRegression, _.DeathUpliftFactor)
-                        } : OBWholeOfLife.StepResults @>
+                        } : OBWholeOfLife.Payouts.StepResults @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -469,7 +496,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                             prior with
                                 ExitBonusRate =
                                     from.apiCall (_.xl_PostOpeningRegression, _.ExitBonusRate)
-                        } : OBWholeOfLife.StepResults @>
+                        } : OBWholeOfLife.Payouts.StepResults @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -499,7 +526,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                                 from.apiCall (_.xl_PostOpeningRegression, _.DeathUpliftFactor)
                             DeathBenefit =
                                 from.apiCall (_.xl_PostOpeningRegression, _.DeathBenefit)
-                        } : OBWholeOfLife.StepResults @>
+                        } : OBWholeOfLife.Payouts.StepResults @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -516,6 +543,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
             }
         )
 
+
     // --- REQUIRED STEPS ---
 
     override val MoveToClosingData =
@@ -530,8 +558,10 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                 StepValidationOutcome.noValidator
         }
 
+
     // --- POST NEW RECORDS STEPS ---
 
+    // Used to quantify impact of latest returns.
     member val MoveToClosingMonthEnd =
         this.registerPostNewRecordsStep(
             createStep.moveToClosingMonthEnd {
@@ -554,41 +584,13 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                                 from.apiCall (_.xl_ClosingMonthEnd, _.DeathUpliftFactor)
                             DeathBenefit =
                                 from.apiCall (_.xl_ClosingMonthEnd, _.DeathBenefit)
-                        } : OBWholeOfLife.StepResults @>
+                        } : OBWholeOfLife.Payouts.StepResults @>
 
                 Validator =
                     StepValidationOutcome.noValidator
             }
         )
 
-    member val SwitchToValuationAssetShares =
-        this.registerPostNewRecordsStep(
-            createStep.switchToValuationAssetShares {
-                Source = <@
-                    fun from _ _ _ ->
-                        {                    
-                            UnsmoothedAssetShare =
-                                from.apiCall (_.xl_ValuationAssetShares, _.UnsmoothedAssetShare)
-                            SmoothedAssetShare =
-                                from.apiCall (_.xl_ValuationAssetShares, _.SmoothedAssetShare)
-                            GuaranteedDeathBenefit =
-                                from.apiCall (_.xl_ValuationAssetShares, _.GuaranteedDeathBenefit)
-                            ExitBonusRate =
-                                from.apiCall (_.xl_ValuationAssetShares, _.ExitBonusRate)
-                            UnpaidPremiums =
-                                from.apiCall (_.xl_ValuationAssetShares, _.UnpaidPremiums)
-                            SurrenderBenefit =
-                                from.apiCall (_.xl_ValuationAssetShares, _.CashSurrenderBenefit)
-                            DeathUpliftFactor =
-                                from.apiCall (_.xl_ValuationAssetShares, _.DeathUpliftFactor)
-                            DeathBenefit =
-                                from.apiCall (_.xl_ValuationAssetShares, _.DeathBenefit)
-                        } : OBWholeOfLife.StepResults @>
-
-                Validator =
-                    StepValidationOutcome.noValidator
-            }
-        )
 
     // Cannot make this val without leading to an initialization error.
     override this.ClosingStep =

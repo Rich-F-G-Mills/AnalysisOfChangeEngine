@@ -6,8 +6,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="ExcelApi.fs" />
-    <Compile Include="Walk.fs" />
+    <Compile Include="ExcelApiTypes.fs" />
+    <Compile Include="DataChanges.fs" />
+    <Compile Include="Valuation\ExcelApi.fs" />
+    <Compile Include="Valuation\Walk.fs" />
+    <Compile Include="Payouts\ExcelApi.fs" />
+    <Compile Include="Payouts\Walk.fs" />
     <None Include="README.md" />
   </ItemGroup>
 

@@ -304,9 +304,9 @@ module CalculationLoop =
     [<NoEquality; NoComparison>]
     type ClosingOnlyCalculationLoopConfiguration<'TPolicyRecord, 'TStepResults> =
         {
-            PriorClosingPolicyReader    : IPolicyGetter<'TPolicyRecord>
-            WalkEvaluator               : IPolicyWalkEvaluator<'TPolicyRecord, 'TStepResults>
-            OutputWriter                : IProcessedOutputWriter<'TPolicyRecord, 'TStepResults>
+            ClosingPolicyReader     : IPolicyGetter<'TPolicyRecord>
+            WalkEvaluator           : IPolicyWalkEvaluator<'TPolicyRecord, 'TStepResults>
+            OutputWriter            : IProcessedOutputWriter<'TPolicyRecord, 'TStepResults>
         }
 
     [<NoEquality; NoComparison>]
@@ -325,7 +325,7 @@ module CalculationLoop =
         (config: ClosingOnlyCalculationLoopConfiguration<'TPolicyRecord, 'TStepResults>) =
             let calcLoop =
                 new CalculationLoop<'TPolicyRecord, 'TStepResults>
-                    (None, None, config.PriorClosingPolicyReader, config.WalkEvaluator, config.OutputWriter)
+                    (None, None, config.ClosingPolicyReader, config.WalkEvaluator, config.OutputWriter)
 
             {
                 new INewOnlyCalculationLoop<'TPolicyRecord> with

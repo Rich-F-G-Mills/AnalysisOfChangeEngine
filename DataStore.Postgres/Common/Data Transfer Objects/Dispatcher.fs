@@ -90,11 +90,6 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
         static let combinedTransferableTypes =
             Array.append baseTransferableTypes augTransferableTypes
 
-
-        let productSchema =
-            ProductSchemaName productSchema'
-
-
         let makeSelectors (tableColumns: PropertyInfo array, transferableTypes: ITransferableType array) =
             (tableColumns, transferableTypes)
             ||> Array.map2 (fun pi tt -> tt.SqlColMapper (sprintf "\"%s\"" pi.Name))
@@ -199,13 +194,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
             let filterColSelector =
                 tt.SqlColMapper (sprintf "\"%s\"" columnName)
 
-            let toSqlParamValue =
-                tt.ToSqlParamValue productSchema
-
-            let toSqlParamValueArray =
-                tt.ToSqlParamValueArray productSchema
-
-            filterColSelector, toSqlParamValue, toSqlParamValueArray
+            filterColSelector, tt.ToSqlParamValue, tt.ToSqlParamValueArray
 
         // Must be members in order to be generic w.r.t. filtered column type.
         // Note that we are ALWAYS filtering against the BASE columns,
@@ -780,7 +769,7 @@ type PostgresTableDispatcher<'TBaseRow, 'TAugRow>
                             Expr.Application (
                                 // Other than the fact that these are injected during start-up.
                                 // the current implementation also caches the resulting expression.
-                                tt.ToSqlParamValueExpr productSchema,
+                                tt.ToSqlParamValueExpr,
                                 Expr.PropertyGet (var, pi)
                             ))
                     |> Seq.map Expr.Cast<NpgsqlParameter>

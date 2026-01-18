@@ -34,29 +34,29 @@ module AbstractDataStore =
 
     [<AbstractClass>]
     type AbstractPostgresDataStore<'TPolicyRecord, 'TPolicyRecordDTO, 'TStepResults, 'TStepResultsDTO>
-        (sessionContext: SessionContext, dataSource: NpgsqlDataSource, schema: string) =
+        (sessionContext: SessionContext, dataSource: NpgsqlDataSource, policyDataSchema, resultsSchema: string) =
 
         // --- DISPATCHERS ---
 
         let dataStageDispatcher =
             DataStageDTO.buildDispatcher<'TPolicyRecordDTO>
-                (schema, dataSource)
+                (resultsSchema, dataSource)
 
         let extractionHeaderDispatcher =
             ExtractionHeaderDTO.buildDispatcher
-                (schema, dataSource)
+                (policyDataSchema, dataSource)
 
         let policyDataDispatcher =
             PolicyDataDTO.builderDispatcher<'TPolicyRecordDTO>
-                (schema, dataSource)
+                (policyDataSchema, dataSource)
 
         let runHeaderDispatcher =
             RunHeaderDTO.buildDispatcher
-                (schema, dataSource)
+                (resultsSchema, dataSource)
 
         let runStepDispatcher =
             RunStepDTO.buildDispatcher
-                (schema, dataSource)
+                (resultsSchema, dataSource)
 
         let stepHeaderDispatcher =
             StepHeaderDTO.buildDispatcher
@@ -64,11 +64,11 @@ module AbstractDataStore =
 
         let stepResultsDispatcher =
             StepResultsDTO.buildDispatcher<'TStepResultsDTO>
-                (schema, dataSource)
+                (resultsSchema, dataSource)
 
         let runFailureDispatcher =
             RunFailureDTO.buildDispatcher
-                (schema, dataSource)
+                (resultsSchema, dataSource)
 
         static let openingDataStageUid =
             Guid("00000000-0000-0000-0000-000000000000")
@@ -206,7 +206,7 @@ module AbstractDataStore =
 
         // --- POLICY DATA ---
 
-        abstract member dtoToPolicyRecord: 'TPolicyRecordDTO -> Result<'TPolicyRecord, string nonEmptyList >
+        abstract member dtoToPolicyRecord: 'TPolicyRecordDTO -> Result<'TPolicyRecord, string nonEmptyList>
 
         abstract member policyRecordToDTO: 'TPolicyRecord -> Result<'TPolicyRecordDTO, string nonEmptyList>
 
@@ -249,7 +249,7 @@ module AbstractDataStore =
                     $"""
                     WITH outstanding_cases AS (
                         SELECT policy_id, cohort
-                        FROM {schema}.policy_tracing
+                        FROM {resultsSchema}.policy_tracing
                         WHERE run_uid = @current_run_uid AND NOT all_steps_run                   
                     """
                     )        
@@ -260,7 +260,7 @@ module AbstractDataStore =
                 do ignore <| sqlCommand.Append(
                     $"""
                         ), delete_existing_run_failures AS (
-                            DELETE FROM {schema}.{runFailureDispatcher.PgTableName}
+                            DELETE FROM {resultsSchema}.{runFailureDispatcher.PgTableName}
                             WHERE {fieldName<RunFailureDTO, _> <@ _.run_uid @>} = @current_run_uid
                                 AND {fieldName<RunFailureDTO, _> <@ _.policy_id @>}
                                     IN (SELECT policy_id FROM outstanding_cases)
@@ -268,14 +268,14 @@ module AbstractDataStore =
 
                         -- ALthough unlikely, remove any existing step results for these records.
                         delete_existing_results AS (
-                            DELETE FROM {schema}.{stepResultsDispatcher.PgTableName}
+                            DELETE FROM {resultsSchema}.{stepResultsDispatcher.PgTableName}
                             WHERE {fieldName<StepResults_BaseDTO, _> <@ _.run_uid @>} = @current_run_uid
                                 AND {fieldName<StepResults_BaseDTO, _> <@ _.policy_id @>}
                                     IN (SELECT policy_id FROM outstanding_cases)
                         ),
 
                         delete_existing_data_stages AS (
-                            DELETE FROM {schema}.{dataStageDispatcher.PgTableName}
+                            DELETE FROM {resultsSchema}.{dataStageDispatcher.PgTableName}
                             WHERE {fieldName<DataStage_BaseDTO, _> <@ _.run_uid @>} = @current_run_uid
                                 AND {fieldName<DataStage_BaseDTO, _> <@ _.policy_id @>}
                                     IN (SELECT policy_id FROM outstanding_cases)

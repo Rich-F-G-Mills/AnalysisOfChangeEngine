@@ -13,11 +13,18 @@ module OBWholeOfLife =
     open AnalysisOfChangeEngine.Structures.StepResults
 
 
-    let [<Literal>] private schema = "ob_wol"
+    let [<Literal>] private obWoLCommonSchema = "ob_wol_common"
+    let [<Literal>] private obWoLPayoutsSchema = "ob_wol_payouts"
+    let [<Literal>] private obWoLValuationSchema = "ob_wol_valuation"
+
+
+    [<Sealed>]
+    type internal PostgresCommonOBWoLEnumerationAttribute internal (typeName: string) =
+        inherit PostgresEnumerationAttribute (typeName, obWoLCommonSchema)
 
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    [<PostgresProductSpecificEnumeration("gender")>]
+    [<PostgresCommonOBWoLEnumerationAttribute("gender")>]
     type GenderDTO =
         | MALE
         | FEMALE
@@ -39,7 +46,7 @@ module OBWholeOfLife =
 
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    [<PostgresProductSpecificEnumeration("policy_status")>]
+    [<PostgresCommonOBWoLEnumerationAttribute("policy_status")>]
     type PolicyStatusDTO =
         | PP
         | PUP
@@ -66,7 +73,7 @@ module OBWholeOfLife =
 
 
     [<RequireQualifiedAccess; NoComparison; NoEquality>]
-    [<PostgresProductSpecificEnumeration("premium_frequency")>]
+    [<PostgresCommonOBWoLEnumerationAttribute("premium_frequency")>]
     type PremiumFrequencyDTO =
         | MONTHLY
         | YEARLY
@@ -88,39 +95,6 @@ module OBWholeOfLife =
 
 
     [<NoComparison; NoEquality>]
-    type PolicyRecordDTO =
-        {
-            table_code          : string
-            status              : PolicyStatusDTO
-            sum_assured         : float32
-            entry_date          : DateOnly
-            npdd                : DateOnly
-            ltd_payment_term    : Int16     // smallint
-            entry_age_1         : Int16
-            gender_1            : GenderDTO
-            entry_age_2         : Int16 option
-            gender_2            : GenderDTO option
-            joint_val_age       : Int16 option
-            premium_frequency   : PremiumFrequencyDTO
-            modal_premium       : float32
-        }
-
-
-    [<NoComparison; NoEquality>]
-    type StepResultsDTO =
-        {
-            unsmoothed_asset_share      : float32
-            smoothed_asset_share        : float32
-            guaranteed_death_benefit    : float32
-            surrender_benefit           : float32
-            death_benefit               : float32
-            exit_bonus_rate             : float32
-            unpaid_premiums             : float32
-            death_uplift_factor         : float32
-        }
-
-
-    [<NoComparison; NoEquality>]
     type private TableCodeDTO =
         {
             table_code                  : string
@@ -138,7 +112,7 @@ module OBWholeOfLife =
         let internal buildDispatcher dataSource =
             let dispatcher =
                 new DataTransferObjects.PostgresTableDispatcher<TableCodeDTO, unit>
-                    ("table_codes", schema, dataSource)
+                    ("table_codes", obWoLCommonSchema, dataSource)
 
             {
                 new IDispatcher with
@@ -147,29 +121,37 @@ module OBWholeOfLife =
             }
 
 
-    type DataStore (sessionContext: SessionContext, dataSource: NpgsqlDataSource) =
-        inherit AbstractPostgresDataStore<OBWholeOfLife.PolicyRecord, PolicyRecordDTO, OBWholeOfLife.StepResults, StepResultsDTO>
-            (sessionContext, dataSource, schema)
+    [<NoComparison; NoEquality>]
+    type PolicyRecordDTO =
+        {
+            table_code          : string
+            status              : PolicyStatusDTO
+            sum_assured         : float32
+            entry_date          : DateOnly
+            npdd                : DateOnly
+            ltd_payment_term    : Int16     // smallint
+            entry_age_1         : Int16
+            gender_1            : GenderDTO
+            entry_age_2         : Int16 option
+            gender_2            : GenderDTO option
+            joint_val_age       : Int16 option
+            premium_frequency   : PremiumFrequencyDTO
+            modal_premium       : float32
+        }
 
-        let tableCodeDispatcher =
-            TableCodeDTO.buildDispatcher (dataSource)
+    [<RequireQualifiedAccess>]
+    module private PolicyRecordDTO =
 
-        let tableCodes =
-            tableCodeDispatcher.SelectAll ()
-            |> Seq.map (fun tc -> tc.table_code, tc)
-            |> Map.ofSeq
-
-        // TODO - Will only return the first error encountered pre-validation. Can be improved?
-        override _.dtoToPolicyRecord policyRecord =
+        let internal toPolicyRecord tableCodes dto =
             result {
                 let firstLife: OBWholeOfLife.LifeData =
                     {
-                        EntryAge = int policyRecord.entry_age_1
-                        Gender = GenderDTO.toGender policyRecord.gender_1
+                        EntryAge = int dto.entry_age_1
+                        Gender = GenderDTO.toGender dto.gender_1
                     }
 
                 let! lives =
-                    match policyRecord.entry_age_2, policyRecord.gender_2, policyRecord.joint_val_age with
+                    match dto.entry_age_2, dto.gender_2, dto.joint_val_age with
                     | None, None, None ->
                         Ok (OBWholeOfLife.LivesBasis.SingleLife firstLife)
 
@@ -187,32 +169,32 @@ module OBWholeOfLife =
 
                 let! isTaxable =
                     tableCodes
-                    |> Map.tryFind policyRecord.table_code
+                    |> Map.tryFind dto.table_code
                     |> Option.map _.is_taxable
                     // Defer allocation of a string list if possible!
                     |> Result.requireSomeWith (fun _ -> nonEmptyList {
-                        yield sprintf "Table code %s not found in table_codes." policyRecord.table_code })
+                        yield sprintf "Table code %s not found in table_codes." dto.table_code })
 
                 let rawPolicyRecord: OBWholeOfLife.RawPolicyRecord =
                     {                
-                        TableCode           = policyRecord.table_code
+                        TableCode           = dto.table_code
                         Taxable             = isTaxable
-                        EntryDate           = policyRecord.entry_date
-                        NextPremiumDueDate  = policyRecord.npdd
+                        EntryDate           = dto.entry_date
+                        NextPremiumDueDate  = dto.npdd
                         Status              =
-                            PolicyStatusDTO.toPolicyStatus policyRecord.status
+                            PolicyStatusDTO.toPolicyStatus dto.status
                         Lives               = lives
-                        SumAssured          = policyRecord.sum_assured
-                        LimitedPaymentTerm  = int policyRecord.ltd_payment_term
+                        SumAssured          = dto.sum_assured
+                        LimitedPaymentTerm  = int dto.ltd_payment_term
                         PremiumFrequency    =
-                            PremiumFrequencyDTO.toPremiumFrequency policyRecord.premium_frequency
-                        ModalPremium        = policyRecord.modal_premium
+                            PremiumFrequencyDTO.toPremiumFrequency dto.premium_frequency
+                        ModalPremium        = dto.modal_premium
                     }
 
                 return! OBWholeOfLife.PolicyRecord.validate rawPolicyRecord
             }
-        
-        override _.policyRecordToDTO (OBWholeOfLife.PolicyRecord policyRecord) =
+
+        let internal ofPolicyRecord (OBWholeOfLife.PolicyRecord policyRecord) =
             Ok {
                 table_code          = policyRecord.TableCode
                 status              =
@@ -238,26 +220,118 @@ module OBWholeOfLife =
                 modal_premium       = policyRecord.ModalPremium
             }
 
-        override _.dtoToStepResults dto =
-            Ok {
-                UnsmoothedAssetShare        = dto.unsmoothed_asset_share
-                SmoothedAssetShare          = dto.smoothed_asset_share
-                GuaranteedDeathBenefit      = dto.guaranteed_death_benefit
-                SurrenderBenefit            = dto.surrender_benefit
-                DeathBenefit                = dto.death_benefit
-                ExitBonusRate               = dto.exit_bonus_rate
-                UnpaidPremiums              = dto.unpaid_premiums
-                DeathUpliftFactor           = dto.death_uplift_factor
+
+    [<AbstractClass>]
+    type AbstractOBWoLPostgresDataStore<'TStepResults, 'TStepResultsDTO> (sessionContext, dataSource, resultsSchema) =
+        inherit AbstractPostgresDataStore<OBWholeOfLife.PolicyRecord, PolicyRecordDTO, 'TStepResults, 'TStepResultsDTO>
+            (sessionContext, dataSource, obWoLCommonSchema, resultsSchema)
+
+        let tableCodeDispatcher =
+            TableCodeDTO.buildDispatcher (dataSource)
+
+        let tableCodes =
+            tableCodeDispatcher.SelectAll ()
+            |> Seq.map (fun tc -> tc.table_code, tc)
+            |> Map.ofSeq
+
+        let dtoToPolicyRecord' =
+            PolicyRecordDTO.toPolicyRecord tableCodes
+
+        // TODO - Will only return the first error encountered pre-validation. Can be improved?
+        override _.dtoToPolicyRecord policyRecord =
+            dtoToPolicyRecord' policyRecord
+        
+        override _.policyRecordToDTO policyRecord =
+            PolicyRecordDTO.ofPolicyRecord policyRecord
+
+
+    [<RequireQualifiedAccess>]
+    module Payouts =
+
+        [<NoComparison; NoEquality>]
+        type StepResultsDTO =
+            {
+                unsmoothed_asset_share      : float32
+                smoothed_asset_share        : float32
+                guaranteed_death_benefit    : float32
+                surrender_benefit           : float32
+                death_benefit               : float32
+                exit_bonus_rate             : float32
+                unpaid_premiums             : float32
+                death_uplift_factor         : float32
             }
 
-        override _.stepResultsToDTO stepResults =
-            Ok {
-                unsmoothed_asset_share      = stepResults.UnsmoothedAssetShare
-                smoothed_asset_share        = stepResults.SmoothedAssetShare
-                guaranteed_death_benefit    = stepResults.GuaranteedDeathBenefit
-                surrender_benefit           = stepResults.SurrenderBenefit
-                death_benefit               = stepResults.DeathBenefit
-                exit_bonus_rate             = stepResults.ExitBonusRate
-                unpaid_premiums             = stepResults.UnpaidPremiums
-                death_uplift_factor         = stepResults.DeathUpliftFactor
+        [<RequireQualifiedAccess>]
+        module private StepResultsDTO =
+
+            let internal toStepResults (dto: StepResultsDTO) : Result<OBWholeOfLife.Payouts.StepResults, _> =
+                Ok {
+                    UnsmoothedAssetShare        = dto.unsmoothed_asset_share
+                    SmoothedAssetShare          = dto.smoothed_asset_share
+                    GuaranteedDeathBenefit      = dto.guaranteed_death_benefit
+                    SurrenderBenefit            = dto.surrender_benefit
+                    DeathBenefit                = dto.death_benefit
+                    ExitBonusRate               = dto.exit_bonus_rate
+                    UnpaidPremiums              = dto.unpaid_premiums
+                    DeathUpliftFactor           = dto.death_uplift_factor
+                }
+
+            let internal ofStepResults (stepResults: OBWholeOfLife.Payouts.StepResults) =
+                Ok {
+                    unsmoothed_asset_share      = stepResults.UnsmoothedAssetShare
+                    smoothed_asset_share        = stepResults.SmoothedAssetShare
+                    guaranteed_death_benefit    = stepResults.GuaranteedDeathBenefit
+                    surrender_benefit           = stepResults.SurrenderBenefit
+                    death_benefit               = stepResults.DeathBenefit
+                    exit_bonus_rate             = stepResults.ExitBonusRate
+                    unpaid_premiums             = stepResults.UnpaidPremiums
+                    death_uplift_factor         = stepResults.DeathUpliftFactor
+                }
+
+
+        type DataStore (sessionContext, dataSource) =
+            inherit AbstractOBWoLPostgresDataStore<OBWholeOfLife.Payouts.StepResults, StepResultsDTO>
+                (sessionContext, dataSource, obWoLPayoutsSchema)
+
+            override _.dtoToStepResults dto =
+                StepResultsDTO.toStepResults dto
+
+            override _.stepResultsToDTO stepResults =
+                StepResultsDTO.ofStepResults stepResults
+
+
+    [<RequireQualifiedAccess>]
+    module Valuation =
+
+        [<NoComparison; NoEquality>]
+        type StepResultsDTO =
+            {
+                unsmoothed_asset_share      : float32
+                smoothed_asset_share        : float32
             }
+
+        [<RequireQualifiedAccess>]
+        module private StepResultsDTO =
+
+            let internal toStepResults (dto: StepResultsDTO) : Result<OBWholeOfLife.Valuation.StepResults, _> =
+                Ok {
+                    UnsmoothedAssetShare        = dto.unsmoothed_asset_share
+                    SmoothedAssetShare          = dto.smoothed_asset_share
+                }
+
+            let internal ofStepResults (stepResults: OBWholeOfLife.Valuation.StepResults) =
+                Ok {
+                    unsmoothed_asset_share      = stepResults.UnsmoothedAssetShare
+                    smoothed_asset_share        = stepResults.SmoothedAssetShare
+                }
+
+
+        type DataStore (sessionContext, dataSource) =
+            inherit AbstractOBWoLPostgresDataStore<OBWholeOfLife.Valuation.StepResults, StepResultsDTO>
+                (sessionContext, dataSource, obWoLValuationSchema)
+
+            override _.dtoToStepResults dto =
+                StepResultsDTO.toStepResults dto
+
+            override _.stepResultsToDTO stepResults =
+                StepResultsDTO.ofStepResults stepResults

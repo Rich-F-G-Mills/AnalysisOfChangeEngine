@@ -55,7 +55,9 @@ module internal Locator =
             // It would be surprising if it then failed at this point.
             let (excelWindow: Excel.Window) =
                 downcast excelWindowObj
-
+            
+            // Note to self... Previously I was getting a run-time exception when accessing
+            // this member. Repairing the M365 installation seems to have fixed that.
             return excelWindow.Application
         }
 

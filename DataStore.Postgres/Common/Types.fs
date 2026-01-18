@@ -69,39 +69,22 @@ module Types =
 
     // These should hopefully minimize chance of these getting mixed up.
     [<NoEquality; NoComparison>]
-    type internal ProductSchemaName =
-        ProductSchemaName of string
-
-    [<NoEquality; NoComparison>]
-    type internal EnumSchemaName =
-        EnumSchemaName of string
-
-    [<NoEquality; NoComparison>]
     type internal PgTypeName =
         PgTypeName of string
 
 
-    [<RequireQualifiedAccess>]
-    [<NoEquality; NoComparison>]
-    type PostgresEnumerationSchema =
-        | Common
-        | ProductSpecific
-
     [<AbstractClass>]
     [<AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = true)>]
-    type PostgresEnumerationAttribute (pgTypeName: string, location: PostgresEnumerationSchema) =
+    type PostgresEnumerationAttribute (pgTypeName: string, schema: string) =
         inherit Attribute ()
 
         member val PgTypeName =
             pgTypeName with get
 
-        member val Location =
-            location with get
+        member val Schema =
+             schema with get
 
-    [<Sealed>]
-    type PostgresProductSpecificEnumerationAttribute (typeName: string) =
-        inherit PostgresEnumerationAttribute (typeName, PostgresEnumerationSchema.ProductSpecific)
 
     [<Sealed>]
     type internal PostgresCommonEnumerationAttribute (typeName: string) =
-        inherit PostgresEnumerationAttribute (typeName, PostgresEnumerationSchema.Common)
+        inherit PostgresEnumerationAttribute (typeName, "common")

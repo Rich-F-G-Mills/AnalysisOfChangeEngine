@@ -18,8 +18,8 @@ open AnalysisOfChangeEngine.DataStore.Postgres
 type internal ITransferableType =
     interface
         abstract member UnderlyingType              : Type with get
-        abstract member ToSqlParamValueExpr         : ProductSchemaName -> Expr
-        abstract member ToSqlParamValueArrayExpr    : ProductSchemaName -> Expr
+        abstract member ToSqlParamValueExpr         : Expr with get
+        abstract member ToSqlParamValueArrayExpr    : Expr with get
         abstract member SqlColMapper                : string -> string
         abstract member ReadSqlColumnExpr           : Expr<DbDataReader> * int -> Expr
     end
@@ -32,29 +32,12 @@ type internal ITransferableType<'TValue> =
         // We use the non-generic version of the Sql parameter as it won't always have the
         // same generic type as that used in the underlying DTO member type.
         // eg... Such as for enums where the underlying type is a string.
-        abstract member ToSqlParamValueExpr         : ProductSchemaName -> Expr<'TValue -> NpgsqlParameter>
-        abstract member ToSqlParamValueArrayExpr    : ProductSchemaName -> Expr<'TValue array -> NpgsqlParameter>
-        abstract member ToSqlParamValue             : ProductSchemaName -> ('TValue -> NpgsqlParameter)
-        abstract member ToSqlParamValueArray        : ProductSchemaName -> ('TValue array -> NpgsqlParameter)
+        abstract member ToSqlParamValueExpr         : Expr<'TValue -> NpgsqlParameter> with get
+        abstract member ToSqlParamValueArrayExpr    : Expr<'TValue array -> NpgsqlParameter> with get
+        abstract member ToSqlParamValue             : 'TValue -> NpgsqlParameter
+        abstract member ToSqlParamValueArray        : 'TValue array -> NpgsqlParameter
         abstract member ReadSqlColumnExpr           : Expr<DbDataReader> * int -> Expr<'TValue>
     end
-
-
-[<RequireQualifiedAccess>]
-module private CachedByProductSchema =
-
-    let internal make (fn: ProductSchemaName -> 'T) =
-        // In theory, we could make this non-concurrent as this code is most likely to
-        // be called via assembly start-up logic, which is single-threaded.
-        // However, with this minor change, can make it easily support parallel execution.
-        // It also gives us access to the elegent GetOrAdd instance member.
-        let cachedValues =
-            new ConcurrentDictionary<string, 'T> ()
-
-        fun (ProductSchemaName productSchema' as productSchema) ->
-            // In theory, this will lead to allocations as the getter factory is using a closure.
-            // However, for the sake of aesthetic beauty, we'll live with it.
-            cachedValues.GetOrAdd (productSchema', fun _ -> fn productSchema)
 
 
 (*
@@ -78,14 +61,7 @@ type internal TransferableType private () =
                     t.GetCustomAttribute<PostgresEnumerationAttribute> (true)
                     |> Option.ofNull
 
-                let mapper =
-                    match pgEnumAttrib.Location with
-                    | PostgresEnumerationSchema.Common ->
-                        fun _ -> EnumSchemaName "common"
-                    | PostgresEnumerationSchema.ProductSpecific ->
-                        fun (ProductSchemaName name) -> EnumSchemaName name
-
-                return PgTypeName pgEnumAttrib.PgTypeName, mapper
+                return PgTypeName pgEnumAttrib.PgTypeName, pgEnumAttrib.Schema
             }
 
         | _ ->
@@ -109,37 +85,25 @@ type internal TransferableType private () =
 
     // Cannot use let binding as generic. Same applies to the following below.
     static member private CreateFor<'TValue> colMapper colReaderExpr toSqlParamValueExpr toSqlParamValueArrayExpr =
-        // Here we cache various expressions by product schema. In absence of any
-        // dependence on the prevailing product schema, we _might_ have just used lazy
-        // values instead.
-        let toSqlParamValueExpr' =
-            CachedByProductSchema.make toSqlParamValueExpr
-
-        let toSqlParamValueArrayExpr' =
-            CachedByProductSchema.make toSqlParamValueArrayExpr
-
         let toSqlParamValue' =
-            CachedByProductSchema.make (fun productSchema ->
-                // Might as well re-use the expression we created above!
-                downcast LeafExpressionConverter.EvaluateQuotation (toSqlParamValueExpr' productSchema))
+            downcast LeafExpressionConverter.EvaluateQuotation toSqlParamValueExpr
 
         let toSqlParamValueArray' =
-            CachedByProductSchema.make (fun productSchema ->
-                downcast LeafExpressionConverter.EvaluateQuotation (toSqlParamValueArrayExpr' productSchema))
+            downcast LeafExpressionConverter.EvaluateQuotation toSqlParamValueArrayExpr
 
         {
             new ITransferableType<'TValue> with
-                member _.ToSqlParamValueExpr productSchema      = toSqlParamValueExpr' productSchema
-                member _.ToSqlParamValueArrayExpr productSchema = toSqlParamValueArrayExpr' productSchema
-                member _.ToSqlParamValue productSchema          = toSqlParamValue' productSchema
-                member _.ToSqlParamValueArray productSchema     = toSqlParamValueArray' productSchema
+                member _.ToSqlParamValueExpr                    = toSqlParamValueExpr
+                member _.ToSqlParamValueArrayExpr               = toSqlParamValueArrayExpr
+                member _.ToSqlParamValue value                  = toSqlParamValue' value
+                member _.ToSqlParamValueArray values            = toSqlParamValueArray' values
                 member _.ReadSqlColumnExpr (rrExpr, colIdx)     = colReaderExpr rrExpr colIdx                    
 
             interface ITransferableType with                                            
                 member _.UnderlyingType                         = typeof<'TValue>
                 member _.SqlColMapper colSpec                   = colMapper colSpec
-                member _.ToSqlParamValueExpr productSchema      = toSqlParamValueExpr' productSchema
-                member _.ToSqlParamValueArrayExpr productSchema = toSqlParamValueArrayExpr' productSchema
+                member _.ToSqlParamValueExpr                    = toSqlParamValueExpr
+                member _.ToSqlParamValueArrayExpr               = toSqlParamValueArrayExpr
                 member _.ReadSqlColumnExpr (rrExpr, colIdx)     = colReaderExpr rrExpr colIdx                                  
         }
 
@@ -163,9 +127,9 @@ type internal TransferableType private () =
 
         TransferableType.CreateFor<'TNonOptionalValue>
             // Note that there is no dependency on the prevailing product schema.
-            id colReaderExpr (fun _ -> toSqlParamValueExpr') (fun _ -> toSqlParamValueArrayExpr')
+            id colReaderExpr toSqlParamValueExpr' toSqlParamValueArrayExpr'
 
-    static member private CreateForNonOptionalUnion<'TNonOptionalUnion> (PgTypeName pgTypeName', mapper) =
+    static member private CreateForNonOptionalUnion<'TNonOptionalUnion> (PgTypeName pgTypeName', enumSchema) =
         let nonOptionalUnionType =
             typeof<'TNonOptionalUnion>
 
@@ -216,12 +180,9 @@ type internal TransferableType private () =
             )
             |> Expr.Cast<'TNonOptionalUnion>
 
-        let toSqlParameterValueExpr (productSchema: ProductSchemaName): Expr<_ -> NpgsqlParameter> =
-            let (EnumSchemaName enumSchema') =
-                mapper productSchema
-
+        let toSqlParameterValueExpr: Expr<_ -> NpgsqlParameter> =
             let dataTypeName =
-                sprintf "%s.%s" enumSchema' pgTypeName'
+                sprintf "%s.%s" enumSchema pgTypeName'
 
             <@
             fun (unionVal: 'TNonOptionalUnion) ->
@@ -234,12 +195,9 @@ type internal TransferableType private () =
                     (strRep, dataTypeName)
             @>
 
-        let toSqlParameterValueArrayExpr (productSchema: ProductSchemaName): Expr<_ -> NpgsqlParameter> =
-            let (EnumSchemaName enumSchema') =
-                mapper productSchema
-
+        let toSqlParameterValueArrayExpr: Expr<_ -> NpgsqlParameter> =
             let dataTypeName =
-                sprintf "%s.%s[]" enumSchema' pgTypeName'
+                sprintf "%s.%s[]" enumSchema pgTypeName'
 
             <@
             fun (unionVals: 'TNonOptionalUnion array) ->
@@ -269,23 +227,22 @@ type internal TransferableType private () =
                 Some (%innerColReaderExpr)
             @>
 
-        let toSqlParamValueExpr productSchema: Expr<_ -> NpgsqlParameter> =
-            let innerToSqlParamValueExpr =
-                transferableType.ToSqlParamValueExpr productSchema
-
+        let toSqlParamValueExpr =              
             <@
             // Here we're injecting a lambda expression directly into our optional map.
-            Option.map %innerToSqlParamValueExpr
+            Option.map %(transferableType.ToSqlParamValueExpr)
             // There isn't any issue capturing a static member for use in this way.
             >> Option.defaultWith TransferableType.makeNullParameter
             @>
 
-        let toSqlParamValueArrayExpr _: Expr<_ -> NpgsqlParameter> =
+        let toSqlParamValueArrayExpr =
             let typeName =
                 typeof<'TInnerType>.FullName
 
             <@
-            failwithf "Cannot convert optional type '%s' into an parameter array." typeName
+            // Exception must be deferred or run-time compilation will fail.
+            fun _ ->
+                failwithf "Cannot convert optional type '%s' into an parameter array." typeName
             @>
 
         TransferableType.CreateFor<'TInnerType option>
@@ -318,9 +275,9 @@ type internal TransferableType private () =
                         // on what types Npgsql can natively serialize.
                         TransferableType.CreateForNonOptionalNonUnion<'TValue> ()
 
-                    | NonOptionalNonParameterizedPostgresUnion (pgTypeName, schemaMapper) ->
+                    | NonOptionalNonParameterizedPostgresUnion (pgTypeName, enumSchema) ->
                         TransferableType.CreateForNonOptionalUnion<'TValue>
-                            (pgTypeName, schemaMapper)
+                            (pgTypeName, enumSchema)
 
                     | Optional innerType ->
                         // No obvious way around this. We don't have a(n obvious) way to peel
