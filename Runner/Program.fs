@@ -20,8 +20,6 @@ module Runner =
     open AnalysisOfChangeEngine.DataStore.Postgres
     open AnalysisOfChangeEngine.Walks
     open AnalysisOfChangeEngine.Walks.Common
-    open AnalysisOfChangeEngine.Structures.PolicyRecords
-    open AnalysisOfChangeEngine.Structures.StepResults
 
 
     [<RequireQualifiedAccess>]
@@ -70,8 +68,7 @@ module Runner =
                 RunUid (Guid "ef0acaf8-d854-4c84-8e46-b32c6281307c")
 
             let currentRunUid =
-                RunUid (Guid "ef0acaf8-d854-4c84-8e46-b32c6281307c")
-            //    RunUid (Guid "40b70255-1c18-488f-821c-492a2835c810")
+                RunUid (Guid "a3d1f274-4e2f-485d-b49f-25993b8c8200")
 
             let priorExtractionUid =
                 ExtractionUid (Guid "3f1a56c8-9d23-42d7-a5b1-874f01b87e1f")
@@ -122,6 +119,11 @@ module Runner =
                 dataStore.TryGetRunHeader currentRunUid
                 |> Result.requireSome "Unable to locate current run header."
 
+            let! priorRunHeader =
+                currentRunHeader.PriorRunUid
+                |> Option.bind dataStore.TryGetRunHeader                
+                |> Result.requireSome "Unable to locate prior run header."
+
             do printf "\n\nRetrieving outstanding records... "
 
             let! outstandingRecords =
@@ -137,7 +139,6 @@ module Runner =
 
             
             let calculationLoop =
-                (*
                 createCalculationLoop {
                     OpeningPolicyReader =
                         dataStore.CreatePolicyGetter priorRunHeader.PolicyDataExtractionUid
@@ -150,15 +151,16 @@ module Runner =
                     OutputWriter =
                         dataStore.CreateOutputWriter (currentRunUid, sessionUid)
                 }
-                *)
+                (*
                 createClosingOnlyCalculationLoop {                    
                     ClosingPolicyReader =
-                        dataStore.CreatePolicyGetter currentExtractionUid
+                        dataStore.CreatePolicyGetter currentRunHeader.PolicyDataExtractionUid
                     WalkEvaluator =
                         Evaluator.create logger walk walk.ApiCollection
                     OutputWriter =
                         dataStore.CreateOutputWriter (currentRunUid, sessionUid)
                 }
+                *)
 
             use scheduler =
                 new EventLoopScheduler ()
@@ -231,17 +233,21 @@ module Runner =
 
             let someOutstandingRecords =
                 outstandingRecords
-                |> List.take 5
+                //|> List.filter (fun record ->
+                //    match record with
+                //    | Choice2Of3 (RemainingPolicyId "P53109448") -> true
+                //    | _ -> false)
+                //|> List.take 10
 
             let runner =
                 backgroundTask {
                     for record in someOutstandingRecords do
                         let! _ =
                             match record with
-                            //| Choice1Of3 (ExitedPolicyId _ as pid) ->
-                            //    calculationLoop.PostAsync pid
-                            //| Choice2Of3 (RemainingPolicyId _ as pid) ->
-                            //    calculationLoop.PostAsync pid
+                            | Choice1Of3 (ExitedPolicyId _ as pid) ->
+                                calculationLoop.PostAsync pid
+                            | Choice2Of3 (RemainingPolicyId _ as pid) ->
+                                calculationLoop.PostAsync pid
                             | Choice3Of3 (NewPolicyId _ as pid) ->
                                 calculationLoop.PostAsync pid
 

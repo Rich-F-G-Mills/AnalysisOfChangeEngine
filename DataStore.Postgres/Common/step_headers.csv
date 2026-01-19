@@ -1,0 +1,23 @@
+f198c564-7f6b-46a7-af3c-bd9b4ef6bc1b,Opening Re-Run,Re-run of prior closing data using latest model and assumptions.,OPENING_RERUN,t,f
+3f8c9b7e-2a4d-4f3a-9e2e-7d1c8a9f6b2c,Move To Closing Month-End,Run results as at the last day of the closing month.,SOURCE_CHANGE,f,t
+9a1d4c3f-6b7e-4d2a-8f9c-3e2b1a7d5c4e,Switch To Valuation Asset Shares,Asset shares calculated according to Valuation requirements as at last day of closing month.,SOURCE_CHANGE,f,t
+1254ec7b-e4ee-4a3b-b295-def984bc7e80,AoC Opening Consistency Check,Ensures consistency in the opening AoC logic.,SOURCE_CHANGE,f,f
+12ff0e3a-eab8-4d55-94d5-92a561abd141,Move To Closing Run Date,Move from opening to closing run date.,SOURCE_CHANGE,f,f
+1b901498-b74d-408c-a3b4-f8654f63cf41,Adjustments,Allow for adjustments over the period.,SOURCE_CHANGE,f,f
+2df7f353-9b69-40c3-9f97-7b1fef2b8b2b,Investment Returns,Allow for investment returns over the period.,SOURCE_CHANGE,f,f
+320d8985-c752-43e1-89ba-72411a2053ad,Premiums,Allow for premiums over the period.,SOURCE_CHANGE,f,f
+4698425d-e165-4881-a5dd-b90e342e1795,Closing Death Uplift Factor,Allow for closing death uplift factor.,SOURCE_CHANGE,f,f
+4eafa688-4ae0-4ded-aa92-2710f876a981,Mortality Charges,Allow for mortality charges over the period.,SOURCE_CHANGE,f,f
+61530067-7402-435c-8c3e-933d80d19220,Restated Opening Deductions,Restate the deductions used in the opening position.,SOURCE_CHANGE,f,f
+6920fbd3-e1d1-4459-aca9-aa7c63267a14,Remove Exited Records,Remove records which have exited over the period.,REMOVE_EXITED_RECORDS,f,f
+6d3385fc-8e01-4e95-9dc2-65471813ea5e,Restated Opening Data,Re-run using latest view of opening data.,DATA_CHANGE,f,f
+7e38d53b-960c-44e1-8adc-13bf645196ec,AoC Closing Consistency Check,Ensures consistency in the closing AoC logic.,SOURCE_CHANGE,f,f
+7f0492ca-6211-4032-bf89-a15879d07856,Restated Opening Adjustments,Allow for restated openining adjustments (eg. mutual bonus).,SOURCE_CHANGE,f,f
+8d823d72-6027-49c0-8962-c1f725d199a5,Closing Guaranteed Death Benefit,Allow for closing guaranteed death benefit.,SOURCE_CHANGE,f,f
+92ae5c91-e2f7-4112-8063-b143c467e4b3,Data Roll-Forward,Allow for actual roll-forward of data (eg. NPDDs).,DATA_CHANGE,f,f
+a1639a6e-9660-4f8f-8029-ce01d2767ce7,Deductions,Allow for deductions over the period such as AMCs and IMCs.,SOURCE_CHANGE,f,f
+aff89bf5-604e-4989-8b11-c3ba24d1fca1,Closing Exit Bonus Rate,Allow for closing exit bonus rate.,SOURCE_CHANGE,f,f
+b5c1db87-1bdd-4574-ad7a-86e4122c4799,Status Changes To Paid-Up,Allow for statuses transitioning to PUP.,DATA_CHANGE,f,f
+ba0238f1-df2b-43c7-95b2-557d846a81f8,Move To Closing Data,Move to closing data for existing business.,MOVE_TO_CLOSING_DATA,f,f
+cf93808c-bacc-4137-b849-6227df8c177f,Add New Records,Add new records which have arisen over the period.,ADD_NEW_RECORDS,f,t
+d3d411ec-f5d7-419a-a9ff-67e3d95a9e15,Restated Opening Returns,Restate the returns used in the opening position.,SOURCE_CHANGE,f,f

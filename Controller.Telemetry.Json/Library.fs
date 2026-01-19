@@ -18,7 +18,8 @@ type JsonFormatter private () =
                 match data.DataSource with
                 | StepDataSource.OpeningData            -> None
                 | StepDataSource.DataChangeStep step    -> Some step.Uid
-                | StepDataSource.ClosingData            -> None                
+                | StepDataSource.ClosingData            -> None
+            policy_id               = data.PolicyId
             endpoint_id             = data.EndpointId
             request_submitted       = data.RequestSubmitted
             processing_start        = data.ProcessingStart

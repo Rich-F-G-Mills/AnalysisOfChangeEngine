@@ -134,12 +134,15 @@ module Dispatcher =
 
                         let excelValue =
                             excelRange.Value null
+
+                        let excelValueIsError =
+                            app.WorksheetFunction.IsError excelValue
                                     
                         // TODO - This isn't particular flexible and can only cope with float32 at
                         // this time. Ideally, we would be able to handle some additional
                         // primitive types (eg. int, bool, ...)
                         match excelValue with
-                            | _ when app.WorksheetFunction.IsError excelValue ->
+                            | _ when excelValueIsError ->
                                 Error (ApiRequestFailure.CalculationFailure
                                     (nonEmptyList { yield "Value not available." }))
 
