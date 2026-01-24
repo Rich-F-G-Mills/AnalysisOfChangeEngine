@@ -92,10 +92,10 @@ module internal SourceParser =
     let internal execute<'TPolicyRecord, 'TStepResults, 'TApiCollection>
         (apiCollection: 'TApiCollection, newPolicyRecordVarDef, currentResultsVarDefMapping) = 
             let sourceActionType =
-                typeof<SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection>>
+                typeof<SourceAction<'TPolicyRecord, 'TApiCollection>>
 
             let dummySourceAction =
-                Unchecked.defaultof<SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection>>
+                Unchecked.defaultof<SourceAction<'TPolicyRecord, 'TApiCollection>>
 
             let stepResultsType =
                 typeof<'TStepResults>

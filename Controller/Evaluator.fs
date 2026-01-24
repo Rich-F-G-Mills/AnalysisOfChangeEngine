@@ -364,7 +364,7 @@ module Evaluator =
                 | _, Some _, :? AddNewRecordsStep<'TPolicyRecord, 'TStepResults> ->
                     StepValidationOutcome.Completed
                 // As per the opening re-run step, there is no prior stage and hence no corresponding data.
-                | None, Some _, :? RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> ->
+                | None, Some _, :? RemoveExitedRecordsStep ->
                     StepValidationOutcome.Completed
                 // We do NOT want a catch-all here. In the event another step type gets introduced,
                 // I want this to explicitly fail... At least at runtime!

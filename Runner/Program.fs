@@ -105,7 +105,7 @@ module Runner =
 
             let! walk =
                 OBWholeOfLife.Payouts.Walk.create logger {
-                    StepFactory             = new StepFactory (stepUidResolver)
+                    StepFactory             = new StepFactory<_, _, _> (stepUidResolver)
                     IgnoreOpeningMismatches = true
                     OpeningRunDate          = Some openingRunDate
                     ClosingRunDate          = closingRunDate

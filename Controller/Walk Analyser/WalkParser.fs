@@ -177,7 +177,7 @@ module (*internal*) WalkParser =
             // There is the risk that the required steps under the abstract walk are changed
             // and not correctly reflected here.
             assert checkStepType<OpeningReRunStep<'TPolicyRecord, 'TStepResults, 'TApiCollection>> allSteps[0]
-            assert checkStepType<RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults>> allSteps[1]
+            assert checkStepType<RemoveExitedRecordsStep> allSteps[1]
 
             let moveToClosingDataStepIdx =
                 allSteps

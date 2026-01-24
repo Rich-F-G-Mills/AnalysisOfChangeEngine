@@ -10,7 +10,7 @@ open AnalysisOfChangeEngine.Common
 // Private constructor as this will NEVER be instantiated. It purely provides a container
 // for actions that can be performed as part of a source definition. Furthermore, having them
 // defined as instance members allows them to be more easily discoverable via reflection.
-type SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection> private () =
+type SourceAction<'TPolicyRecord, 'TApiCollection> private () =
     (*
     Design Decision:
         Could have used a curried call rather than tupled; however, identifying (let along deciphering)
@@ -29,7 +29,7 @@ type SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection> private () =
 
 /// Required type of all source definitions for the opening re-run step.
 type OpeningReRunSourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
-    Expr<SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+    Expr<SourceAction<'TPolicyRecord, 'TApiCollection>
         -> 'TPolicyRecord   // Current policy record.
         -> 'TStepResults    // Current results.
         -> 'TStepResults>   // Constructed results for current step.
@@ -52,7 +52,7 @@ module private OpeningReRunSourceExpr =
 
 /// Required type of all source definitions (except for the opening re-run step).
 type SourceExpr<'TPolicyRecord, 'TStepResults, 'TApiCollection> =
-    Expr<SourceAction<'TPolicyRecord, 'TStepResults, 'TApiCollection>
+    Expr<SourceAction<'TPolicyRecord, 'TApiCollection>
         -> 'TPolicyRecord   // Current policy record.
         -> 'TStepResults    // Prior source definition.
         -> 'TStepResults    // Current source definition.
@@ -193,7 +193,7 @@ Design decision:
 /// Indicates that policies not present in the closing position are to be excluded
 /// from further processing.
 [<NoEquality; NoComparison>]
-type RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> =
+type RemoveExitedRecordsStep =
     {
         Uid             : Guid
         Title           : string

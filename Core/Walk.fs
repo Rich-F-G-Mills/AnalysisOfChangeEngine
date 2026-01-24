@@ -43,7 +43,7 @@ type AbstractWalk<'TPolicyRecord, 'TStepResults, 'TApiCollection when 'TPolicyRe
 
         /// Required step.
         abstract member RemoveExitedRecords :
-            RemoveExitedRecordsStep<'TPolicyRecord, 'TStepResults> with get
+            RemoveExitedRecordsStep with get
 
         // User defined interior steps will be defined within the
         // derived class and tracked via the 'registerInteriorStep'

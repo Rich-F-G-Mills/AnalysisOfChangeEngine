@@ -16,19 +16,21 @@ open AnalysisOfChangeEngine.Walks.OBWholeOfLife
 
 
 [<NoEquality; NoComparison>]
-type WalkConfiguration =
-    {        
-        StepFactory                 : StepFactory
-        IgnoreOpeningMismatches     : bool
-        OpeningRunDate              : DateOnly option
-        ClosingRunDate              : DateOnly
-    }
-
-[<NoEquality; NoComparison>]
 type ApiCollection =
     {
         xl_OpeningRegression        : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs>
         xl_PostOpeningRegression    : WrappedApiRequestor<OBWholeOfLife.PolicyRecord, ExcelOutputs>
+    }
+
+
+
+[<NoEquality; NoComparison>]
+type WalkConfiguration =
+    {        
+        StepFactory                 : StepFactory<OBWholeOfLife.PolicyRecord, OBWholeOfLife.Valuation.StepResults, ApiCollection>
+        IgnoreOpeningMismatches     : bool
+        OpeningRunDate              : DateOnly option
+        ClosingRunDate              : DateOnly
     }
 
 
@@ -87,7 +89,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                             from.apiCall (_.xl_OpeningRegression, _.UnsmoothedAssetShare)
                         SmoothedAssetShare =
                             from.apiCall (_.xl_OpeningRegression, _.SmoothedAssetShare)
-                    } : OBWholeOfLife.Valuation.StepResults @>
+                    } @>
 
             Validator = function
                 | (_, None, _) ->
@@ -142,7 +144,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step0_Opening_UAS)
                                 SmoothedAssetShare =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step0_Opening_SAS)
-                        } : OBWholeOfLife.Valuation.StepResults @>
+                        } @>
 
                 Validator = function
                     // TODO - May need to add some kind of tolerance here.
@@ -169,7 +171,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step1_RestatedAdjustments_UAS)
                                 SmoothedAssetShare =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step1_RestatedAdjustments_SAS)
-                        } : OBWholeOfLife.Valuation.StepResults @>
+                        } @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -187,7 +189,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step2_RestatedActuals_UAS)
                                 SmoothedAssetShare =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step2_RestatedActuals_SAS)
-                        } : OBWholeOfLife.Valuation.StepResults @>
+                        } @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -205,7 +207,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step3_RestatedDeductions_UAS)
                                 SmoothedAssetShare =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step3_RestatedDeductions_SAS)
-                        } : OBWholeOfLife.Valuation.StepResults @>
+                        } @>
                     
                 Validator =
                     StepValidationOutcome.noValidator
@@ -223,7 +225,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step4_MoveToClosingDate_UAS)
                                 SmoothedAssetShare =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step4_MoveToClosingDate_SAS)
-                        } : OBWholeOfLife.Valuation.StepResults @>
+                        } @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -251,7 +253,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step5_Adjustments_UAS)
                                 SmoothedAssetShare =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step5_Adjustments_SAS)
-                        } : OBWholeOfLife.Valuation.StepResults @>
+                        } @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -269,7 +271,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step6_Premiums_UAS)
                                 SmoothedAssetShare =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step6_Premiums_SAS)
-                        } : OBWholeOfLife.Valuation.StepResults @>
+                        } @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -287,7 +289,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step7_Deductions_UAS)
                                 SmoothedAssetShare =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step7_Deductions_SAS)
-                        } : OBWholeOfLife.Valuation.StepResults @>
+                        } @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -305,7 +307,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step8_MortalityCharge_UAS)
                                 SmoothedAssetShare =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step8_MortalityCharge_SAS)
-                        } : OBWholeOfLife.Valuation.StepResults @>
+                        } @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -323,7 +325,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step9_InvestmentReturn_UAS)
                                 SmoothedAssetShare =
                                     from.apiCall (_.xl_PostOpeningRegression, _.Step9_InvestmentReturn_SAS)
-                        } : OBWholeOfLife.Valuation.StepResults @>
+                        } @>
 
                 Validator =
                     StepValidationOutcome.noValidator
@@ -341,7 +343,7 @@ type Walk private (logger: ILogger, config: WalkConfiguration) as this =
                                 from.apiCall (_.xl_PostOpeningRegression, _.UnsmoothedAssetShare)
                             SmoothedAssetShare =
                                 from.apiCall (_.xl_PostOpeningRegression, _.SmoothedAssetShare)
-                        } : OBWholeOfLife.Valuation.StepResults @>
+                        } @>
 
                 Validator =
                     StepValidationOutcome.noValidator
